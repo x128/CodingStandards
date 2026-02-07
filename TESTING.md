@@ -42,7 +42,9 @@ See [PLATFORMS.md](PLATFORMS.md) for test locations, runners, and platform-speci
 
 ## Test Naming
 
-Use backtick-quoted descriptive names that document behavior.
+Every test name must follow the pattern: **action [condition] → result**.
+
+### Kotlin (backtick names)
 
 ```kotlin
 // BAD: Vague, doesn't describe behavior
@@ -55,7 +57,7 @@ fun verseTest()
 @Test
 fun test1()
 
-// GOOD: Describes scenario and expected outcome
+// GOOD: Describes action/condition and expected outcome
 @Test
 fun `returns verses for valid book and chapter`()
 
@@ -64,6 +66,23 @@ fun `returns failure when book does not exist`()
 
 @Test
 fun `emits loading state before success`()
+```
+
+### Swift (underscore-separated)
+
+Format: `test_action[_optionalCondition]_result`
+
+```swift
+// BAD: Verbose prose, no structure
+func testAppLaunchesAndShowsReader()
+func testTapSearchIconOpensSearchScreen()
+func testLanguageChipsAreVisible()
+
+// GOOD: action_condition_result
+func test_launch_showsReaderScreen()
+func test_openSearch_showsScopeChips()
+func test_closeSearch_returnsToReader()
+func test_launch_showsLanguageChips()
 ```
 
 ---
@@ -441,6 +460,63 @@ fun `test with specific field`() {
 
 ---
 
+## UI Test Organization
+
+### One Test Class Per App Flow
+
+Each UI test class covers a single user-facing flow or concept. Class naming: `{Flow}UITests`.
+
+```
+// BAD: One monolithic class with MARK sections
+BibleUITests.swift        // App launch + search + language switching + navigation
+
+// GOOD: Separate class per flow
+AppLaunchUITests.swift    // App starts, shows expected initial state
+ReaderUITests.swift       // Reader screen: language chips, search icon, book navigation
+SearchScreenUITests.swift // Search flow: open, filter, close
+```
+
+### What Each Class Should Cover
+
+Each class tests the **end-to-end behavior** of one flow — not individual UI elements in isolation. Tests within a class share setup (e.g., navigating to a specific screen) and test meaningful user interactions.
+
+```swift
+// BAD: Testing individual elements in isolation
+final class ButtonTests: XCTestCase {
+    func test_menuButton_exists() { ... }
+    func test_searchButton_exists() { ... }
+    func test_languageButton_exists() { ... }
+}
+
+// GOOD: Testing a flow
+final class ReaderUITests: XCTestCase {
+    func test_launch_showsLanguageChips() { ... }
+    func test_tapLanguageChip_switchesLanguage() { ... }
+    func test_openDrawer_showsBookList() { ... }
+}
+```
+
+### Shared Navigation Helpers
+
+Extract repeated navigation steps into `private` helper methods within the test class.
+
+```swift
+final class SearchScreenUITests: XCTestCase {
+    private func openSearch() {
+        let searchButton = app.buttons["Search"]
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 10))
+        searchButton.tap()
+    }
+
+    func test_openSearch_showsScopeChips() {
+        openSearch()
+        XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5))
+    }
+}
+```
+
+---
+
 ## What Not to Test
 
 - Data classes (auto-generated equals/hashCode/copy)
@@ -464,7 +540,9 @@ Focus testing effort on:
 - [ ] Every test follows AAA (Arrange-Act-Assert)
 - [ ] One concept per test
 - [ ] Tests are independent (no shared mutable state)
-- [ ] Descriptive backtick-quoted test names
+- [ ] Test names follow action → [condition] → result pattern
+- [ ] Kotlin: backtick-quoted descriptive names
+- [ ] Swift: `test_action[_condition]_result` format
 
 ### Coverage
 - [ ] Every feature has unit, integration, and end-to-end tests
@@ -476,6 +554,11 @@ Focus testing effort on:
 - [ ] Data layer: integration tests with in-memory DB
 - [ ] Presentation layer: ViewModel tests with Turbine
 - [ ] Fakes preferred over mocking frameworks
+
+### UI Tests
+- [ ] One test class per app flow/concept
+- [ ] Class naming: `{Flow}UITests`
+- [ ] Shared navigation in private helper methods
 
 ### Quality
 - [ ] Tests document behavior (readable as specs)
