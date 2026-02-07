@@ -128,9 +128,11 @@ feature/
 
 ## Domain Layer
 
+The domain layer is the **stable center** of the application. Everything else depends on it; it depends on nothing. All business logic — validation, rules, orchestration — lives here in use cases. This is the most important architectural invariant: if business logic creeps into ViewModels or repositories, the architecture is broken.
+
 ### Use Cases
 
-Each use case represents a single user action. Implement `operator fun invoke` for clean call syntax.
+Each use case represents a single user action. Implement `operator fun invoke` for clean call syntax. Use cases contain **all** business logic: input validation, error mapping, conditional behavior, data combination.
 
 ```kotlin
 // BAD: Use case with multiple responsibilities
@@ -153,6 +155,95 @@ class GetChapterUseCase(private val repository: VerseRepository) {
 
 // Called cleanly
 val verses = getChapterUseCase(bookId = 1, chapter = 1, language = Language.RU)
+```
+
+### Use Case Independence
+
+Use cases depend **only** on repository interfaces (defined in domain). They never depend on ViewModels, UI types, framework classes, or other use cases. This makes them independently testable and reusable.
+
+```kotlin
+// BAD: Use case depends on another use case
+class SelectChapterUseCase(
+    private val getChapter: GetChapterUseCase,  // Use case depending on use case!
+    private val getBookGroups: GetBookGroupsUseCase
+) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): Result<ChapterData> {
+        val groups = getBookGroups()
+        val book = groups.flatMap { it.books }.find { it.id == bookId }
+        val verses = getChapter(bookId, chapter, language)
+        return ...
+    }
+}
+
+// BAD: Use case depends on framework type
+class GetChapterUseCase(
+    private val db: BibleDatabase  // SQLDelight type in domain!
+)
+
+// BAD: Use case has state or side effects beyond repository calls
+class GetChapterUseCase(private val repository: VerseRepository) {
+    private var lastBookId: Int = 0  // State in use case!
+
+    suspend operator fun invoke(...): Result<List<Verse>> {
+        lastBookId = bookId  // Side effect!
+        return repository.getVerses(bookId, chapter, language)
+    }
+}
+
+// GOOD: Use case depends only on repository interfaces, is stateless
+class GetChapterUseCase(
+    private val verseRepository: VerseRepository,
+    private val bookRepository: BookRepository
+) {
+    operator fun invoke(
+        bookId: Int,
+        chapter: Int,
+        language: Language
+    ): Result<List<Verse>> {
+        val book = bookRepository.getById(bookId)
+            ?: return Result.failure(ReaderError.BookNotFound(bookId))
+        if (chapter < 1 || chapter > book.chapterCount)
+            return Result.failure(ReaderError.ChapterOutOfRange(bookId, chapter, book.chapterCount))
+        return Result.success(verseRepository.getChapter(bookId, chapter, language))
+    }
+}
+```
+
+### Business Logic Lives in Use Cases, Not ViewModels
+
+If a ViewModel contains `if/when` logic beyond event dispatch and result-to-state mapping, that logic belongs in a use case.
+
+```kotlin
+// BAD: Business logic in ViewModel
+class ReaderViewModel(private val repository: VerseRepository) : ViewModel() {
+    private fun loadChapter(bookId: Int, chapter: Int) {
+        viewModelScope.launch {
+            val book = repository.getBook(bookId)
+            if (book == null) {                                    // Validation in VM!
+                _state.update { it.copy(error = "Book not found") }
+                return@launch
+            }
+            if (chapter < 1 || chapter > book.chapterCount) {     // Validation in VM!
+                _state.update { it.copy(error = "Invalid chapter") }
+                return@launch
+            }
+            val verses = repository.getChapter(bookId, chapter, state.value.language)
+            _state.update { it.copy(verses = verses) }
+        }
+    }
+}
+
+// GOOD: ViewModel delegates to use case, only maps result to state
+class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
+    private fun loadChapter(bookId: Int, chapter: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoading = true) }
+            getChapter(bookId, chapter, _state.value.language)
+                .onSuccess { verses -> _state.update { it.copy(verses = verses, isLoading = false) } }
+                .onFailure { error -> _state.update { it.copy(error = mapError(error), isLoading = false) } }
+        }
+    }
+}
 ```
 
 ### Domain Entities
@@ -251,6 +342,52 @@ class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
 ---
 
 ## Presentation Layer
+
+### ViewModel Discipline
+
+ViewModels are **thin coordinators**. They receive events, call use cases, and map results to UI state. That's it. If a ViewModel grows beyond ~50 lines of logic (excluding boilerplate), it's a sign that business logic has leaked out of the domain layer.
+
+```kotlin
+// BAD: Fat ViewModel with business logic, state management, error handling all interleaved
+class MainViewModel(
+    private val verseRepository: VerseRepository,
+    private val bookRepository: BookRepository
+) : ViewModel() {
+    fun selectChapter(bookId: Int, chapter: Int) {
+        viewModelScope.launch {
+            val book = bookRepository.getById(bookId)       // Data access
+            if (book == null) { /* error handling */ }       // Validation
+            if (chapter > book.chapterCount) { /* ... */ }   // More validation
+            val verses = verseRepository.getChapter(...)     // More data access
+            _state.update { it.copy(                         // State update
+                book = book, chapter = chapter, verses = verses,
+                isDrawerOpen = false                         // UI logic mixed in
+            ) }
+        }
+    }
+    // 15 more methods like this = god object
+}
+
+// GOOD: Thin ViewModel delegates to use cases
+class MainViewModel(
+    private val getChapter: GetChapterUseCase,
+    private val getBookGroups: GetBookGroupsUseCase
+) : ViewModel() {
+    fun selectChapter(bookId: Int, chapter: Int) {
+        _state.update { it.copy(isDrawerOpen = false) }      // Pure UI state
+        loadChapter(bookId, chapter)                          // Delegates to use case
+    }
+
+    private fun loadChapter(bookId: Int, chapter: Int) {
+        viewModelScope.launch {
+            _state.update { it.copy(isLoadingVerses = true) }
+            getChapter(bookId, chapter, _state.value.language)
+                .onSuccess { verses -> _state.update { it.copy(verses = verses, isLoadingVerses = false) } }
+                .onFailure { error -> _state.update { it.copy(readerError = mapError(error), isLoadingVerses = false) } }
+        }
+    }
+}
+```
 
 ### Unidirectional Data Flow (UDF)
 
@@ -472,22 +609,30 @@ navigator.push(ReaderScreen(bookId = 51, chapter = 1))
 
 ### Architecture
 - [ ] Three layers: Presentation -> Domain <- Data
-- [ ] Domain has zero framework dependencies
+- [ ] Domain is the stable center — depends on nothing
+- [ ] All business logic lives in use cases, not ViewModels or repositories
 - [ ] Repository interfaces in domain, implementations in data
 - [ ] DB/API models mapped to domain models at repository boundary
 
-### Features
-- [ ] Package by feature, layer within feature
+### Domain
 - [ ] One use case per user action
+- [ ] Use cases depend only on repository interfaces
+- [ ] Use cases never depend on other use cases, ViewModels, or framework types
+- [ ] Use cases are stateless (no mutable fields)
+- [ ] Validation and business rules live in use cases
 - [ ] Sealed error types per feature
-- [ ] Koin module per feature
 
 ### Presentation
+- [ ] ViewModels are thin coordinators (~50 lines of logic max)
+- [ ] ViewModels call use cases and map results to state — nothing more
 - [ ] Immutable state data class
 - [ ] Sealed event interface
-- [ ] ViewModel processes events, emits state
-- [ ] Compose screens have zero business logic
 - [ ] Unidirectional data flow (events up, state down)
+- [ ] Compose screens have zero business logic
+
+### Features
+- [ ] Package by feature, layer within feature
+- [ ] Koin module per feature
 
 ### DI
 - [ ] All dependencies injected via constructor
