@@ -347,45 +347,52 @@ class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
 
 ViewModels are **thin coordinators**. They receive events, call use cases, and map results to UI state. That's it. If a ViewModel grows beyond ~50 lines of logic (excluding boilerplate), it's a sign that business logic has leaked out of the domain layer.
 
+### One ViewModel per Concern
+
+Each independent concern gets its own ViewModel and state. Don't merge unrelated concerns into a single ViewModel just because they appear on the same screen. A "concern" is a cohesive group of state and behavior — reading Bible text is one concern, navigating books/chapters is another. Composables within a concern share the same ViewModel; they don't each need their own.
+
 ```kotlin
-// BAD: Fat ViewModel with business logic, state management, error handling all interleaved
-class MainViewModel(
-    private val verseRepository: VerseRepository,
-    private val bookRepository: BookRepository
-) : ViewModel() {
-    fun selectChapter(bookId: Int, chapter: Int) {
-        viewModelScope.launch {
-            val book = bookRepository.getById(bookId)       // Data access
-            if (book == null) { /* error handling */ }       // Validation
-            if (chapter > book.chapterCount) { /* ... */ }   // More validation
-            val verses = verseRepository.getChapter(...)     // More data access
-            _state.update { it.copy(                         // State update
-                book = book, chapter = chapter, verses = verses,
-                isDrawerOpen = false                         // UI logic mixed in
-            ) }
-        }
-    }
-    // 15 more methods like this = god object
+// BAD: God ViewModel that owns unrelated concerns
+class MainViewModel(...) : ViewModel() {
+    data class State(
+        // Reading concern
+        val book: Book? = null,
+        val chapter: Int = 1,
+        val verses: List<Verse> = emptyList(),
+        // Navigation concern — independent state lifecycle
+        val isDrawerOpen: Boolean = false,
+        val groups: List<BookGroup> = emptyList(),
+        val expandedBookId: Int? = null,
+    )
+    // 20 methods managing all of the above = god object
 }
 
-// GOOD: Thin ViewModel delegates to use cases
-class MainViewModel(
-    private val getChapter: GetChapterUseCase,
-    private val getBookGroups: GetBookGroupsUseCase
-) : ViewModel() {
-    fun selectChapter(bookId: Int, chapter: Int) {
-        _state.update { it.copy(isDrawerOpen = false) }      // Pure UI state
-        loadChapter(bookId, chapter)                          // Delegates to use case
-    }
+// GOOD: Separate ViewModels per concern, screen coordinates between them
+class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
+    // Reading concern: book, chapter, language, verses, loading, error
+}
 
-    private fun loadChapter(bookId: Int, chapter: Int) {
-        viewModelScope.launch {
-            _state.update { it.copy(isLoadingVerses = true) }
-            getChapter(bookId, chapter, _state.value.language)
-                .onSuccess { verses -> _state.update { it.copy(verses = verses, isLoadingVerses = false) } }
-                .onFailure { error -> _state.update { it.copy(readerError = mapError(error), isLoadingVerses = false) } }
+class DrawerViewModel(private val getBookGroups: GetBookGroupsUseCase) : ViewModel() {
+    // Navigation concern: groups, selected group, expanded book, open/closed
+}
+
+@Composable
+fun BibleScreen(
+    readerViewModel: ReaderViewModel,
+    drawerViewModel: DrawerViewModel
+) {
+    val readerState by readerViewModel.state.collectAsState()
+    val drawerState by drawerViewModel.state.collectAsState()
+
+    // Screen wires cross-concern communication via callbacks
+    DrawerPanel(
+        state = drawerState,
+        onEvent = drawerViewModel::onEvent,
+        onChapterSelected = { bookId, chapter ->
+            readerViewModel.onEvent(ReaderEvent.LoadChapter(bookId, chapter))
         }
-    }
+    )
+    ReaderContent(state = readerState, onEvent = readerViewModel::onEvent)
 }
 ```
 
