@@ -19,16 +19,16 @@ Standards for structuring Kotlin Multiplatform projects with Clean Architecture.
 Three layers with strict dependency direction: Presentation -> Domain <- Data.
 
 ```
-┌──────────────────────────────┐
-│   Presentation (UI)          │  Compose screens, ViewModels, UI state
-│   depends on: Domain         │
-├──────────────────────────────┤
-│   Domain (Business Logic)    │  Use cases, entities, repository interfaces
-│   depends on: nothing        │
-├──────────────────────────────┤
-│   Data (Implementation)      │  Repository impls, DB, API, preferences
-│   depends on: Domain         │
-└──────────────────────────────┘
+┌─────────────────────────┐
+│   Presentation          │  Compose screens, ViewModels, UI state
+│   depends on: Domain    │
+├─────────────────────────┤
+│   Domain (App Logic)    │  Use cases, entities, repository interfaces
+│   depends on: nothing   │
+├─────────────────────────┤
+│   Data                  │  Repository implementations, DB, API, preferences
+│   depends on: Domain    │
+└─────────────────────────┘
 ```
 
 ```kotlin
@@ -123,6 +123,21 @@ feature/
       SearchScreen.kt
     di/SearchModule.kt
 ```
+
+### Naming Conventions
+
+| Component | Pattern | Example |
+|---|---|---|
+| Use case | `{Verb}{Thing}UseCase` | `GetChapterUseCase` |
+| Repository interface | `{Thing}Repository` | `VerseRepository` |
+| Repository impl | `{Thing}RepositoryImpl` | `VerseRepositoryImpl` |
+| ViewModel | `{Feature}ViewModel` | `ReaderViewModel` |
+| State | `{Feature}State` | `ReaderState` |
+| Event | `{Feature}Event` | `ReaderEvent` |
+| DI module | `{feature}Module` (top-level val) | `val readerModule` |
+| SQLDelight | One `.sq` file per table | `ru.sq`, `books.sq` |
+
+Use cases implement `operator fun invoke()` for clean call-site syntax.
 
 ---
 
@@ -396,6 +411,35 @@ fun BibleScreen(
 }
 ```
 
+### Dumb UI Containers
+
+Layout containers (drawers, bottom bars, app bars, sheets) are pure slots. They accept content as composable lambdas and know nothing about domain concepts.
+
+```kotlin
+// BAD: Container knows about domain
+@Composable
+fun AppDrawer(viewModel: DrawerViewModel) {
+    val books = viewModel.books.collectAsState()
+    ModalDrawerSheet {
+        books.value.forEach { BookItem(it) }
+    }
+}
+
+// GOOD: Container is a layout slot
+@Composable
+fun AppScaffold(
+    drawerContent: @Composable () -> Unit,
+    bottomBarContent: @Composable () -> Unit,
+    content: @Composable () -> Unit
+) {
+    ModalNavigationDrawer(
+        drawerContent = { ModalDrawerSheet { drawerContent() } }
+    ) {
+        Scaffold(bottomBar = { bottomBarContent() }) { content() }
+    }
+}
+```
+
 ### Unidirectional Data Flow (UDF)
 
 Events flow up from UI, state flows down from ViewModel.
@@ -632,6 +676,8 @@ navigator.push(ReaderScreen(bookId = 51, chapter = 1))
 ### Presentation
 - [ ] ViewModels are thin coordinators (~50 lines of logic max)
 - [ ] ViewModels call use cases and map results to state — nothing more
+- [ ] One ViewModel per concern, not per screen
+- [ ] UI containers are dumb layout slots — no domain awareness
 - [ ] Immutable state data class
 - [ ] Sealed event interface
 - [ ] Unidirectional data flow (events up, state down)

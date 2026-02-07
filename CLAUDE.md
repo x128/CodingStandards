@@ -4,10 +4,13 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 
 ## Structure
 ```
-CLEAN_CODE.md    # Language-agnostic principles
-KOTLIN.md        # Kotlin/KMP standards
-SWIFT.md         # Swift/iOS standards
-skills/          # Claude Code skills (slash commands)
+CLEAN_CODE.md      # Language-agnostic principles
+KOTLIN.md          # Kotlin/KMP standards
+SWIFT.md           # Swift/iOS standards
+ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
+TESTING.md         # Testing pyramid, conventions, per-layer strategies
+PLATFORMS.md       # KMP platform-specific: test locations, runners, frameworks
+skills/            # Claude Code skills (slash commands)
 ```
 
 ## Contributing Guidelines

@@ -3,14 +3,40 @@
 Standards for writing maintainable, reliable tests in Kotlin Multiplatform projects.
 
 ## Table of Contents
-1. [Test Naming](#test-naming)
-2. [Test Structure](#test-structure)
-3. [Test Independence](#test-independence)
-4. [Fakes Over Mocks](#fakes-over-mocks)
-5. [Per-Layer Testing](#per-layer-testing)
-6. [Flow & ViewModel Testing](#flow--viewmodel-testing)
-7. [Test Data](#test-data)
-8. [What Not to Test](#what-not-to-test)
+1. [Coverage Requirements](#coverage-requirements)
+2. [Test File Conventions](#test-file-conventions)
+3. [Test Naming](#test-naming)
+4. [Test Structure](#test-structure)
+5. [Test Independence](#test-independence)
+6. [Fakes Over Mocks](#fakes-over-mocks)
+7. [Per-Layer Testing](#per-layer-testing)
+8. [Flow & ViewModel Testing](#flow--viewmodel-testing)
+9. [Test Data](#test-data)
+10. [What Not to Test](#what-not-to-test)
+
+---
+
+## Coverage Requirements
+
+Every feature requires tests at all pyramid levels:
+
+| Level | What | Examples |
+|---|---|---|
+| Unit | Individual components in isolation | Use cases, ViewModels, mappers |
+| Integration | Components working together | Repository + real DB, use case + repository, ViewModel + use case |
+| End-to-end | Complete user scenarios | Opening a chapter, switching language |
+
+Every platform the app runs on must have end-to-end tests covering general user scenarios.
+
+See [PLATFORMS.md](PLATFORMS.md) for test locations, runners, and platform-specific frameworks.
+
+---
+
+## Test File Conventions
+
+- Test class naming: `{ClassUnderTest}Test`
+- Fakes: `private class Fake{Interface}` defined inside test files
+- Factory functions: `private fun test{Entity}()` with sensible defaults (see [Test Data](#test-data))
 
 ---
 
@@ -439,6 +465,11 @@ Focus testing effort on:
 - [ ] One concept per test
 - [ ] Tests are independent (no shared mutable state)
 - [ ] Descriptive backtick-quoted test names
+
+### Coverage
+- [ ] Every feature has unit, integration, and end-to-end tests
+- [ ] Every platform has end-to-end tests
+- [ ] Multiple scenarios per level (not just one test per component)
 
 ### Strategy
 - [ ] Domain layer: unit tests with fakes
