@@ -403,6 +403,8 @@ T-001 includes:
    ```markdown
    # ProjectName
 
+   One-sentence project description from the implementation plan.
+
    ## Standards
    Follow `CodingStandards/CLEAN_CODE.md`
    Follow `CodingStandards/KOTLIN.md`
