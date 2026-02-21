@@ -52,22 +52,6 @@ questions — only ones whose answers materially change the plan.
 
 ---
 
-## Step 0.5: Platform-Specific Initialization
-
-If the user chose **Kotlin Multiplatform / Compose Multiplatform**, follow
-[KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) to initialize the project
-before writing the plan. This includes:
-
-- Adding `x128/CodingStandards` as a git submodule
-- Setting up the Gradle wrapper, version catalog, and `gradle.properties`
-- Creating the `composeApp` module with desktop target
-- Verifying with `./gradlew :composeApp:run`
-
-Other platforms: add a corresponding guide (e.g., `TYPESCRIPT.md`,
-`SWIFT_PROJECT.md`) when needed.
-
----
-
 ## Step 1: Write the Implementation Plan
 
 The plan is a **strategy document**. It describes *what* and *why*.
@@ -405,7 +389,48 @@ Same format, descriptions can be shorter.
 
 ---
 
-## Step 4: Ongoing Maintenance
+## Step 4: Project Initialization (T-001)
+
+After the plan and tracker are accepted, **T-001 is always project
+initialization**. This is the first thing executed — before any feature work.
+
+T-001 includes:
+
+1. **Add `x128/CodingStandards` as a git submodule**
+2. **Create `CLAUDE.md`** at the project root, referencing only the
+   CodingStandards documents relevant to this project's stack. Example for
+   a Kotlin/KMP project:
+   ```markdown
+   # ProjectName
+
+   ## Standards
+   Follow `CodingStandards/CLEAN_CODE.md`
+   Follow `CodingStandards/KOTLIN.md`
+   Follow `CodingStandards/ARCHITECTURE.md`
+   Follow `CodingStandards/TESTING.md`
+   Follow `CodingStandards/KOTLIN_MULTIPLATFORM.md`
+
+   ## Skills
+   Follow skills from `CodingStandards/skills/`
+
+   ## Project
+   - Package: `com.example.projectname`
+   - Module: `composeApp` (desktop target)
+   ```
+   Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
+   project). Add project-specific context (package name, modules,
+   constraints) under `## Project`.
+3. **Platform-specific setup** (if applicable):
+   - **KMP/Compose Multiplatform**: follow
+     [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) — Gradle wrapper,
+     version catalog, `gradle.properties`, `composeApp` module, verify with
+     `./gradlew :composeApp:run`
+   - Other platforms: follow the corresponding guide when one exists (e.g.,
+     `TYPESCRIPT.md`, `SWIFT_PROJECT.md`)
+
+---
+
+## Step 5: Ongoing Maintenance
 
 - **New tasks**: next unused ID. Add to both tracker and plan's epic listing.
 - **Cancelled tasks**: `❌ cancelled` with dated comment. Never delete or renumber.
