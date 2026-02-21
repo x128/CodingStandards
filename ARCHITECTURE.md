@@ -263,7 +263,7 @@ class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
 
 ### Domain Entities
 
-Pure data classes with no framework dependencies.
+Pure data classes with no framework dependencies — no `@Entity`, `@Serializable`, or other annotations. When persistence or serialization is needed, create DTO classes at the data/serialization boundary with `toDomain()` / `toDto()` mapping functions. This protects domain evolution from breaking serialized data.
 
 ```kotlin
 // BAD: Domain entity with framework annotations
@@ -274,16 +274,18 @@ data class Verse(
     // ...
 )
 
-// GOOD: Plain data class
-data class Verse(
-    val id: Long,
-    val bookId: Int,
-    val chapter: Int,
-    val verseNumber: Int,
-    val text: String,
-    val alignId: String,
-    val cssClass: String
-)
+// BAD: @Serializable couples domain to serialization format
+@Serializable
+data class Zone(val id: String, val type: ZoneType, ...)
+
+// GOOD: Plain domain class + separate DTO at boundary
+data class Zone(val id: ZoneId, val type: ZoneType, ...)
+
+// DTO (data/serialization layer)
+@Serializable
+data class ZoneDto(val id: String, val type: String, ...)
+fun Zone.toDto() = ZoneDto(id.value, type.name, ...)
+fun ZoneDto.toDomain() = Zone(ZoneId(id), ZoneType.valueOf(type), ...)
 ```
 
 ---
