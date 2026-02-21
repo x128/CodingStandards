@@ -52,6 +52,22 @@ questions — only ones whose answers materially change the plan.
 
 ---
 
+## Step 0.5: Platform-Specific Initialization
+
+If the user chose **Kotlin Multiplatform / Compose Multiplatform**, follow
+[KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) to initialize the project
+before writing the plan. This includes:
+
+- Adding `x128/CodingStandards` as a git submodule
+- Setting up the Gradle wrapper, version catalog, and `gradle.properties`
+- Creating the `composeApp` module with desktop target
+- Verifying with `./gradlew :composeApp:run`
+
+Other platforms: add a corresponding guide (e.g., `TYPESCRIPT.md`,
+`SWIFT_PROJECT.md`) when needed.
+
+---
+
 ## Step 1: Write the Implementation Plan
 
 The plan is a **strategy document**. It describes *what* and *why*.

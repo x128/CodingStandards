@@ -11,7 +11,7 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 | [SWIFT.md](./SWIFT.md) | Swift / iOS coding standards |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Clean Architecture, package organization, presentation patterns |
 | [TESTING.md](./TESTING.md) | Testing pyramid, conventions, per-layer strategies |
-| [PLATFORMS.md](./PLATFORMS.md) | KMP platform-specific: test locations, runners, frameworks |
+| [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) | KMP project init, test locations, runners, frameworks |
 | [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | Product planning process: intake, implementation plans, task trackers |
 
 ## Skills
@@ -52,7 +52,7 @@ Projects/
 │   ├── SWIFT.md
 │   ├── ARCHITECTURE.md
 │   ├── TESTING.md
-│   ├── PLATFORMS.md
+│   ├── KOTLIN_MULTIPLATFORM.md
 │   ├── PLANNING_GUIDE.md
 │   └── skills/
 ├── MyApp/
@@ -93,8 +93,8 @@ Projects/
 - Per-layer test strategies
 - Test naming and structure
 
-### PLATFORMS.md
-- KMP platform-specific guidance
+### KOTLIN_MULTIPLATFORM.md
+- KMP project initialization (submodule, versions, Gradle setup)
 - Test locations and runners
 - Platform frameworks
 

@@ -9,7 +9,7 @@ KOTLIN.md          # Kotlin/KMP standards
 SWIFT.md           # Swift/iOS standards
 ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
 TESTING.md         # Testing pyramid, conventions, per-layer strategies
-PLATFORMS.md       # KMP platform-specific: test locations, runners, frameworks
+KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 skills/            # Claude Code skills (slash commands)
 ```
 
