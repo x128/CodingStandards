@@ -396,8 +396,10 @@ initialization**. This is the first thing executed — before any feature work.
 
 T-001 includes:
 
-1. **Add `x128/CodingStandards` as a git submodule**
-2. **Create `CLAUDE.md`** at the project root, referencing only the
+1. **Agree on the root package name** — use reverse-domain notation
+   (e.g., `com.example.projectname`). Don't assume — ask the user.
+2. **Add `x128/CodingStandards` as a git submodule**
+3. **Create `CLAUDE.md`** at the project root, referencing only the
    CodingStandards documents relevant to this project's stack. Example for
    a Kotlin/KMP project:
    ```markdown
@@ -422,7 +424,7 @@ T-001 includes:
    Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
    project). Add project-specific context (package name, modules,
    constraints) under `## Project`.
-3. **Platform-specific setup** (if applicable):
+4. **Platform-specific setup** (if applicable):
    - **KMP/Compose Multiplatform**: follow
      [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) — Gradle wrapper,
      version catalog, `gradle.properties`, `composeApp` module, verify with
