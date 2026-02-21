@@ -9,6 +9,10 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 | [CLEAN_CODE.md](./CLEAN_CODE.md) | Language-agnostic clean code principles (SOLID, DRY, naming, etc.) |
 | [KOTLIN.md](./KOTLIN.md) | Kotlin / KMP coding standards |
 | [SWIFT.md](./SWIFT.md) | Swift / iOS coding standards |
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | Clean Architecture, package organization, presentation patterns |
+| [TESTING.md](./TESTING.md) | Testing pyramid, conventions, per-layer strategies |
+| [PLATFORMS.md](./PLATFORMS.md) | KMP platform-specific: test locations, runners, frameworks |
+| [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | Product planning process: intake, implementation plans, task trackers |
 
 ## Skills
 
@@ -46,6 +50,10 @@ Projects/
 │   ├── CLEAN_CODE.md
 │   ├── KOTLIN.md
 │   ├── SWIFT.md
+│   ├── ARCHITECTURE.md
+│   ├── TESTING.md
+│   ├── PLATFORMS.md
+│   ├── PLANNING_GUIDE.md
 │   └── skills/
 ├── MyApp/
 │   └── CLAUDE.md        # References ../CodingStandards
@@ -74,3 +82,24 @@ Projects/
 - Collections
 - Testing patterns
 - Summary checklists
+
+### ARCHITECTURE.md
+- Clean Architecture layers
+- Package organization
+- Presentation patterns (MVI/MVVM)
+
+### TESTING.md
+- Testing pyramid and conventions
+- Per-layer test strategies
+- Test naming and structure
+
+### PLATFORMS.md
+- KMP platform-specific guidance
+- Test locations and runners
+- Platform frameworks
+
+### PLANNING_GUIDE.md
+- Intake questions for new products
+- Implementation plan structure and rules
+- Task tracker format and conventions
+- Cross-check and maintenance process
