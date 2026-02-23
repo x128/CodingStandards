@@ -13,6 +13,8 @@ Standards for writing maintainable, reliable tests in Kotlin Multiplatform proje
 8. [Flow & ViewModel Testing](#flow--viewmodel-testing)
 9. [Test Data](#test-data)
 10. [What Not to Test](#what-not-to-test)
+11. [Shared Expensive Resources](#shared-expensive-resources)
+12. [External Dependencies](#external-dependencies)
 
 ---
 
@@ -534,6 +536,88 @@ Focus testing effort on:
 
 ---
 
+## Shared Expensive Resources
+
+Some integration tests need a resource that is slow to create (native engine, database connection pool, ML model). Load it once in a companion object and share across tests.
+
+### Thread-Safe Lazy Init Pattern (JVM)
+
+Examples use JUnit 4 annotations (`@AfterClass`). For JUnit 5, replace with `@AfterAll` (still needs `@JvmStatic`).
+
+```kotlin
+class ExpensiveIntegrationTest {
+    companion object {
+        private val lock = Any()
+        private val lazyEngine by lazy { ExpensiveEngine() }
+        @Volatile
+        private var loaded = false
+
+        @JvmStatic
+        @AfterClass
+        fun tearDown() {
+            if (loaded) runBlocking { lazyEngine.close() }
+        }
+    }
+
+    private fun sharedEngine(): ExpensiveEngine {
+        assumeTrue("Engine unavailable", canCreateEngine())
+        synchronized(lock) {
+            if (!loaded) {
+                runBlocking { lazyEngine.init() }
+                loaded = true
+            }
+        }
+        return lazyEngine
+    }
+}
+```
+
+Key points:
+- `@Volatile` on the flag — visible across threads
+- Dedicated `lock` object — decouples locking from the lazy delegate
+- `synchronized` around check-then-act — prevents double init
+- `sharedEngine()` is not `suspend` — callers wrap in `runBlocking` or `runTest` themselves
+- `@AfterClass` for cleanup — runs after all tests in the class
+- `assumeTrue` to skip gracefully when the resource is unavailable
+
+> **KMP note:** `synchronized` and `@Volatile` are JVM-only. For multiplatform test code, use `kotlinx.coroutines.sync.Mutex` with a `suspend fun` instead. The pattern above targets `desktopTest` / `jvmTest` source sets.
+
+### When to share vs isolate
+
+| Scenario | Strategy |
+|---|---|
+| Read-only resource (ML model, immutable DB) | Share in companion object |
+| Mutable state (writable DB, stateful service) | Fresh instance per test |
+| Expensive + mutable | Share resource, reset state in `@Before` |
+
+---
+
+## External Dependencies
+
+Tests that require files or services not in version control (model files, API keys, external databases) must skip gracefully — never fail CI because a resource is absent.
+
+### Pattern: assumeTrue for Optional Resources
+
+```kotlin
+@Test
+fun `processes model output`() = runTest {
+    val modelPath = findModelPath()
+    assumeTrue("Model file not found. Download to .models/model.gguf", modelPath != null)
+
+    // Test body — only runs when model is present
+}
+```
+
+### Conventions
+
+- Place optional test resources in a gitignored directory (e.g., `.models/`)
+- Extract resource discovery into a shared helper (e.g., `findModelPath()`)
+- Use `assumeTrue` (available in both JUnit 4 and JUnit 5) — test reports as *skipped*, not *failed*
+- Include a helpful message telling the developer how to obtain the resource
+- Never let a missing optional resource break `./gradlew check`
+
+---
+
 ## Summary Checklist
 
 ### Structure
@@ -565,3 +649,9 @@ Focus testing effort on:
 - [ ] Test data uses factory functions with defaults
 - [ ] No fragile timing (no `delay()` in tests)
 - [ ] No tests for trivial/generated code
+
+### Shared Resources & External Dependencies
+- [ ] Expensive shared resources use thread-safe lazy init with `@AfterClass` cleanup
+- [ ] Tests requiring optional files use `assumeTrue` (skip, not fail)
+- [ ] Resource discovery extracted into shared helpers
+- [ ] Missing resource messages tell developers how to obtain them

@@ -366,6 +366,28 @@ Same format, descriptions can be shorter.
 - **User testing**: include protocol inline, one task (not subtasks)
 - **Naming/terminology**: create a dedicated task — naming blocks onboarding
 
+### LLM Integration Test Tasks
+
+When a product includes an LLM component and the plan includes structured output testing, task exit criteria should specify:
+
+**Assertion boundary** — which checks are structural vs semantic:
+- **Structural (hard)**: grammar-enforced guarantees — valid JSON, field presence, enum membership, numeric bounds. These fail CI.
+- **Semantic (soft)**: LLM comprehension quality — choice mapping, intent classification, numeric extraction from natural language, conflict detection. These log warnings for prompt-tuning review.
+
+> Rule of thumb: if a constrained-decoding grammar (GBNF, JSON-Schema, etc.) could guarantee the property, hard-assert it. If it depends on the LLM "understanding" something, soft-assert it.
+
+**Model capability expectations** — document in the task or linked from it:
+- Target model name, size, and quantization (e.g., Qwen2.5-3B Q4_K_M)
+- Tolerance ranges for numeric extraction (e.g., ±2 on boundary values)
+- Expected accuracy for enum/status inference (e.g., ~80–90% for indirect phrasing)
+- Known weak areas (e.g., multi-step arithmetic, conflict detection)
+
+**Coupling matrix** — each LLM mode requires a matched set of system prompt + grammar + response DTO (Data Transfer Object). The task should list which modes are covered and reference the source files.
+
+**Soft assertion mechanism** — the task should specify how soft failures are reported (e.g., stderr warnings, a dedicated log file) and which future task reviews them for prompt refinement.
+
+See `TESTING.md` §Shared Expensive Resources for the implementation pattern (thread-safe lazy init, `assumeTrue` skip for missing models).
+
 ---
 
 ## Step 3: Cross-Check
