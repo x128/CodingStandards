@@ -10,6 +10,7 @@ Reusable skills (slash commands) for Claude Code that enforce clean code princip
 | [refactor](./refactor.md) | `/refactor` | Guided refactoring with patterns |
 | [test](./test.md) | `/test` | Test generation with best practices |
 | [document](./document.md) | `/document` | Documentation generation |
+| [theory](./theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
 
 ## Setup
 
@@ -86,6 +87,15 @@ Add to `~/.claude/settings.json`:
 
 # Architecture overview
 /document --architecture
+```
+
+### Theoretical Foundation
+```bash
+# Generate THEORY.md for the project
+/theory
+
+# Focus on a subsystem
+/theory src/solver/
 ```
 
 ## Integration with Standards

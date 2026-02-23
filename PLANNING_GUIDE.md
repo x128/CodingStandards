@@ -208,6 +208,9 @@ Include at least one metric about user behaviour.
   decision will be made
 - **Success metrics**: every metric must be a number or binary outcome
 - **No week numbers** in epic names
+- **Theoretical foundation** (ML/AI projects): generate THEORY.md via
+  `/theory` skill, add the key correspondences to CLAUDE.md under
+  `## Theoretical Foundation`
 
 ---
 
