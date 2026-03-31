@@ -13,6 +13,15 @@ KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 skills/            # Claude Code skills (slash commands)
 ```
 
+## Handling Review Feedback
+
+Reviewers — human or AI — find issues. They don't have your full context. Treat every review comment as a pointer to a problem, not as an instruction to follow. The reviewer identifies the issue, you own the fix.
+
+- The problem is real; the suggested fix often isn't
+- Think before changing anything — does the fix contradict the project direction? Does it make things worse?
+- The right fix might be different from what was suggested — a new task, an architecture change, or a different edit entirely
+- Never apply a suggestion you don't fully understand
+
 ## Contributing Guidelines
 
 ### Standards Documents
