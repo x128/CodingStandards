@@ -539,6 +539,53 @@ private fun ReaderContent(
 }
 ```
 
+### Structured Controls vs LLM Parsing
+
+Two approaches to capturing user input:
+
+**Structured controls** (buttons, sliders, dropdowns, toggles, editable lists) — use when the input domain is known at design time. The control constrains valid inputs directly — no parsing needed, no ambiguity possible.
+
+**LLM parsing** (natural language → structured data) — use when input is genuinely unstructured: external feedback, free-form documents, pasted third-party text.
+
+Default to structured controls. Only reach for LLM parsing when you cannot define the input domain at design time.
+
+#### Control selection
+
+| Input type | Control |
+|---|---|
+| Enumerated choice | Buttons, dropdown, radio group |
+| Bounded number | Slider, stepper, number field with bounds |
+| Boolean | Toggle, checkbox |
+| Collection | Editable list, chips |
+| Bounded range | Dual-handle slider, two number fields |
+
+When user intent maps to a known set of actions, capture it with a direct control. This eliminates ambiguity and removes the need for a parsing layer between user and system.
+
+#### When LLM parsing is appropriate
+
+- Importing external feedback (architect/builder/family reviews as pasted text)
+- Analyzing free-form documents
+- Processing pasted text from third parties
+- Any input where the domain cannot be enumerated at design time
+
+```kotlin
+// BAD: "Open or closed kitchen?" as a text field —
+// user types "open", "yes", "the first one", "doesn't matter"…
+// now you need a parser to map free text to two known options.
+TextField(
+    value = answer,
+    onValueChange = { answer = it },
+    label = { Text("Open or closed kitchen?") }
+)
+val style = llmParser.parseKitchenStyle(answer) // fragile, slow, ambiguous
+
+// GOOD: Known options presented directly — no parsing, no LLM
+Row {
+    Button(onClick = { onEvent(SetKitchenStyle(OPEN)) }) { Text("Open") }
+    Button(onClick = { onEvent(SetKitchenStyle(CLOSED)) }) { Text("Closed") }
+}
+```
+
 ---
 
 ## Dependency Injection
