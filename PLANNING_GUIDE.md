@@ -3,7 +3,10 @@
 > How to go from a raw idea to a well-structured implementation plan and task
 > tracker. This guide captures the process, rules, and formatting conventions.
 
-**Follow steps 0–5 in order. Report which step you are on as you progress.**
+**Follow steps 0–4 in order. Report which step you are on as you progress.
+Planning produces: implementation plan, task tracker, CLAUDE.md, and
+CodingStandards submodule. After Step 4 the planning process is complete.
+Task execution starts with T-001.**
 
 ---
 
@@ -361,6 +364,10 @@ in **Shares context with** — the blocking relation implies shared context.
 
 **No week or time estimates.** Epics provide sequencing, not scheduling.
 
+**T-001 is always project initialization.** Its description should reference
+the relevant platform-specific guide from CodingStandards for setup
+instructions (e.g., `KOTLIN_MULTIPLATFORM.md` for KMP projects).
+
 ### Epic Rules
 
 Epics are thematic groups, not phases. Name as noun phrases:
@@ -426,12 +433,9 @@ See `TESTING.md` §Shared Expensive Resources for the implementation pattern (th
 
 ---
 
-## Step 4: Project Initialization (T-001)
+## Step 4: Project Artifacts
 
-After the plan and tracker are accepted, **T-001 is always project
-initialization**. This is the first thing executed — before any feature work.
-
-T-001 includes:
+Create the project-level artifacts that complete the planning process.
 
 1. **Agree on the root package name** — use reverse-domain notation
    (e.g., `com.example.projectname`). Don't assume — ask the user.
@@ -461,17 +465,14 @@ T-001 includes:
    Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
    project). Add project-specific context (package name, modules,
    constraints) under `## Project`.
-4. **Platform-specific setup** (if applicable):
-   - **KMP/Compose Multiplatform**: follow
-     [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) — Gradle wrapper,
-     version catalog, `gradle.properties`, `composeApp` module, verify with
-     `./gradlew :composeApp:run`
-   - Other platforms: follow the corresponding guide when one exists (e.g.,
-     `TYPESCRIPT.md`, `SWIFT_PROJECT.md`)
+
+**Planning is now complete.** The artifacts are: implementation plan, task
+tracker, CLAUDE.md, and CodingStandards submodule. Task execution starts
+with T-001.
 
 ---
 
-## Step 5: Ongoing Maintenance
+## Ongoing Maintenance
 
 - **New tasks**: next unused ID. Add to both tracker and plan's epic listing.
 - **Cancelled tasks**: `❌ cancelled` with dated comment. Never delete or renumber.
