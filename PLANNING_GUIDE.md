@@ -3,6 +3,8 @@
 > How to go from a raw idea to a well-structured implementation plan and task
 > tracker. This guide captures the process, rules, and formatting conventions.
 
+**Follow steps 0–5 in order. Report which step you are on as you progress.**
+
 ---
 
 ## Step 0: Intake Questions
