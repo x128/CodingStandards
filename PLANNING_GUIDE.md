@@ -316,6 +316,9 @@ Measurable exit criteria:
 - **Epic**: Post-MVP: [Theme]
 
 Description (can be shorter for post-MVP).
+
+Measurable exit criteria:
+- ✅ Verifiable fact
 ```
 
 ### Task Format Reference
