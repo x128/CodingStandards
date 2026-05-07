@@ -195,7 +195,8 @@ System diagram (ASCII), component descriptions, key interfaces.
 |--------|--------|
 | ... | (number or binary outcome) |
 
-Include at least one metric about user behaviour.
+Targets must be grounded in domain knowledge, industry benchmarks, or
+experience — not invented. Revise iteratively as real usage data comes in.
 ```
 
 ### Plan Rules
@@ -206,7 +207,11 @@ Include at least one metric about user behaviour.
   by epic. Post-MVP uses `F-NNN`. No descriptions here.
 - **Decisions log**: pre-populate TBDs, reference the task where each
   decision will be made
-- **Success metrics**: every metric must be a number or binary outcome
+- **Success metrics**: grounded in real data. If no analytics exist yet,
+  replace this section with a task reference
+- **Research**: always include a Research epic. Populate based on what's
+  relevant: domain research, competitor analysis, market research (target
+  audience, pricing, distribution)
 - **No week numbers** in epic names
 - **Theoretical foundation** (ML/AI projects): generate THEORY.md via
   `/theory` skill, add the key correspondences to CLAUDE.md under
@@ -342,6 +347,8 @@ Measurable exit criteria:
 3. **Blocked by** — those must be done before this
 
 Each reference on its own indented line, always ID + title.
+If a task already appears in **Blocks** or **Blocked by**, do not also list it
+in **Shares context with** — the blocking relation implies shared context.
 
 **Exit criteria**: every task needs ≥1 verifiable criterion.
 
