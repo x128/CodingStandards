@@ -147,6 +147,8 @@ xcuserdata/
 Uncomment the targets your project needs:
 
 ```kotlin
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
@@ -238,6 +240,165 @@ kotlin {
 Copy `gradlew`, `gradlew.bat`, and `gradle/wrapper/` from an existing
 project. No global `gradle` is installed — bootstrap from an existing wrapper.
 
+### iOS Xcode Project
+
+Name the `.xcodeproj` after the app (e.g., `SimpleStories.xcodeproj`), not
+`iosApp.xcodeproj`. Use objectVersion 77 (Xcode 16+,
+`PBXFileSystemSynchronizedRootGroup`).
+
+Directory structure inside `iosApp/`:
+
+```
+iosApp/
+├── {App}.xcodeproj/
+├── App/                    # Swift sources (sync group)
+│   ├── AppDelegate.swift
+│   └── SceneDelegate.swift
+├── Assets/                 # Asset catalogs (sync group)
+│   └── Assets.xcassets/
+└── Info.plist
+```
+
+#### Swift entry point
+
+UIKit AppDelegate + SceneDelegate in separate files.
+
+`App/AppDelegate.swift`:
+
+```swift
+import UIKit
+
+@main
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+    }
+}
+```
+
+`App/SceneDelegate.swift`:
+
+```swift
+import UIKit
+import ComposeApp
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
+    var window: UIWindow?
+
+    func scene(
+        _ scene: UIScene,
+        willConnectTo session: UISceneSession,
+        options connectionOptions: UIScene.ConnectionOptions
+    ) {
+        guard let windowScene = scene as? UIWindowScene else { return }
+        window = UIWindow(windowScene: windowScene)
+        window?.rootViewController = MainViewControllerKt.MainViewController()
+        window?.makeKeyAndVisible()
+    }
+}
+```
+
+#### Info.plist
+
+Place at `iosApp/Info.plist` (NOT inside the sync group — avoids "Multiple
+commands produce Info.plist" error):
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
+    <key>UILaunchScreen</key>
+    <dict/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+        <key>UISceneConfigurations</key>
+        <dict>
+            <key>UIWindowSceneSessionRoleApplication</key>
+            <array>
+                <dict>
+                    <key>UISceneConfigurationName</key>
+                    <string>Default Configuration</string>
+                    <key>UISceneDelegateClassName</key>
+                    <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+                </dict>
+            </array>
+        </dict>
+    </dict>
+</dict>
+</plist>
+```
+
+#### Key build settings (target level)
+
+| Setting | Value |
+|---------|-------|
+| `PRODUCT_NAME` | `$(TARGET_NAME)` |
+| `GENERATE_INFOPLIST_FILE` | `YES` |
+| `INFOPLIST_FILE` | `Info.plist` |
+| `ENABLE_USER_SCRIPT_SANDBOXING` | `NO` |
+| `IPHONEOS_DEPLOYMENT_TARGET` | `15.0` (Compose 1.7.1 Skia minimum) |
+
+#### SDK-conditional framework search paths
+
+Use SDK-conditional settings so only the relevant platform path is active.
+Avoids "search path not found" warnings:
+
+```
+FRAMEWORK_SEARCH_PATHS[sdk=iphonesimulator*] = $(SRCROOT)/../composeApp/build/bin/iosSimulatorArm64/{config}Framework
+FRAMEWORK_SEARCH_PATHS[sdk=iphoneos*] = $(SRCROOT)/../composeApp/build/bin/iosArm64/{config}Framework
+```
+
+Where `{config}` = `debug` or `release` per build configuration.
+
+#### Build KMP Framework script phase
+
+Runs before Sources. Set `alwaysOutOfDate = 1` (no output dependencies).
+Only `iosSimulatorArm64` and `iosArm64` — no `iosX64`:
+
+```sh
+cd "$SRCROOT/.."
+
+export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home}"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+if [ "$CONFIGURATION" = "Debug" ]; then
+    CONFIG="Debug"
+else
+    CONFIG="Release"
+fi
+
+if [ "$PLATFORM_NAME" = "iphonesimulator" ]; then
+    TASK="link${CONFIG}FrameworkIosSimulatorArm64"
+else
+    TASK="link${CONFIG}FrameworkIosArm64"
+fi
+
+./gradlew :composeApp:$TASK
+```
+
+#### Gotcha: simulator caches scene configuration
+
+When switching between scene-based and non-scene app lifecycle, **delete the
+app from the simulator** before rebuilding. iOS caches the old scene
+configuration and the new one won't take effect.
+
 ### Verification
 
 After setup, verify compilation on all active targets:
@@ -250,7 +411,7 @@ After setup, verify compilation on all active targets:
 ./gradlew :composeApp:assembleDebug
 
 # Desktop (when enabled)
-# ./gradlew :composeApp:run
+# ./gradlew :composeApp:compileKotlinDesktop
 ```
 
 ---
