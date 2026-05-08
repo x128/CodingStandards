@@ -36,7 +36,7 @@ Follow `CodingStandards/KOTLIN_MULTIPLATFORM.md`
 
 ### Proven Version Set
 
-These versions are tested and known to work together (updated 2026-02-21):
+These versions are tested and known to work together (updated 2026-05-08):
 
 | Component | Version |
 |-----------|---------|
@@ -45,6 +45,10 @@ These versions are tested and known to work together (updated 2026-02-21):
 | Gradle | 8.13 |
 | AGP | 8.5.2 |
 | JDK (build) | 17 |
+
+> **Note on newer versions**: Kotlin 2.1.20 / Compose 1.8.2 work for
+> desktop-only projects but raise the minimum iOS deployment target. Use
+> the versions above for iOS compatibility.
 
 > **JDK 25 workaround**: macOS Homebrew installs JDK 25 as default, but
 > Gradle doesn't support it. Pin JDK 17 in `gradle.properties` (see below).
@@ -61,6 +65,9 @@ org.gradle.caching=true
 
 # Kotlin
 kotlin.code.style=official
+
+# Android
+android.useAndroidX=true
 ```
 
 ### gradle/libs.versions.toml
@@ -72,6 +79,10 @@ Start with the minimum — add libraries as tasks require them:
 kotlin = "2.0.21"
 compose-multiplatform = "1.7.1"
 agp = "8.5.2"
+activity-compose = "1.9.3"
+
+[libraries]
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
 
 [plugins]
 kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
@@ -82,7 +93,8 @@ androidApplication = { id = "com.android.application", version.ref = "agp" }
 
 ### Project Structure
 
-Desktop-first. Android/iOS source sets exist but are not wired until needed.
+Target priority is project-specific. Wire the targets your project needs;
+comment out the rest.
 
 ```
 project/
@@ -91,9 +103,12 @@ project/
 │   ├── build.gradle.kts
 │   └── src/
 │       ├── commonMain/kotlin/    # shared UI and logic
-│       ├── desktopMain/kotlin/   # desktop entry point
-│       ├── androidMain/kotlin/   # empty until wired
-│       └── iosMain/kotlin/       # empty until wired
+│       ├── iosMain/kotlin/       # iOS entry point
+│       ├── androidMain/          # Android manifest + activity
+│       │   ├── AndroidManifest.xml
+│       │   └── kotlin/
+│       └── desktopMain/kotlin/   # desktop entry point (when enabled)
+├── iosApp/                       # Xcode project (when needed)
 ├── build.gradle.kts              # root — plugins apply false
 ├── settings.gradle.kts
 ├── gradle.properties
@@ -114,33 +129,58 @@ project/
 .DS_Store
 build/
 local.properties
+
+# Xcode
+*.xcuserdata
+*.xcworkspace
+DerivedData/
+Pods/
+xcuserdata/
+
+# Kotlin/Native
+*.klib
+*.knm
 ```
 
 ### composeApp/build.gradle.kts
 
-Desktop target only; Android/iOS commented out for future wiring:
+Uncomment the targets your project needs:
 
 ```kotlin
-import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    // alias(libs.plugins.androidApplication)
 }
 
 kotlin {
-    jvm("desktop")
+    // Android target (uncomment when needed)
+    // androidTarget {
+    //     compilations.all {
+    //         compileTaskProvider.configure {
+    //             compilerOptions {
+    //                 jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    //             }
+    //         }
+    //     }
+    // }
 
-    // Android and iOS targets configured but not wired yet
-    // androidTarget()
-    // iosX64()
-    // iosArm64()
-    // iosSimulatorArm64()
+    // iOS targets (uncomment when needed)
+    // listOf(
+    //     iosArm64(),
+    //     iosSimulatorArm64()
+    // ).forEach { iosTarget ->
+    //     iosTarget.binaries.framework {
+    //         baseName = "ComposeApp"
+    //         isStatic = true
+    //     }
+    // }
+
+    // Desktop target (uncomment when needed)
+    // jvm("desktop")
 
     sourceSets {
-        val desktopMain by getting
-
         commonMain.dependencies {
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -149,40 +189,69 @@ kotlin {
             implementation(compose.components.resources)
         }
 
-        desktopMain.dependencies {
-            implementation(compose.desktop.currentOs)
-        }
+        // androidMain.dependencies {
+        //     implementation(compose.preview)
+        //     implementation(libs.activity.compose)
+        // }
+
+        // val desktopMain by getting
+        // desktopMain.dependencies {
+        //     implementation(compose.desktop.currentOs)
+        // }
     }
 }
 
-compose.desktop {
-    application {
-        mainClass = "com.example.app.MainKt"
+// Android configuration (uncomment when needed)
+// android {
+//     namespace = "com.example.app"
+//     compileSdk = 35
+//
+//     defaultConfig {
+//         applicationId = "com.example.app"
+//         minSdk = 24
+//         targetSdk = 35
+//         versionCode = 1
+//         versionName = "1.0.0"
+//     }
+//
+//     compileOptions {
+//         sourceCompatibility = JavaVersion.VERSION_17
+//         targetCompatibility = JavaVersion.VERSION_17
+//     }
+// }
 
-        nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
-            packageName = "AppName"
-            packageVersion = "1.0.0"
-        }
-    }
-}
+// Desktop configuration (uncomment when needed)
+// compose.desktop {
+//     application {
+//         mainClass = "com.example.app.MainKt"
+//         nativeDistributions {
+//             targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
+//             packageName = "AppName"
+//             packageVersion = "1.0.0"
+//         }
+//     }
+// }
 ```
 
 ### Gradle Wrapper
 
-Copy `gradlew`, `gradlew.bat`, and `gradle/wrapper/gradle-wrapper.jar` from
-an existing project or download from the
-[Gradle releases](https://gradle.org/releases/) page.
+Copy `gradlew`, `gradlew.bat`, and `gradle/wrapper/` from an existing
+project. No global `gradle` is installed — bootstrap from an existing wrapper.
 
 ### Verification
 
-After setup, the following must pass:
+After setup, verify compilation on all active targets:
 
 ```bash
-./gradlew :composeApp:run
-```
+# iOS
+./gradlew :composeApp:compileKotlinIosSimulatorArm64
 
-This should launch a desktop window with placeholder UI.
+# Android
+./gradlew :composeApp:assembleDebug
+
+# Desktop (when enabled)
+# ./gradlew :composeApp:run
+```
 
 ---
 
