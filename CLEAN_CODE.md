@@ -61,6 +61,39 @@ fetchClient()
 fetchAccount()
 ```
 
+### No Abbreviations
+
+Use full words in all identifiers — classes, functions, variables, modules,
+packages, file names, document titles. If a concept has a recognized full
+name, spell it out.
+
+```
+// BAD: Abbreviated names
+cfg
+btn
+nav
+msg
+doc
+ctrl
+mgr
+repo
+
+// GOOD: Full names
+config
+button
+navigation
+message
+document
+controller
+manager
+repository
+```
+
+Abbreviations that are industry-standard terms in their own right are fine:
+`URL`, `HTTP`, `JSON`, `PDF`, `HTML`, `API`, `ID`, `iOS`. The test: would
+a colleague type the full expansion in conversation? Nobody says "Uniform
+Resource Locator" — so `URL` is the real name, not an abbreviation.
+
 ### Avoid Encodings
 
 ```
@@ -988,6 +1021,7 @@ test_update_changesUserName() {
 - [ ] Names reveal intent
 - [ ] Uses domain vocabulary
 - [ ] Consistent terminology
+- [ ] No abbreviations — full words everywhere
 - [ ] No encodings or prefixes
 - [ ] Searchable (no magic numbers)
 
