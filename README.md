@@ -13,6 +13,7 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 | [TESTING.md](./TESTING.md) | Testing pyramid, conventions, per-layer strategies |
 | [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) | KMP project init, test locations, runners, frameworks |
 | [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | Product planning process: intake, implementation plans, task trackers |
+| [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md) | Task execution workflow: one task at a time, review and commit cycle |
 
 ## Skills
 
@@ -103,3 +104,8 @@ Projects/
 - Implementation plan structure and rules
 - Task tracker format and conventions
 - Cross-check and maintenance process
+
+### EXECUTION_GUIDE.md
+- One task at a time — never batch
+- Review and commit cycle per task
+- User controls commits

@@ -468,7 +468,7 @@ Create the project-level artifacts that complete the planning process.
 
 **Planning is now complete.** The artifacts are: implementation plan, task
 tracker, CLAUDE.md, and CodingStandards submodule. Task execution starts
-with T-001.
+with T-001. See `EXECUTION_GUIDE.md` for the task execution workflow.
 
 ---
 

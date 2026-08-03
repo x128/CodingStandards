@@ -10,6 +10,7 @@ SWIFT.md           # Swift/iOS standards
 ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
 TESTING.md         # Testing pyramid, conventions, per-layer strategies
 KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
+EXECUTION_GUIDE.md # Task execution workflow: one at a time, review, commit
 skills/            # Claude Code skills (slash commands)
 ```
 
