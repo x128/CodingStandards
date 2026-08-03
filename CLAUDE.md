@@ -10,9 +10,23 @@ SWIFT.md           # Swift/iOS standards
 ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
 TESTING.md         # Testing pyramid, conventions, per-layer strategies
 KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
-EXECUTION_GUIDE.md # Task execution workflow: one at a time, review, commit
+EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
+TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
+MAINTAINER_TRAINING.md # Teaching the maintainer: which findings matter, when not to ask
 skills/            # Claude Code skills (slash commands)
+templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 ```
+
+Language-specific standards (KOTLIN.md, SWIFT.md) are per-stack. Everything
+else — including the review pipeline — is language-agnostic by design: only
+`templates/review/project/gates.sh` knows what language a project is written in.
+
+This repo is consumed as a submodule at `CodingStandards/`. Templates are split
+by ownership: `templates/review/lib/` runs from the submodule and is never
+copied or edited by host projects; `templates/review/project/` and
+`templates/agents/` are copied out into `.review/` and `.claude/agents/` and
+belong to the host project from then on. When adding to `templates/`, decide
+which side a file is on — shared and identical everywhere, or project-specific.
 
 ## Handling Review Feedback
 

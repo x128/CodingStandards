@@ -1,0 +1,19 @@
+{
+  "id": "T-014",
+  "title": "Reject truncated packet headers",
+  "category": "bugfix",
+  "scope": [
+    "src/parser/*",
+    "tests/parser/*"
+  ],
+  "exit_criteria": [
+    {
+      "text": "parse() returns an error instead of panicking on headers shorter than 5 bytes",
+      "verified_by": "cargo test parser::rejects_short_header"
+    },
+    {
+      "text": "no remaining unchecked indexing in the header path",
+      "verified_by": "manual: read every index expression in src/parser/header.rs; all are bounds-checked or preceded by a length guard"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Maintainer verdicts",
+  "description": "Output contract for the maintainer's triage job. Exactly one verdict per input finding.",
+  "type": "object",
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "finding_id": {
+            "type": "string",
+            "pattern": "^F-[0-9]{3}$"
+          },
+          "verdict": {
+            "enum": ["accept", "reject", "escalate"]
+          },
+          "severity": {
+            "enum": ["blocker", "major", "minor", "nit"],
+            "description": "The maintainer's severity, which may differ from the reviewer's. Derived from the matched policy rule's level."
+          },
+          "decision_rule": {
+            "enum": [
+              "contradicts-green-gate",
+              "confirmed-by-red-gate",
+              "policy-rule",
+              "replication",
+              "out-of-task-scope",
+              "unproven-possible",
+              "needs-human-judgment"
+            ],
+            "description": "Which decision rule from TASK_LOOP.md fired. First match wins."
+          },
+          "policy_rule": {
+            "type": "string",
+            "description": "Rule id from REVIEW_POLICY.md when decision_rule is policy-rule, e.g. R-011"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 10,
+            "description": "One or two sentences, at least 10 characters. Must reference the gate result or policy rule that decided it. A one-word reason is rejected and the whole run fails."
+          }
+        },
+        "required": ["finding_id", "verdict", "severity", "decision_rule", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["verdicts"],
+  "additionalProperties": false
+}

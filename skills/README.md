@@ -6,11 +6,13 @@ Reusable skills (slash commands) for Claude Code that enforce clean code princip
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
-| [review](./review.md) | `/review` | Code review against clean code standards |
+| [review](./review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
 | [refactor](./refactor.md) | `/refactor` | Guided refactoring with patterns |
 | [test](./test.md) | `/test` | Test generation with best practices |
 | [document](./document.md) | `/document` | Documentation generation |
 | [theory](./theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
+| [maintain](./maintain.md) | `/maintain` | Run or set up the task loop: review, land, advance |
+| [policy](./policy.md) | `/policy` | Turn a disagreement with the maintainer into a rule |
 
 ## Setup
 

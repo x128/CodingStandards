@@ -1,0 +1,16 @@
+[
+  {
+    "finding_id": "F-007",
+    "resolution": "deferred",
+    "note": "Third inline header parse — real, and worth fixing. Filed as T-031 to extract a parser; not blocking this task.",
+    "by": "human",
+    "ts": "2026-08-06T10:12:00Z"
+  },
+  {
+    "finding_id": "F-009",
+    "resolution": "accepted-as-is",
+    "note": "The direct HTTP call is deliberate here: this path must not depend on the repository layer. Rule R-007 added so it stops escalating.",
+    "by": "human",
+    "ts": "2026-08-06T10:14:00Z"
+  }
+]

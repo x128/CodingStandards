@@ -20,7 +20,7 @@ Multiplatform projects targeting Desktop, Android, and iOS.
 Every new project adds this repo as a git submodule:
 
 ```bash
-git submodule add git@github.com:x128/CodingStandards.git CodingStandards
+git submodule add https://github.com/x128/CodingStandards.git CodingStandards
 ```
 
 The project's `CLAUDE.md` then references the standards:

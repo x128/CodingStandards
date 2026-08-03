@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review findings",
+  "description": "Strict output contract for the reviewer (Layer 2). Free-form prose is not accepted.",
+  "type": "object",
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable id within this run, e.g. F-001. Must be unique across the findings array — number them in sequence. A repeated id fails the whole run, not just the duplicate.",
+            "pattern": "^F-[0-9]{3}$"
+          },
+          "file": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Repository-relative path, exactly as it appears in the diff"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-indexed line in the post-change file"
+          },
+          "code_quote": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Verbatim source at that line. Verified against the file; a quote found elsewhere is relocated, a quote found nowhere is dropped."
+          },
+          "category": {
+            "enum": ["bug", "security", "perf", "arch", "replication", "style", "nit"]
+          },
+          "severity": {
+            "enum": ["blocker", "major", "minor", "nit"],
+            "description": "Derived from the violated rule's level: MUST=blocker, SHOULD=major, MAY=minor"
+          },
+          "rule_violated": {
+            "type": "string",
+            "description": "Pointer to the rule: REVIEW_POLICY.md R-011, CLEAN_CODE.md#naming, lint rule id"
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "description": "For bug/security/perf: concrete input to wrong output, or a failing test. For style/arch: the quoted rule. Never a restatement of the code."
+          },
+          "reproducible": {
+            "type": "boolean",
+            "description": "True only if evidence is a concrete counterexample or a failing test"
+          },
+          "confidence": {
+            "enum": ["confirmed", "likely", "possible"],
+            "description": "confirmed = proven by execution or an exact rule match; possible = pattern match only"
+          },
+          "suggested_fix": {
+            "type": "string",
+            "description": "Optional, one sentence. The reviewer does not write patches."
+          }
+        },
+        "required": [
+          "id",
+          "file",
+          "line",
+          "code_quote",
+          "category",
+          "severity",
+          "evidence",
+          "confidence"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["findings"],
+  "additionalProperties": false
+}
