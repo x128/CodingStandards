@@ -445,7 +445,13 @@ them is still only in the conversation.
 Create the project-level artifacts that complete the planning process.
 
 1. **Agree on the root package name** — use reverse-domain notation
-   (e.g., `com.example.projectname`). Don't assume — ask the user.
+   (e.g., `com.example.projectname`). Ask outright and wait; this is the one
+   thing in Step 4 worth blocking on.
+
+   **Never derive an owner's identifier** — package, bundle ID, domain, account —
+   from a submodule or remote URL, the repo folder name, or `git config`. Offering
+   a guess as a ready-made option is the same mistake as writing one: it reads as
+   already established, and it propagates into signing and every import.
 2. **Add `x128/CodingStandards` as a git submodule**
 3. **Create `CLAUDE.md`** at the project root, referencing only the
    CodingStandards documents relevant to this project's stack. Example for

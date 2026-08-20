@@ -16,6 +16,12 @@ same mistake comes back tomorrow.
 A file in git is the only place it survives. That is the whole reason this
 document exists.
 
+**"Remembered" is not a place.** Assistant-side memory — a memory directory, a
+`MEMORY.md`, any store the tool writes on its own — sits on one machine, outside
+git. A rule put there is gone on the next clone, and the session that wrote it
+acts as though the correction is handled. Never record a correction there, and
+never offer to.
+
 ---
 
 ## What to do when the user says something is wrong
