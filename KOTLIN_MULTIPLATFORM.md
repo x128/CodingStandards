@@ -50,16 +50,41 @@ These versions are tested and known to work together (updated 2026-05-08):
 > desktop-only projects but raise the minimum iOS deployment target. Use
 > the versions above for iOS compatibility.
 
-> **JDK 25 workaround**: macOS Homebrew installs JDK 25 as default, but
-> Gradle doesn't support it. Pin JDK 17 in `gradle.properties` (see below).
-> Install with `brew install openjdk@17` if missing.
+> **Pin the build JDK — but pin two separate things, separately.** Conflating
+> them is why this bites.
+>
+> **What compiles the code**: `kotlin { jvmToolchain(17) }` in the build script.
+> Portable, committed, identical on every machine and in CI. Add it as soon as
+> the project has a JVM or Android target — on an iOS-only project there is no
+> JVM compilation to pin, and declaring one just asks Gradle to resolve a
+> toolchain it may not find (Homebrew's keg-only JDKs are invisible to
+> auto-detection without the caveat symlink).
+>
+> **What Gradle itself runs on**: the daemon's JVM — which a toolchain cannot
+> change, because Gradle has to start before it reads your build script. Gradle
+> supports new JDKs only after a lag, and Homebrew's default `openjdk` tracks
+> the newest release (26 as of 2026-08), so the build dies before configuration
+> with an opaque error: the bare version string, `* What went wrong: 26.0.2`,
+> no mention of Java. Set `JAVA_HOME`, or `org.gradle.java.home` in
+> `~/.gradle/gradle.properties`.
+>
+> **Never commit `org.gradle.java.home`.** Its value is an absolute path —
+> `/opt/homebrew/opt/openjdk@17/…` on Apple Silicon, `/usr/local/…` on Intel,
+> different again on Linux CI — so committing it trades a broken build on one
+> machine for a broken build on every other one. It is a local override, and
+> local overrides live in `~/.gradle/gradle.properties`.
+>
+> `brew install openjdk@17` only if it is genuinely absent — a machine that
+> builds any other KMP project already has it. Homebrew keeps JDKs keg-only, so
+> unless the caveat's symlink into `/Library/Java/JavaVirtualMachines` was
+> created, `/usr/libexec/java_home -V` will not list them; its silence is not
+> evidence of absence.
 
 ### gradle.properties
 
 ```properties
 # Gradle
 org.gradle.jvmargs=-Xmx2048M -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options\="-Xmx2048M"
-org.gradle.java.home=/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
 org.gradle.parallel=true
 org.gradle.caching=true
 
@@ -157,6 +182,10 @@ plugins {
 }
 
 kotlin {
+    // Uncomment together with any JVM or Android target — this is what
+    // compiles the code. It does not set the JDK Gradle itself runs on.
+    // jvmToolchain(17)
+
     // Android target (uncomment when needed)
     // androidTarget {
     //     compilations.all {
@@ -375,7 +404,33 @@ Only `iosSimulatorArm64` and `iosArm64` — no `iosX64`:
 ```sh
 cd "$SRCROOT/.."
 
-export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home}"
+# Xcode build phases inherit almost no environment, so the JDK has to be found
+# here. Try candidates and fail loudly — a single hardcoded path is committed
+# breakage on every machine that is not the one it was written on.
+#
+# Test the version, not just that some java exists: an inherited JAVA_HOME
+# pointing at Homebrew's default (newest) JDK is the common case, and it is
+# exactly what Gradle cannot start on.
+is_jdk17() {
+    [ -x "$1/bin/java" ] || return 1
+    "$1/bin/java" -version 2>&1 | head -1 | grep -q '"17[."]'
+}
+
+if ! is_jdk17 "$JAVA_HOME"; then
+    for candidate in \
+        "$(/usr/libexec/java_home -v 17 2>/dev/null)" \
+        /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home \
+        /usr/local/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home
+    do
+        if is_jdk17 "$candidate"; then JAVA_HOME="$candidate"; break; fi
+    done
+fi
+is_jdk17 "$JAVA_HOME" || {
+    echo "error: no JDK 17 (JAVA_HOME=${JAVA_HOME:-unset})." >&2
+    echo "       Set JAVA_HOME to a 17, or: brew install openjdk@17" >&2
+    exit 1
+}
+export JAVA_HOME
 export PATH="$JAVA_HOME/bin:$PATH"
 
 if [ "$CONFIGURATION" = "Debug" ]; then

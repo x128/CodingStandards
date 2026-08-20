@@ -22,6 +22,16 @@ This repo is a submodule at `CodingStandards/`. **Never write inside it.**
    `go.mod`, `build.gradle.kts`, `pyproject.toml`, `Package.swift`, …) and the
    project's `CLAUDE.md`. Ask the user only what you cannot determine.
 
+   **Read this stack's own setup section before touching any toolchain** —
+   `KOTLIN_MULTIPLATFORM.md` for KMP, the equivalent elsewhere. When a gate does
+   not run at all, the likeliest cause is a documented setup step this project
+   skipped, not a tool missing from the machine: check the standard, then a
+   sibling project on the same machine, and only then consider installing
+   something. Installing first turns a one-line project fix into a change to the
+   user's machine — and package managers remove unrelated things on the way back
+   out. A project that fails where its siblings build has deviated from them;
+   find the deviation.
+
 2. **Copy the project-owned templates**:
    `CodingStandards/templates/review/project/.` → `.review/`, and
    `CodingStandards/templates/agents/*.md` → `.claude/agents/`. Rename
@@ -75,6 +85,12 @@ want it in the history as its own unit, it is task work.
    `💡 to-do` from the tracker. Confirm with the user if the tracker is
    ambiguous.
 
+   **No tracker at all is not an ambiguity — it is a stop.** The loop has no
+   input: no scope to check the diff against, no exit criteria for landing
+   condition 7, and no way to tell unbuilt work from broken work. Do not
+   improvise a task. Say the tracker is missing and go to
+   [PLANNING_GUIDE.md](../PLANNING_GUIDE.md) Steps 1–2 first.
+
 2. **Write `.review/current-task.json`** from the tracker entry: `id`, `title`,
    `category`, `scope` (path globs the work may touch), `exit_criteria`. Format:
    `templates/review/project/task.example.json`. It lives at that fixed path,
@@ -93,9 +109,9 @@ want it in the history as its own unit, it is task work.
    - **deviate** — this case is genuinely different; say why
 
    Never fold the refactor into this task: it breaks the scope contract and
-   buries a structural change in a feature diff. Two instances are not a
-   trigger; three are
-   ([MAINTAINER_TRAINING.md § Replication](../MAINTAINER_TRAINING.md#replication-the-executor-copies-what-is-already-there)).
+   buries a structural change in a feature diff. Report the instances and let
+   the user schedule it — whether to refactor now is their call, not a count
+   that fires on its own ([skills/review.md](./review.md) § Replication).
 
 4. **Do the work** (or delegate to an executor session). Stay inside the scope.
    If the work genuinely needs a file outside it, stop: that is a scope change
@@ -168,7 +184,7 @@ want it in the history as its own unit, it is task work.
    re-created and re-answered each time. The durable record is what makes the
    answer a label you can learn from — one line with the task, the finding's
    quote, the resolution and the reason. A recurring escalation answered the
-   same way three times is a `/policy` rule waiting to be written.
+   same way, again and again, is a `/policy` rule waiting to be written.
 
 8. **Fill in the exit criteria evidence** in `.review/current-task.json`: each criterion needs a
    `verified_by` naming the test that proves it, or `manual: <what you actually
@@ -190,10 +206,12 @@ want it in the history as its own unit, it is task work.
    review. With `LANDING=off` it prints the commit command instead; relay it to
    the user verbatim.
 
-10. **Log the task boundary** — one line in `.review/decisions/tasks.jsonl`,
-   including `would_have_advanced` (what the current thresholds would have done)
-   even while `ADVANCE=ask`. This is the shadow data that later earns autonomy;
-   skipping it means the loop never learns. Format:
+10. **Log the task boundary** — one line in `.review/decisions/tasks.jsonl`:
+   the signals, what was decided, and what the user actually said. It is the
+   record `/policy --trace` walks back through when a symptom surfaces later.
+   Do not add a prediction of what you would have advanced, and do not keep a
+   score of quiet tasks — the user decides when a category stops being shown
+   ([MAINTAINER_TRAINING.md](../MAINTAINER_TRAINING.md)). Format:
    `templates/review/project/decisions/tasks.example.jsonl`.
 
 11. **Advance or stop**, per `.review/land.conf`:

@@ -554,29 +554,31 @@ right, that is enough.
 
 ### The goal: learn when not to ask
 
-**Your silence is training data.** A task you accepted with no remarks is a
-labeled example: work of this shape did not need your attention. Enough of those
-in one category and the maintainer can stop asking about that category.
+**Your silence is evidence, not a verdict.** A task you accepted with no
+remarks says work of this shape did not need your attention. It is the reason
+you might one day stop asking about that category — and the deciding is still
+yours to do, in `land.conf`.
 
 The decision is *not* "is this code good" — gates and review already answered
 that. It is "is this task trivial enough that a human would have nothing to
 say". That judgment runs on deterministic signals — diff size, paths touched,
 findings raised, rounds used, whether behaviour changed without a test, the task
-category, and your history in those paths. The signal table lives in
-[MAINTAINER_TRAINING.md § Signals, not vibes](./MAINTAINER_TRAINING.md#signals-not-vibes)
-and is not repeated here: two copies of it had already drifted apart.
+category, and your history in those paths. That sentence is the whole list —
+there is no table elsewhere, and no score derived from it.
 
-`ADVANCE=auto` unlocks per-category, never globally: the maintainer advances
-without asking only inside categories with a proven record, and asks about
-everything else. `MAINTAINER_TRAINING.md` covers the thresholds, the metric that
-governs them (precision of auto-advance — of the tasks it did not show you, how
-many you would have objected to), and the rollback rule.
+`ADVANCE=auto` unlocks per-category, never globally, and **only you unlock it**:
+you name a category in `ADVANCE_CATEGORIES` because you have decided you no
+longer want to see it. Nothing measures its way in. The maintainer may say it
+thinks a category has gone quiet; adding the line is your edit
+([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) § Never decide whether the
+user looks). Rollback is not a calculation either: one task you should have
+seen, and the category goes back to `ask`.
 
-### The asymmetry that sets the thresholds
+### The asymmetry that should make you slow to unlock
 
 Asking too often costs you a few seconds. Advancing past a task you should have
-seen costs a defect that nobody looked at, buried under later commits. Set the
-thresholds accordingly: conservative, per-category, and reverting to `ask` the
+seen costs a defect that nobody looked at, buried under later commits. Unlock
+accordingly: one category at a time, never a risk path, and back to `ask` the
 moment you object to something that was auto-advanced.
 
 ---
@@ -592,7 +594,7 @@ So the pipeline splits by ownership:
 
 | Part | Lives in | Edited | Why there |
 |------|----------|--------|-----------|
-| `run.sh`, `land.sh`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` in particular must not be widened by a project |
+| `run.sh`, `land.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` in particular must not be widened by a project |
 | `gates.sh` | project — `.review/` | Always | Encodes the stack — the one language-specific file |
 | `REVIEW_POLICY.md` | project — `.review/` | Constantly | Your taste, this codebase |
 | `land.conf` | project — `.review/` | Rarely | Landing and advancing switches |
@@ -606,6 +608,7 @@ my-project/
 │       ├── lib/                         # runs from here
 │       │   ├── run.sh                   # one review pass (gates, review, triage)
 │       │   ├── land.sh                  # the only thing that commits
+│       │   ├── triage.py                # you answer findings — terminal or browser
 │       │   ├── prompts/{reviewer,maintainer}.md
 │       │   └── schemas/*.json
 │       └── project/                     # copied once into .review/

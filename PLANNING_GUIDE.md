@@ -222,6 +222,9 @@ experience — not invented. Revise iteratively as real usage data comes in.
   `/theory` skill, add the key correspondences to CLAUDE.md under
   `## Theoretical Foundation`
 
+**Write it to `IMPLEMENTATION_PLAN.md` at the project root before moving on.**
+Step 4 explains why this is the step that gets skipped and what it costs.
+
 ---
 
 ## Step 2: Write the Task Tracker
@@ -407,6 +410,10 @@ When a product includes an LLM component and the plan includes structured output
 
 See `TESTING.md` §Shared Expensive Resources for the implementation pattern (thread-safe lazy init, `assumeTrue` skip for missing models).
 
+**Write it to `TASK_TRACKER.md` at the project root before moving on.** Step 3
+cross-checks two files against each other; it has nothing to check if either of
+them is still only in the conversation.
+
 ---
 
 ## Step 3: Cross-Check
@@ -465,6 +472,27 @@ Create the project-level artifacts that complete the planning process.
    Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
    project). Add project-specific context (package name, modules,
    constraints) under `## Project`.
+
+4. **Commit the plan, the tracker, and `CLAUDE.md` before a line of product code
+   exists.** The plan and the tracker are the first commit.
+
+   **The failure to guard against is planning that never leaves the
+   conversation.** Steps 0–3 can be run entirely in dialogue: the questions get
+   asked, the answers are good, a complete plan takes shape, `CLAUDE.md` gets
+   written from it, and the code starts. The plan is real to everyone present —
+   and it is gone when the session ends. Nothing was forgotten or dropped; it
+   was simply never a file. **A plan that exists only in a session's context
+   does not exist.**
+
+   What survives is a `CLAUDE.md` listing features nobody built, and no record
+   anywhere of whether they were cut, deferred, or just not reached yet. The
+   next person — or the next session — cannot tell a defect from unstarted
+   work, and will report the second as the first.
+
+   If you find a project in that state (`CLAUDE.md` and code, no plan, no
+   tracker), reconstruct Steps 1–2 from what was built before doing anything
+   else, and treat `CLAUDE.md`'s feature list as the surviving evidence of what
+   was intended.
 
 **Planning is now complete.** The artifacts are: implementation plan, task
 tracker, CLAUDE.md, and CodingStandards submodule. Task execution starts

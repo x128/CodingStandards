@@ -12,6 +12,7 @@ templates/
 │   ├── lib/        RUNS FROM THE SUBMODULE — never copy, never edit
 │   │   ├── run.sh          one review pass
 │   │   ├── land.sh         the only thing that commits
+│   │   ├── triage.py       the user answers findings — terminal or browser
 │   │   ├── prompts/{reviewer,maintainer}.md
 │   │   └── schemas/*.json
 │   └── project/    COPY ONCE into <host>/.review/ — yours to edit forever

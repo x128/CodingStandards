@@ -72,8 +72,14 @@ user's to read, not yours to clean. Staging is part of how the user reviews
 work: `git add` on their behalf empties `git diff` and destroys the review
 they were about to do.
 
-If a write operation is needed, put the command in the response and let the
-user run it. Do not offer to run it yourself.
+**Do not hand over the command either.** `git add …` or `git commit -m …`
+pasted into a reply is blind: the user cannot see from it what would be staged
+or what would land, and a stray keystroke runs it. It also assumes they commit
+from a terminal.
+
+Say what changed instead — which files, and what is in each — and stop there.
+They commit in their own tool, where staging is visible before it happens.
+Print a git command only when they ask for one.
 
 ### The one exception: `land.sh`
 
@@ -97,9 +103,33 @@ the maintainer commits and the user reviews **the finished task** — what
 changed, what the review found, what was rejected and why.
 
 The unit of review differs; the authority does not. The user, never the agent,
-decides that a task is genuinely done and that work may continue. The maintainer may only stop asking for a category
-of task after that category has earned it, measured
-([MAINTAINER_TRAINING.md § Track B](./MAINTAINER_TRAINING.md#track-b-when-not-to-ask)).
+decides that a task is genuinely done and that work may continue. The maintainer
+may only stop asking for a category of task when the user has said so — nothing
+measures its way out of asking
+([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md)).
+
+### Reporting to the user
+
+- **Frame the report in the user's request**, never in the pipeline's steps.
+- **Never invent step numbers** (`0a`, `1b`), and never use a word from your own
+  documents unexpanded: `Layer 0`, `gate`, `round`, `threshold`, `landing`,
+  `advance`, `hunt`. The user has not read them.
+- **Prerequisites are one blocker line, not a plan.** Never renumber the user's
+  work behind your own setup.
+- **Rank by what blocks the product, and state the ranking.** A list with no
+  named worst item is not a report. *No tests* outranks any individual defect:
+  untested code cannot be shown fixed, so every other repair is unverifiable.
+- **Never name a group with a word that is not the thing.** "Debt", "junk",
+  "misc", "structure", "other" name your filing system, not the reader's
+  problem — name the consequence instead.
+- **Give the verdict, not just the inventory.** For every item say whether you
+  think it should be fixed, and why. Handing over an unranked list is refusing
+  the judgment the user asked for.
+- **A diagram may show the process, never its output.** The loop is worth
+  drawing; a list of findings is not — that goes to the triage tool
+  ([skills/review.md](./skills/review.md)).
+- Before sending, check: reading only this, can the user say what changed in
+  their product and what you think they should do first?
 
 ### No moving on without confirmation
 

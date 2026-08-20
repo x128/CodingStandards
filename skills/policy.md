@@ -1,9 +1,11 @@
 # Policy Skill
 
-Record a disagreement with the maintainer and turn it into a rule or a
-threshold. This is how the maintainer learns your judgment.
+Record a disagreement with the maintainer and turn it into a rule. This is how
+the maintainer learns your judgment.
 
-Reference: [MAINTAINER_TRAINING.md](../MAINTAINER_TRAINING.md).
+Reference: [MAINTAINER_TRAINING.md](../MAINTAINER_TRAINING.md) — in particular
+the two limits it sets on this skill: a rejected finding never becomes a rule,
+and nothing here counts or scores anything.
 
 ## Instructions
 
@@ -12,9 +14,15 @@ at before writing anything.
 
 | You said | Track | Goes into |
 |----------|-------|-----------|
-| "that finding was real" / "stop flagging this" | A — findings | `REVIEW_POLICY.md` |
-| "you should have shown me this task" / "don't ask me about these" | B — advancing | `land.conf` |
+| "that finding was real" | A — findings | `REVIEW_POLICY.md` |
+| "you should have shown me this task" | B — advancing | `land.conf` |
 | any Track C trigger fires (see below) | C — attribution | wherever it entered |
+
+**"Stop flagging this" is not on that list.** A rejection usually means *not
+yet* — the finding is real and the project is not ready for it. Writing a rule
+that suppresses it makes a temporary answer permanent, and the file grows every
+time the review is used. Record why it was rejected, and leave the reviewer
+looking.
 
 Either way, do the **double commit**: fix the outcome *and* fix the thing that
 produced it.
@@ -60,6 +68,8 @@ produced it.
 
 ### Track B: the advance decision was wrong
 
+Only one direction of this is yours to act on.
+
 1. **Identify the task record** in `.review/decisions/tasks.jsonl`.
 
 2. **Which way was it wrong?**
@@ -67,16 +77,17 @@ produced it.
      Revert that category to `ask` immediately: remove it from
      `ADVANCE_CATEGORIES` in `.review/land.conf`. If the task touched a path
      that should never advance silently, add it to `RISK_PATHS`.
-   - **Asked about something trivial** — the cheap direction. Do nothing yet.
-     One data point is not a threshold change; the shadow metric decides when a
-     category is ready.
+   - **Asked about something trivial** — the cheap direction, and the end of it.
+     Say you think the category is quiet. Do not propose unlocking it, and do
+     not start a tally of the times the user had no objection: whether they go
+     on looking is theirs to decide, and adding a category to
+     `ADVANCE_CATEGORIES` is an edit they make
+     ([MAINTAINER_TRAINING.md](../MAINTAINER_TRAINING.md) § Never decide whether
+     the user looks).
 
-3. **Update the record** with the actual outcome so the shadow metric stays
-   honest. Never rewrite history to make the numbers look better — a wrong
-   `would_have_advanced` is the most valuable row in the file.
-
-4. **Report the effect on the metric**: how many clean samples that category now
-   has, and what it needs before it can be unlocked again.
+3. **Update the record** with the actual outcome. Never rewrite history to make
+   a past decision look better — a task that should have been shown is the most
+   valuable row in the file.
 
 ### Track C: the symptom is here, it was introduced earlier — `--trace`
 
@@ -85,10 +96,10 @@ produced it.
 - The user objects to a finished task and the thing they object to is **not in
   that task's diff**
 - The user asks to refactor code the pipeline itself wrote
-- The same finding was rejected as `out-of-task-scope` **three times** in one
-  area — the reviewer keeps pointing at something no task owns
-- One policy rule fired in the same area in three consecutive tasks — the policy
-  is compensating for the code instead of the code being fixed
+- The reviewer keeps rejecting the same finding as `out-of-task-scope` in one
+  area — it is pointing at something no task owns
+- One policy rule keeps firing in the same area — the policy is compensating for
+  the code instead of the code being fixed
 - A `replication` finding names a pattern the pipeline introduced
 
 Do not write a rule about the symptom. Find where it entered.
@@ -118,9 +129,9 @@ Do not write a rule about the symptom. Find where it entered.
    `templates/review/project/decisions/tasks.example.jsonl`. Its `cause` field
    is the highest-value text in the log; write it for someone hitting this in
    six months.
-7. **Re-check unlocked categories.** If a retracted task was one of the samples
-   that unlocked a category, that category returns to `ask` — it was unlocked on
-   evidence that did not hold.
+7. **Re-check unlocked categories.** If the retracted task was in a category
+   listed in `ADVANCE_CATEGORIES`, remove it: that category was advancing
+   silently past work of a kind that turned out to need eyes.
 
 Report the chain you walked, where it entered, and what changed as a result.
 
@@ -129,9 +140,9 @@ Report the chain you walked, where it entered, and what changed as a result.
 - `--prune`: read `REVIEW_POLICY.md` and report rules that never fired,
   duplicates, and anything a linter could enforce. Propose deletions; do not
   delete without confirmation.
-- `--eval`: score the maintainer against the golden set — agreement rate,
-  blocker recall, and auto-advance precision on the shadow predictions. Report
-  the numbers and whether any of them regressed.
+- `--eval`: run the maintainer over the golden set and report every case where
+  its verdict differs from yours, with the rule that fired. Cases, not a score —
+  a number tells you nothing about which judgment to fix.
 
 ### Rules
 
@@ -140,9 +151,9 @@ Report the chain you walked, where it entered, and what changed as a result.
   for.
 - Never write inside the `CodingStandards/` submodule. Everything this skill
   touches lives in the project's `.review/`.
-- A disagreement with no rule and no threshold change will recur. Either write
+- A disagreement that produced no rule will recur. Either write
   it down or record explicitly why it is a one-off.
-- Policy, threshold, and prompt changes are code changes: commit them like code
+- Policy and prompt changes are code changes: commit them like code
   ([EXECUTION_GUIDE.md](../EXECUTION_GUIDE.md)).
 
 ## Allowed Prompts
@@ -157,8 +168,8 @@ Report the chain you walked, where it entered, and what changed as a result.
 ```
 /policy                          # record the last disagreement
 /policy F-003 was a real bug     # a specific finding verdict (Track A)
-/policy T-021 needed my eyes     # a wrong advance decision (Track B)
+/policy T-021 needed my eyes     # advanced past something you needed (Track B)
 /policy --trace "every caller re-parses the header"   # attribute a symptom (Track C)
 /policy --prune                  # unused, duplicate, and lintable rules
-/policy --eval                   # score the maintainer against the golden set
+/policy --eval                   # where the maintainer differs from the golden set
 ```

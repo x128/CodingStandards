@@ -44,8 +44,10 @@ history as its own unit, treat it as task work.
 
 These are constraints on **you**, not on them:
 
-- Don't run a mutating git command. `land.sh` is the pipeline's only write path;
-  outside it, print the command and let the user run it.
+- Don't run a mutating git command, and don't paste one for the user to run
+  either. `land.sh` is the pipeline's only write path; outside it, say what
+  changed and let them commit in their own tool. Print a git command only when
+  they ask for one.
 - Don't silently skip a step and present the result as a completed loop run. Say
   what ran and what did not.
 - Don't work around a landing refusal. It names the condition that failed —

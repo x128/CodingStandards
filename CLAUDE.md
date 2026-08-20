@@ -4,6 +4,7 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 
 ## Structure
 ```
+PLANNING_GUIDE.md  # FIRST: intake, implementation plan, task tracker — before any code
 CLEAN_CODE.md      # Language-agnostic principles
 KOTLIN.md          # Kotlin/KMP standards
 SWIFT.md           # Swift/iOS standards
@@ -12,7 +13,7 @@ TESTING.md         # Testing pyramid, conventions, per-layer strategies
 KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
 TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
-MAINTAINER_TRAINING.md # Teaching the maintainer: which findings matter, when not to ask
+MAINTAINER_TRAINING.md # How a correction becomes a rule, and which file it goes in
 skills/            # Claude Code skills (slash commands)
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 ```

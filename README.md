@@ -6,16 +6,16 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 
 | Document | Description |
 |----------|-------------|
+| [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | **First.** Product planning: intake, implementation plan, task tracker — before any code |
 | [CLEAN_CODE.md](./CLEAN_CODE.md) | Language-agnostic clean code principles (SOLID, DRY, naming, etc.) |
 | [KOTLIN.md](./KOTLIN.md) | Kotlin / KMP coding standards |
 | [SWIFT.md](./SWIFT.md) | Swift / iOS coding standards |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Clean Architecture, package organization, presentation patterns |
 | [TESTING.md](./TESTING.md) | Testing pyramid, conventions, per-layer strategies |
 | [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) | KMP project init, test locations, runners, frameworks |
-| [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | Product planning process: intake, implementation plans, task trackers |
 | [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md) | Rules for getting a task from to-do to committed — whoever does the work |
 | [TASK_LOOP.md](./TASK_LOOP.md) | The machine that runs task work: gates, executor, reviewer, maintainer, landing, advancing |
-| [MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) | Teaching the maintainer: which findings matter, and when not to ask you |
+| [MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) | How a correction becomes a rule, and which file it goes in |
 
 ## Skills
 
@@ -37,7 +37,7 @@ Copy-and-fill starting points, not documentation:
 
 | Template | Copy to | Purpose |
 |----------|---------|---------|
-| [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing script, prompts, schemas. Never copied, never edited |
+| [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing script, `triage.py`, prompts, schemas. Never copied, never edited |
 | [templates/review/project/](./templates/review/project/) | `.review/` | Gates, policy, landing config, decision logs — yours to edit |
 | [templates/agents/](./templates/agents/) | `.claude/agents/` | `diff-reviewer` and `maintainer` subagents |
 
@@ -69,34 +69,45 @@ loop in one pass:
 Read CodingStandards/CLAUDE.md and CodingStandards/TASK_LOOP.md, then set this
 project up to use those standards.
 
-1. Write this project's CLAUDE.md, referencing the standards by submodule path:
+1. Follow PLANNING_GUIDE.md Steps 0-3 first: ask me the intake questions, then
+   write IMPLEMENTATION_PLAN.md and TASK_TRACKER.md. If I say the plan already
+   exists, show me the file.
+2. Write this project's CLAUDE.md, referencing the standards by submodule path:
    CLEAN_CODE.md, ARCHITECTURE.md, TESTING.md, and the language standard for
    this stack (KOTLIN.md or SWIFT.md). If there is no standard for this
    language, say so plainly and use the language-agnostic three.
-2. Run /maintain --init to set up the review loop: detect the stack, fill in
+3. Run /maintain --init to set up the review loop: detect the stack, fill in
    .review/gates.sh, wire permissions, and install the routing block.
+4. Stop and give me the command to commit the plan, the tracker and CLAUDE.md.
+   That is this project's first commit, and no feature code is in it.
 
-Report back: the five gate commands, the risk paths, any gate slot you could not
-fill and why, and confirmation that the routing block is in CLAUDE.md. Do not
-write any feature code yet.
+Report back: the plan and tracker paths, the five gate commands, the risk paths,
+any gate slot you could not fill and why, and confirmation that the routing
+block is in CLAUDE.md. Do not write any feature code yet.
 ```
 
-Two things in that prompt are load-bearing. **The routing block** is what makes
-later requests run the loop instead of ad-hoc edits — a setup that skips it
-leaves a pipeline nobody invokes. **"Do not write any feature code yet"** keeps
-setup from sliding into implementation before you have looked at the gates.
+Three things in that prompt are load-bearing. **Step 1 comes first and produces
+files** — planning that stays in the conversation leaves nothing for the loop or
+a later reviewer to read ([PLANNING_GUIDE.md](./PLANNING_GUIDE.md) Steps 1–2).
+**The routing block** is what makes later requests run the loop instead of
+ad-hoc edits — a setup that skips it leaves a pipeline nobody invokes. **"Do not
+write any feature code yet"** keeps setup from sliding into implementation
+before you have looked at the gates.
 
 Landing starts at `LANDING=off` on purpose: the loop runs end to end and prints
 the commit instead of making it. Turn it on in `.review/land.conf` once you have
 watched a few refusals behave.
 
-### If the project is a new product, not just a new repo
+### If the code already exists
 
-Plan before there are tasks to run:
+An inherited repo, or one built before these standards, has no plan and no
+tracker — so nothing can tell a defect from work never started. Reconstruct the
+intent before reviewing or running the loop:
 
 ```text
-Follow CodingStandards/PLANNING_GUIDE.md. Ask me the intake questions first,
-then write the implementation plan and the task tracker. No code yet.
+Follow CodingStandards/PLANNING_GUIDE.md Steps 1-2, reconstructing the plan and
+the tracker from the existing code and CLAUDE.md. Ask me about anything the code
+does not settle. No code changes yet.
 ```
 
 ### Running work after setup
@@ -183,6 +194,7 @@ MyApp/
 - One task at a time — never batch
 - Git is read-only, with one delegated exception
 - The task boundary and the definition of done belong to the user
+- Reporting: the user's terms, ranked by what blocks the product, findings in a file
 
 ### TASK_LOOP.md
 - What it is built on: execution rules, review, gates — none of which it replaces
@@ -195,10 +207,9 @@ MyApp/
 - Advancing: when the maintainer may take the next task without asking
 
 ### MAINTAINER_TRAINING.md
-- Track A — which findings matter: decision log, policy rules, double commit
-- Track B — when not to ask: task-boundary signals, shadow metric, unlocking
-- Delayed feedback: provisional vs confirmed acceptance, retraction
-- Replication: the third-occurrence trigger — refactor before the task, not after
-- Attribution: concrete triggers for tracing a symptom to the task that introduced it
-- Eval loop: agreement rate, blocker recall, auto-advance precision
-- Prompt optimization, and why fine-tuning is usually the wrong tool
+- Why a correction has to be a file in git, not something a session remembers
+- File it by the moment it happens, not by its topic — the table of moments
+- What is never recorded: rejected findings, counts, thresholds
+- The user is not an agent: nothing decides whether they look
+- The two calls on a review: is it about the right thing, is anything left
+- This project's rule versus the standard, and what it takes to move up
