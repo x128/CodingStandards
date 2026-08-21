@@ -149,6 +149,7 @@ project/
 ```gitignore
 *.iml
 .gradle
+.kotlin/
 .idea
 .claude/settings.local.json
 .DS_Store
