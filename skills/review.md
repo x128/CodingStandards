@@ -167,13 +167,115 @@ Schema is in the script's docstring; the fields that carry the judgment:
 | `where` | `path/File.kt:42`, several allowed — the tool opens the real file at that line, so never copy code into the finding. A name it cannot find in the project is shown as unresolved, so prefer repo-relative paths |
 | `see` | what the user would observe — lead with this |
 | `why` | the mechanism; `file:line` is evidence, not the explanation |
-| `fix` | what to change, and how far it reaches |
-| `call` | your recommendation and its reason — a list the user cannot decide from is the work handed back to them |
-| `group` | the consequence: "silent data loss", "does nothing when tapped", "not built yet". Never a category like "bugs" or "style" — the hunts are how you searched, not how the reader decides |
+| `fix` | how to fix it, in prose — written when there is one way forward, and left out when the options carry it themselves |
+| `options` | what can be done about it — see below. This is the finding's whole answer space, and writing it is the work |
 
-`decision` is the user's answer — leave it null. They set it to `fix`, `skip` or
-`discuss` and press the finish button, which closes the tool. Then start on the
-`fix` ones and bring each `discuss` back as a question.
+### Options
+
+Each option is `{"id", "do", "why"?, "advised"?}` and becomes one keyed row in
+the tool. `do` says what happens when it is pressed, in this finding's own
+words; `why` is the price or the consequence, one line; `advised` marks your
+recommendation.
+
+```json
+"options": [
+  {"id": "fix-now", "do": "Turn edge-to-edge on — enableEdgeToEdge() in MainActivity",
+                    "why": "the shell is written in T-002 anyway, cheaper now"},
+  {"id": "refuse",  "do": "Decide against it, write the reason into the decision log",
+                    "why": "then it is settled and stops coming back every review"},
+  {"id": "note-t002", "do": "Note on T-002, decide there",
+                      "why": "both of the above are shell work that does not exist yet",
+                      "advised": true}]
+```
+
+- **`do` is an act, never a category.** "Defer", "later", "wontfix" name a
+  bucket; a month on, nobody can tell what was agreed to. "Note on T-002" they
+  can.
+- **"A, or else B" is two options.** This is the mistake that matters: one
+  option holding a fork looks answered, and the file records a decision the user
+  never made — the choice quietly comes back to you, and they never see it
+  happen. If you write "or", split the row.
+- **Fixing now and fixing later are both fixes.** So are "write it down and stop
+  thinking about it" and "decide against it on purpose". None of these is a
+  skip.
+- **Two or three, never five.** They sit side by side and get read together, so
+  every row costs attention.
+- **One way forward is not a choice — it is an action.** Then `do` is the verb
+  and nothing more, and the fix is described in `fix`, a paragraph shown above
+  the buttons:
+
+  ```json
+  {"fix": "Кнопка «Назад» на экране файла не перехватывается, и система закрывает приложение. Вернуть обработчик в навигации, чтобы «Назад» уводил на список файлов, из которого файл был открыт.",
+   "options": [{"id": "fix", "do": "Починить"}]}
+  ```
+
+  The tool then draws three plain buttons — Починить · Пропустить · Обсудить —
+  with the explanation above them where it can be read, and the keys are `f`,
+  `s`, `d`. There is no "1", because picking one out of one is not a choice. Do
+  not push the description onto the button: it becomes an unreadable label, and
+  the section that should have carried it is missing. With several options there
+  is no `fix` section — each one carries its own words, and the keys are the
+  numbers.
+- **`advised` is a mark, not a default.** No key takes the recommendation
+  blindly; the user still presses that option's own number.
+
+### Write it as sentences, not as a headline
+
+The option is the entire basis for the decision. Someone who has not read the
+code has to be able to read it and know what will happen. Compressing it into
+three words does not make it faster to read — it makes it unreadable, and then
+the finding is worth nothing no matter how right it was.
+
+BAD — words in a row that do not add up to a meaning:
+
+```json
+{"do": "Заметка в T-002, решать там",
+ "why": "это работа по каркасу, которой ещё нет"}
+```
+
+What note, about what? Why there? What scaffolding — is someone building a
+house? Every word has been replaced by a shorter one until nothing is left.
+
+GOOD — the same decision, written out:
+
+```json
+{"do": "Не чинить сейчас, а записать в задачу T-002, что при запуске приложения экран мигает белым",
+ "why": "T-002 всё равно переписывает запуск и трогает те же файлы, так что там это чинится заодно. Если не записать — забудется, и мигание найдут заново через полгода."}
+```
+
+- **Say what happens, in full.** "Записать в T-002, что экран мигает белым", not
+  "заметка в T-002".
+- **No metaphors for code.** No scaffolding, no plumbing, no skeletons. Name the
+  thing that exists: the file, the screen, the task.
+- **No jargon the language does not have.** Транслитерация английского термина —
+  не русский язык, and a reader who has to decode the word is not deciding.
+- **`why` is the price and the consequence**, in whole sentences: what it costs
+  now, and what it costs later if this one is chosen.
+- **Length is not the problem. Unreadability is.** Two full sentences that land
+  beat six words that do not.
+
+The same goes for `see` and `why` on the finding itself. The tool gives every
+one of these room to be a paragraph.
+
+Skip and Ask are always available and stand apart from the table — never put
+them in `options`. Both mean nothing gets done about the finding, which is not
+one of the things that can be done about it.
+
+Set `lang` at the top of the file (`"ru"`, `"en"`) so the screen speaks the same
+language the findings do.
+
+There are no groups and no headings: the list is read top to bottom in the order
+you write it, so put the finding that matters most first. A heading over a
+section of findings names a bucket the reader never asked about, and the first
+one gets read as the title of the whole review.
+
+`decision` and `note` are the user's — leave `decision` null and omit `note`.
+They press an option's number, or `s`, or `d`, and can add a comment to any
+answer; the finish button closes the tool, and asks first if anything is still
+unanswered. Then carry out the option each finding was answered with, and bring
+each `discuss` back as a question. Read every comment: it is the only thing in
+the file they wrote themselves, and it is there because the button did not say
+everything they wanted to say.
 
 ### Rules
 
