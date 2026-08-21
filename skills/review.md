@@ -277,6 +277,14 @@ each `discuss` back as a question. Read every comment: it is the only thing in
 the file they wrote themselves, and it is there because the button did not say
 everything they wanted to say.
 
+### Then write the commit message
+
+A review reshapes the change, so its one line can only be written after the
+findings are answered. Imperative, no period, plain text — never `git commit -m`
+([EXECUTION_GUIDE.md § Git is read-only](../EXECUTION_GUIDE.md#git-is-read-only)).
+Say what the change does, not that it fixed five findings. Unrelated changes are
+separate commits and separate lines. In the loop `land.sh` writes it from the task.
+
 ### Rules
 
 - **Report what you find; never decide what is worth reporting.** A review that
