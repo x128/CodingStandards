@@ -446,8 +446,16 @@ else
     TASK="link${CONFIG}FrameworkIosArm64"
 fi
 
-./gradlew :composeApp:$TASK
+./gradlew :composeApp:$TASK :composeApp:syncComposeResourcesForIos
 ```
+
+#### Gotcha: Compose resources do not reach the .app on their own
+
+`syncComposeResourcesForIos` is what copies `composeResources` into the app
+bundle. Linking the framework does not. Drop it and everything still builds
+green — the app then dies at runtime on `MissingResourceException` pointing at a
+`compose-resources/` path that was never created. Keep it in the phase from the
+start, not from the first resource.
 
 #### Gotcha: simulator caches scene configuration
 
