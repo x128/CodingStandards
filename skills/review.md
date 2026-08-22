@@ -84,34 +84,87 @@ So the brief is always four specific hunts, in this order:
 
 ### Output
 
+Findings go one of two ways: into the findings file, which the triage tool
+opens, or — when that tool cannot be reached — into the reply itself. Never a
+mixture, and never loose prose. Both carry the same two things for every
+finding: what is wrong, and the options for what to do about it.
+
+**Which way depends on where the user is sitting, never on how many findings
+there are.** One finding and forty go the same way. The old rule counted them,
+and counting was the wrong question.
+
+The tool serves a page on `127.0.0.1` of the machine the review runs on. Someone
+at that machine opens it. Someone driving the session from a phone cannot: there
+is no browser on the other end of the chat and no terminal to run a command in.
+For them the page does not exist, and a reply saying "opened in the browser"
+hands them nothing at all.
+
+**The file is the default, and it is never a question.** The session runs on
+someone's machine, that machine has a screen, and the page opens on it. Nothing
+has to say so out loud.
+
+Take the reply branch only on something actually said: the user asks for it
+there, or says they are away from the machine. Silence is not evidence of a
+phone. Asking because nothing was stated costs a round trip on every review and
+comes back the same answer every time — that question is the mistake this rule
+exists to prevent, not the caution it recommends.
+
+#### In the file — the user is at the machine
+
+Write the findings, launch the tool, and the reply is a short covering note:
+
 ```
-## Review: [target]
-
-### Inconsistencies
-- [file:line] `quoted code` — differs from [where it's done the other way]. Why it matters.
-
-### Replication
-- [file:line] `quoted code` — same shape as [file:line], [file:line].
-
-### Potential problems
-- [file:line] `quoted code` — fails when [concrete case]. Proven | unproven.
-
-### Complications
-- [file:line] `quoted code` — [what the reader has to hold in their head].
-
-### Nothing found in
-- [areas you checked and found clean — so the reader knows what was covered]
-
-### Summary
-[What to look at first, and what can wait.]
+Review: [target]. Findings: [n].
+[What was covered and came out clean — so the reader knows what was looked at.]
+[What was not checked — untested paths, code out of reach, areas out of scope.]
+[The command to open it, or: opened in the browser.]
 ```
+
+Rank inside the file instead of summarising in the note: the list is read top to
+bottom, so put the finding that matters most first. Naming it again in chat is
+the review leaking back into the chat — the user answers it there, and the file
+records nothing.
+
+#### In the reply — a phone, or any session with no browser to reach
+
+The options are the part that is easy to drop here, and dropping them is what
+makes a chat review worthless: the user is left to invent the answer space
+themselves. Keep them, numbered, so the whole review can be answered from a
+phone with "1 — 2, 2 — s".
+
+```
+Review: [target]. Findings: [n].
+
+**1. [title — the symptom, in the user's words]**
+`file:line` — `quoted code`
+[What the user would observe. Lead with this.]
+[The mechanism, and whether it is proven — a case that was run, or said
+plainly to be unproven.]
+  1. [what happens if this is chosen] — [the price, and what it costs later]
+  2. [the other thing that can be done] — [its price] ← advised
+  s. Skip · d. Discuss
+
+**2. …**
+
+Checked and clean: [areas covered, so the reader knows what was looked at]
+Not checked: [untested paths, code out of reach, areas out of scope]
+```
+
+Same rules as the file: most important finding first, `do` is an act and never a
+category, "A, or else B" is two options, two or three options and never five,
+and Skip and Discuss stand apart from the numbers rather than among them. One
+way forward is not numbered either — the line is `f. [the act itself]`, the fix
+is described above it in prose, and there is no "1." because there is nothing to
+pick it out of.
+
+Then carry out what each finding was answered with, and bring each *Discuss*
+back as a question. There is no file in this branch, so an unanswered finding is
+gone the moment the chat scrolls — say which ones are still unanswered rather
+than letting them slide.
 
 ### Where the output goes
 
-Up to about five findings: in the reply, in the shape above — there the hunt
-headings double as a coverage report, showing what was looked for. More than
-that: a findings file, and the reply carries only the count, the worst one, and
-the command to open it.
+The rest of this section is the file branch.
 
 **This skill writes nothing inside the project.** Ask the tool where the file
 goes rather than building the path yourself — it owns that rule, and a path
@@ -166,7 +219,7 @@ Schema is in the script's docstring; the fields that carry the judgment:
 | `title` | the symptom, in the user's words |
 | `where` | `path/File.kt:42`, several allowed — the tool opens the real file at that line, so never copy code into the finding. A name it cannot find in the project is shown as unresolved, so prefer repo-relative paths |
 | `see` | what the user would observe — lead with this |
-| `why` | the mechanism; `file:line` is evidence, not the explanation |
+| `why` | the mechanism, and whether it is proven — a case that was run, or said plainly to be unproven; `file:line` is evidence, not the explanation |
 | `fix` | how to fix it, in prose — written when there is one way forward, and left out when the options carry it themselves |
 | `options` | what can be done about it — see below. This is the finding's whole answer space, and writing it is the work |
 
@@ -183,14 +236,14 @@ recommendation.
                     "why": "the shell is written in T-002 anyway, cheaper now"},
   {"id": "refuse",  "do": "Decide against it, write the reason into the decision log",
                     "why": "then it is settled and stops coming back every review"},
-  {"id": "note-t002", "do": "Note on T-002, decide there",
-                      "why": "both of the above are shell work that does not exist yet",
-                      "advised": true}]
+  {"id": "amend-t002", "do": "Write it into T-002: the shell consumes the system insets, plus a criterion that the tab bar stays clear of the navigation bar",
+                       "why": "both of the above are shell work that does not exist yet",
+                       "advised": true}]
 ```
 
 - **`do` is an act, never a category.** "Defer", "later", "wontfix" name a
-  bucket; a month on, nobody can tell what was agreed to. "Note on T-002" they
-  can.
+  bucket; a month on, nobody can tell what was agreed to. "Write it into T-002"
+  they can.
 - **"A, or else B" is two options.** This is the mistake that matters: one
   option holding a fork looks answered, and the file records a decision the user
   never made — the choice quietly comes back to you, and they never see it
@@ -210,8 +263,10 @@ recommendation.
   ```
 
   The tool then draws three plain buttons — Починить · Пропустить · Обсудить —
-  with the explanation above them where it can be read, and the keys are `f`,
-  `s`, `d`. There is no "1", because picking one out of one is not a choice. Do
+  under a heading that names no verb (`Исправление`), with the explanation above
+  them where it can be read, and the keys are `f`, `s`, `d`. So `do` is the
+  actual act, whatever it is: «Починить», «Добавить в git», «Включить
+  edge-to-edge». There is no "1", because picking one out of one is not a choice. Do
   not push the description onto the button: it becomes an unreadable label, and
   the section that should have carried it is missing. With several options there
   is no `fix` section — each one carries its own words, and the keys are the
@@ -239,12 +294,14 @@ house? Every word has been replaced by a shorter one until nothing is left.
 GOOD — the same decision, written out:
 
 ```json
-{"do": "Не чинить сейчас, а записать в задачу T-002, что при запуске приложения экран мигает белым",
- "why": "T-002 всё равно переписывает запуск и трогает те же файлы, так что там это чинится заодно. Если не записать — забудется, и мигание найдут заново через полгода."}
+{"do": "Не чинить сейчас, а дополнить T-002: в описание — что экран запуска красится темой приложения, в критерии — что при холодном запуске в тёмной теме белой вспышки нет",
+ "why": "T-002 всё равно переписывает запуск и трогает те же файлы, так что там это делается заодно. Если не дополнить — забудется, и вспышку найдут заново через полгода."}
 ```
 
-- **Say what happens, in full.** "Записать в T-002, что экран мигает белым", not
-  "заметка в T-002".
+- **Say what happens, in full**, and say it as a change to the task, not as a
+  place to put a symptom: «Дополнить T-002: в описание — …, в критерии — …», not
+  «записать в T-002, что экран мигает белым», and certainly not «заметка в
+  T-002».
 - **No metaphors for code.** No scaffolding, no plumbing, no skeletons. Name the
   thing that exists: the file, the screen, the task.
 - **No jargon the language does not have.** Транслитерация английского термина —
@@ -257,7 +314,7 @@ GOOD — the same decision, written out:
 The same goes for `see` and `why` on the finding itself. The tool gives every
 one of these room to be a paragraph.
 
-Skip and Ask are always available and stand apart from the table — never put
+Skip and Discuss are always available and stand apart from the table — never put
 them in `options`. Both mean nothing gets done about the finding, which is not
 one of the things that can be done about it.
 
@@ -276,6 +333,35 @@ unanswered. Then carry out the option each finding was answered with, and bring
 each `discuss` back as a question. Read every comment: it is the only thing in
 the file they wrote themselves, and it is there because the button did not say
 everything they wanted to say.
+
+### Carrying out "into task T-00X"
+
+**Edit the task. Do not append a note to it.** The tracker holds tasks — what
+someone will build, and how they will know it is done. A review is not one of
+its subjects, and a finding pasted in as a dated log line makes the tracker a
+place where two unrelated things are kept.
+
+So the finding is dissolved into the task's own two parts:
+
+- **its description** gains the sentence the task was missing — what has to be
+  built, in the task's language;
+- **its exit criteria** gain a line that is checkable, so the thing the review
+  found is what closes the task.
+
+Written correctly, the task reads as though it always said this. Nothing marks
+where the sentence came from: **no date, no "from the review of T-001", no
+finding id, no reference to a review at all.** Provenance is what git log is
+for, and a reader of the task does not need it.
+
+Two ways to tell it went wrong: the entry is dated, or it describes a symptom
+observed today rather than work to be done. "In dark mode the status bar icons
+are white on white" is a finding. "The window theme comes from the design system
+and not from the platform default, and the system-bar style is reapplied when
+the theme changes" is a task.
+
+The same rule holds for the tracker's own conventions — an added criterion is
+written the way the others in that task are written, and lands among them rather
+than after them.
 
 ### Then write the commit message
 

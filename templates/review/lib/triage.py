@@ -52,9 +52,10 @@ key that takes one blind.
 
 One option is drawn as a plain button — no number, no card, no column, and its
 key is `f`, not `1`: numbering a list of one asks the reader to pick one out of
-one. A choice of one is not a choice, it is an action, so `do` is the verb
-("Fix it") and the fix itself is described in `fix`, a section of prose above
-the buttons:
+one. A choice of one is not a choice, it is an action, so `do` is the act
+itself — "Fix it", "Add it to git" — and the fix is described in `fix`, a
+section of prose above the buttons. That heading carries no verb of its own, so
+whatever verb the button uses, the two never contradict each other:
 
     {"fix": "Back on the file screen is not intercepted, so the system closes
              the app. Put the handler back in navigation, so Back returns to
@@ -108,8 +109,8 @@ WORDS = {
     "en": {"see": "What you would see", "why": "Why", "code": "Code",
            "where": "Where", "gone": "no such file in the project",
            "empty": "No findings — there is nothing to triage.",
-           "fix": "How to fix it",
-           "can_do": "What you can do", "skip": "Skip", "discuss": "Discuss",
+           "fix": "The fix",
+           "ways": "Ways to fix it", "skip": "Skip", "discuss": "Discuss",
            "advised": "advised", "note": "Comment", "question": "Discussion",
            "add_note": "Add a comment", "note_ph": "Claude reads this together "
            "with your answer — say anything the button does not",
@@ -138,8 +139,9 @@ WORDS = {
     "ru": {"see": "Что ты увидишь", "why": "Почему", "code": "Код",
            "where": "Где", "gone": "такого файла в проекте нет",
            "empty": "Находок нет — разбирать нечего.",
-           "fix": "Как исправить",
-           "can_do": "Что можно сделать", "skip": "Пропустить", "discuss": "Обсудить",
+           "fix": "Исправление",
+           "ways": "Варианты исправления",
+           "skip": "Пропустить", "discuss": "Обсудить",
            "advised": "советую", "note": "Комментарий", "question": "Обсуждение",
            "add_note": "Добавить комментарий",
            "note_ph": "Claude прочитает это вместе с твоим ответом — напиши то, "
@@ -633,9 +635,13 @@ def run_tui(doc):
                     for line in textwrap.wrap(para, max(20, width - 2)) or [""]:
                         rows.append((line, 0))
                 rows.append(("", 0))
-            rows.append((t["can_do"].upper(), MAGENTA | BOLD))
 
             said = how and not (item.get("fix") or "").strip()   # `why` is above
+
+            # A heading over a single button repeats the section that just said
+            # what the fix is. Over several it does the work of naming them.
+            if len(opts) > 1:
+                rows.append((t["ways"].upper(), MAGENTA | BOLD))
 
             def cell(key, o, w):
                 """One choice as a block of lines — a column of the table."""
@@ -1117,7 +1123,11 @@ function drawPane(){
          + `${btn('skip', T.skip)}${btn('discuss', T.discuss)}</div>`
          + (!said && opts[0].why ? `<p class="under">${esc(opts[0].why)}</p>` : '');
   } else {
-    how = sec(T.fix, x.fix);
+    // A heading over one button repeats the section that just described the
+    // fix. Over several it does the work of naming them. This branch also
+    // catches a finding with no options at all, where there is nothing to name.
+    how = sec(T.fix, x.fix)
+        + (opts.length > 1 ? `<div class="lbl">${esc(T.ways)}</div>` : '');
     // The number is on the card. Reading "left to right" off a hint and
     // counting columns is work the screen can do instead.
     acts = '<div class="opts">' + opts.map((o, i) =>
@@ -1145,7 +1155,7 @@ function drawPane(){
   pane.innerHTML = `<h2>${esc(x.title)}</h2><div class="slug">${esc(x.id)}</div>
     ${sec(T.see, x.see)}${sec(T.why, x.why)}
     ${refs ? `<div class="lbl">${esc(T.code)}</div>` + refs : sec(T.where, x.where)}
-    ${how}<div class="lbl">${esc(T.can_do)}</div>${acts}
+    ${how}${acts}
     ${more}${wants ? `<textarea id="note" maxlength="4000" placeholder="${esc(ph)}"
       >${esc(x.note || '')}</textarea>` : ''}
     <div class="hint">${esc(T.hint_web.replace('{pick}', pick)
