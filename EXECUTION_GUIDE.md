@@ -131,6 +131,9 @@ measures its way out of asking
 - **A second telling never carries less than the first.** Point back at the
   original rather than restate it shorter — a recap missing what the reader
   needed to act is worse than no recap.
+- **The reader must be able to act on what you wrote without asking you
+  anything.** Nothing is left out to make it shorter — if it will not fit, say
+  where the whole thing is instead of shortening it.
 - Before sending, check: reading only this, can the user say what changed in
   their product and what you think they should do first?
 
