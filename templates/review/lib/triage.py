@@ -988,6 +988,15 @@ let done = false;           // set by Finish — the server is gone after that
 const noteBox = () => document.getElementById('note');
 const opts_ = i => D.findings[i].options || [];
 function openNote(){ noteOpen = true; draw(); const b = noteBox(); if (b) b.focus(); }
+// Moving to another finding starts it from the top. Only a move does this —
+// answering one redraws the pane and must leave the reader where they were.
+function select(i){
+  flushNote();
+  sel = Math.min(Math.max(i, 0), D.findings.length - 1);
+  noteOpen = false;
+  draw();
+  pane.scrollTop = 0;
+}
 const open = {};            // "id|path|line" -> {from, to}
 const cache = {};           // path -> [lines]
 const esc = s => String(s).replace(/[&<>"']/g,
@@ -1039,7 +1048,7 @@ function drawList(){
   });
   list.innerHTML = h;
   list.querySelectorAll('.it').forEach(e =>
-    e.onclick = () => { flushNote(); sel = +e.dataset.i; noteOpen = false; draw(); });
+    e.onclick = () => select(+e.dataset.i));
   const on = list.querySelector('.it.on');
   if (on) on.scrollIntoView({block:'nearest'});
 }
@@ -1243,9 +1252,7 @@ onkeydown = e => {
   // Inside the note every key is a letter of the note, including `s` and `1`.
   if (e.target === noteBox()){ if (e.key === 'Escape') e.target.blur(); return; }
   const k = e.key.toLowerCase();
-  const move = d => { flushNote();
-                      sel = Math.min(Math.max(sel + d, 0), D.findings.length - 1);
-                      noteOpen = false; draw(); e.preventDefault(); };
+  const move = d => { select(sel + d); e.preventDefault(); };
   if (e.key === 'ArrowDown'){ move(1); }
   else if (e.key === 'ArrowUp'){ move(-1); }
   // One option answers to f. Numbering a list of one asks the reader to pick
