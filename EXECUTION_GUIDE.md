@@ -128,6 +128,9 @@ measures its way out of asking
 - **A diagram may show the process, never its output.** The loop is worth
   drawing; a list of findings is not — that goes to the triage tool
   ([skills/review.md](./skills/review.md)).
+- **A second telling never carries less than the first.** Point back at the
+  original rather than restate it shorter — a recap missing what the reader
+  needed to act is worse than no recap.
 - Before sending, check: reading only this, can the user say what changed in
   their product and what you think they should do first?
 
