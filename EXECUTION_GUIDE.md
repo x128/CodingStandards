@@ -144,8 +144,8 @@ is accepted before picking up the next one.
 
 ### Exit criteria are the definition of done
 
-A task is done when all its exit criteria are met. If a criterion can't be
-verified, flag it — don't skip it silently.
+A task is done when all its exit criteria are met and its behavior is covered by
+tests. If a criterion can't be verified, flag it — don't skip it silently.
 
 ---
 

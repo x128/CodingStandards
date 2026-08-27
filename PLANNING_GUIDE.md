@@ -363,6 +363,9 @@ in **Shares context with** — the blocking relation implies shared context.
 
 **Exit criteria**: every task needs ≥1 verifiable criterion.
 
+**Prototype tasks**: need a criterion for the code they leave behind — deleted,
+or taken over by a named task.
+
 **Separators**: `————————` full-width line between every task.
 
 **No week or time estimates.** Epics provide sequencing, not scheduling.

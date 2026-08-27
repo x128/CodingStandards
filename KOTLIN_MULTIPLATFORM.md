@@ -494,6 +494,14 @@ End-to-end tests follow platform conventions.
 
 ---
 
+#### Gotcha: Kotlin/Native rejects commas in backtick test names
+
+`fun \`folders first, then by name\`()` compiles for Android and fails the iOS
+test target with `Name contains illegal characters: ","`. The JVM run stays green,
+so this surfaces only when the iOS test task runs.
+
+---
+
 ## Test Runners
 
 | Scope | Command |

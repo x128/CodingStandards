@@ -167,7 +167,8 @@ Every command there **checks** and never rewrites. A `--format` or `--write`
 mode in the `format` slot breaks the rule above and stops the run right after
 the gates, before a single token is spent on review; and a
 command that exits 0 on failure — bare `gofmt -l` is the classic — is a gate
-that never fires at all.
+that never fires at all. So is a test command on a project that has no tests:
+`./gradlew allTests`, `pytest`, `go test ./...` all exit 0 with nothing to run.
 
 **Checklist when starting a project in a new language:**
 

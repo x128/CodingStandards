@@ -105,11 +105,13 @@ statement about the whole review, never as a ban on one kind of finding.
 | Written in | Applies to | How it moves |
 |---|---|---|
 | the project — its `CLAUDE.md`, its `.review/` | that project only | it does not move on its own |
-| `CodingStandards/` | every project | by hand, and only after two different projects arrived at the same rule separately |
+| `CodingStandards/` | every project | a line here that is wrong is fixed; a rule that is not here waits for a second project |
 
-A rule that came out of one project belongs to that project. If a second project
-runs into the same thing on its own, it belongs here. Copying it here after one
-project turns one project's accident into everyone's rule.
+A rule that came out of one project belongs to that project: copying it here
+after one project turns one project's accident into everyone's rule. Fixing a
+line already here is not that. Wrong means two documents here say different
+things, or a project followed a line here and got a result these documents call
+a mistake.
 
 ---
 
