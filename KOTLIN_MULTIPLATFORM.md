@@ -119,7 +119,7 @@ androidApplication = { id = "com.android.application", version.ref = "agp" }
 ### Project Structure
 
 Target priority is project-specific. Wire the targets your project needs;
-comment out the rest.
+delete the rest.
 
 ```
 project/
@@ -170,7 +170,7 @@ xcuserdata/
 
 ### composeApp/build.gradle.kts
 
-Uncomment the targets your project needs:
+Uncomment the targets your project needs and delete the rest:
 
 ```kotlin
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat

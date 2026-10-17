@@ -30,21 +30,23 @@ Every feature requires tests at all pyramid levels:
 
 Every platform the app runs on must have end-to-end tests covering general user scenarios.
 
-See [PLATFORMS.md](PLATFORMS.md) for test locations, runners, and platform-specific frameworks.
+See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runners, and platform-specific frameworks.
 
 ---
 
 ## Test File Conventions
 
-- Test class naming: `{ClassUnderTest}Test`
+- Test class naming: `{ClassUnderTest}Test`; a test class split by fixture or behaviour is `{ClassUnderTest}{FixtureOrBehaviour}Test`, for example `ReaderViewModelStorageFailureTest`
 - Fakes: `private class Fake{Interface}` defined inside test files
 - Factory functions: `private fun test{Entity}()` with sensible defaults (see [Test Data](#test-data))
+- A test class is split by its fixture or by the behaviour it tests, never by its number of lines. A test class that needs a large setup points at a class under test that does too much.
+- A test has no branches and no loops. Its only comments are the markers of its three parts, `// Arrange`, `// Act`, `// Assert` or `// Given`, `// When`, `// Then`; everything else it has to say goes into its name, its helpers and its assertions.
 
 ---
 
 ## Test Naming
 
-Every test name must follow the pattern: **action [condition] → result**.
+Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason or a source ends with it: `→ result, because reason`.
 
 ### Kotlin (backtick names)
 
@@ -64,7 +66,7 @@ fun test1()
 fun `returns verses for valid book and chapter`()
 
 @Test
-fun `returns failure when book does not exist`()
+fun `returns book not found when book does not exist`()
 
 @Test
 fun `emits loading state before success`()
@@ -72,7 +74,7 @@ fun `emits loading state before success`()
 
 ### Swift (underscore-separated)
 
-Format: `test_action[_optionalCondition]_result`
+Format: `test_action_result[_whenCondition][_becauseReason]`
 
 ```swift
 // BAD: Verbose prose, no structure
@@ -93,7 +95,7 @@ func test_launch_showsLanguageChips()
 
 ### Arrange-Act-Assert (AAA)
 
-Every test has exactly three sections, separated by blank lines.
+Every test has exactly three sections, each opened by its marker: `// Arrange`, `// Act`, `// Assert`. `// Given`, `// When`, `// Then` mark the same three sections; a project keeps to one set.
 
 ```kotlin
 // BAD: Mixed setup, action, and checks
@@ -103,9 +105,9 @@ fun `test search`() {
     repo.setResults(listOf(result1))
     val useCase = SearchBibleUseCase(repo)
     val results = runBlocking { useCase("word", Language.RU, SearchScope.ALL) }
-    assertTrue(results.isSuccess)
+    assertTrue(results.isNotEmpty())
     val moreResults = runBlocking { useCase("другое", Language.RU, SearchScope.OLD_TESTAMENT) }
-    assertEquals(0, moreResults.getOrThrow().size)
+    assertEquals(0, moreResults.size)
 }
 
 // GOOD: Clear AAA, one concept
@@ -120,8 +122,8 @@ fun `returns matching verses for Russian search`() {
     val result = runBlocking { useCase("слово", Language.RU, SearchScope.ALL) }
 
     // Assert
-    assertEquals(1, result.getOrThrow().size)
-    assertEquals(testVerse.text, result.getOrThrow().first().text)
+    assertEquals(1, result.size)
+    assertEquals(testVerse.text, result.first().text)
 }
 ```
 
@@ -130,31 +132,37 @@ fun `returns matching verses for Russian search`() {
 Multiple assertions are fine if they test the same behavior. Different behaviors need different tests.
 
 ```kotlin
-// BAD: Tests two unrelated behaviors
+// BAD: Tests two unrelated behaviors: the missing book is a different behavior from the valid chapter
 @Test
-fun `chapter loading works`() {
+fun `chapter loading works`() = runTest {
     val result = useCase(bookId = 1, chapter = 1, Language.RU)
-    assertTrue(result.isSuccess)
-    assertEquals(10, result.getOrThrow().size)
+    assertIs<GetChapterResult.Verses>(result)
+    assertEquals(10, result.verses.size)
 
-    val error = useCase(bookId = 999, chapter = 1, Language.RU)
-    assertTrue(error.isFailure) // Different behavior!
+    val missing = useCase(bookId = 999, chapter = 1, Language.RU)
+    assertEquals(GetChapterResult.BookNotFound(bookId = 999), missing)
 }
 
 // GOOD: Separate tests for separate behaviors
 @Test
-fun `returns all verses for valid chapter`() {
+fun `returns all verses for valid chapter`() = runTest {
+    // Arrange
+    // Act
     val result = useCase(bookId = 1, chapter = 1, Language.RU)
 
-    assertTrue(result.isSuccess)
-    assertEquals(10, result.getOrThrow().size)
+    // Assert
+    assertIs<GetChapterResult.Verses>(result)
+    assertEquals(10, result.verses.size)
 }
 
 @Test
-fun `returns failure for nonexistent book`() {
+fun `returns book not found for nonexistent book`() = runTest {
+    // Arrange
+    // Act
     val result = useCase(bookId = 999, chapter = 1, Language.RU)
 
-    assertTrue(result.isFailure)
+    // Assert
+    assertEquals(GetChapterResult.BookNotFound(bookId = 999), result)
 }
 ```
 
@@ -165,40 +173,43 @@ fun `returns failure for nonexistent book`() {
 Each test creates its own data and has no shared mutable state.
 
 ```kotlin
-// BAD: Shared mutable state between tests
+// BAD: Shared mutable state between tests: the companion object shares one repository, the first test mutates it, and the second test depends on the first
 class VerseRepositoryTest {
     companion object {
-        val repository = VerseRepositoryImpl(testDb) // Shared!
+        val repository = DatabaseVerseRepository(testDb)
     }
 
     @Test
     fun `first test inserts data`() {
-        repository.insert(testVerse) // Mutates shared state
+        repository.insert(testVerse)
     }
 
     @Test
     fun `second test reads data`() {
-        val result = repository.getAll() // Depends on first test!
+        val result = repository.getAll()
     }
 }
 
 // GOOD: Fresh state per test
 class VerseRepositoryTest {
-    private lateinit var repository: VerseRepositoryImpl
+    private lateinit var repository: DatabaseVerseRepository
 
     @BeforeTest
     fun setup() {
         val db = createInMemoryDatabase()
-        repository = VerseRepositoryImpl(db)
+        repository = DatabaseVerseRepository(db)
     }
 
     @Test
-    fun `returns inserted verse`() {
+    fun `returns inserted verse`() = runTest {
+        // Arrange
         repository.insert(testVerse)
 
+        // Act
         val result = repository.getVerses(bookId = 1, chapter = 1, Language.RU)
 
-        assertEquals(listOf(testVerse), result.getOrThrow())
+        // Assert
+        assertEquals(listOf(testVerse), result)
     }
 }
 ```
@@ -210,20 +221,25 @@ class VerseRepositoryTest {
 Use hand-written fakes instead of mocking frameworks. Fakes are simpler, more readable, and work across KMP platforms.
 
 ```kotlin
-// BAD: Mocking framework
+// BAD: Mocking framework; verify(mockVerses).getVerses(1, 1, Language.RU) checks an implementation detail: which call the use case makes, not what it returns
 @Test
-fun `loads chapter from repository`() {
-    val mockRepo = mock<VerseRepository>()
-    whenever(mockRepo.getVerses(any(), any(), any()))
-        .thenReturn(Result.success(testVerses))
-    val useCase = GetChapterUseCase(mockRepo)
+fun `loads chapter from repository`() = runTest {
+    val mockBooks = mock<BookRepository>()
+    val mockVerses = mock<VerseRepository>()
+    whenever(mockBooks.getBookById(any())).thenReturn(testBook(id = 1))
+    whenever(mockVerses.getVerses(any(), any(), any())).thenReturn(testVerses)
+    val useCase = GetChapterUseCase(mockBooks, mockVerses)
 
-    val result = runBlocking { useCase(1, 1, Language.RU) }
+    val result = useCase(1, 1, Language.RU)
 
-    verify(mockRepo).getVerses(1, 1, Language.RU) // Tests implementation detail
+    verify(mockVerses).getVerses(1, 1, Language.RU)
 }
 
 // GOOD: Hand-written fake
+class FakeBookRepository(private vararg val books: Book) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Book? = books.find { it.id == bookId }
+}
+
 class FakeVerseRepository : VerseRepository {
     private val verses = mutableMapOf<Triple<Int, Int, Language>, List<Verse>>()
     private var shouldFail = false
@@ -240,26 +256,25 @@ class FakeVerseRepository : VerseRepository {
         bookId: Int,
         chapter: Int,
         language: Language
-    ): Result<List<Verse>> {
-        if (shouldFail) return Result.failure(RuntimeException("DB error"))
-        val data = verses[Triple(bookId, chapter, language)]
-        return if (data != null) Result.success(data)
-        else Result.failure(RuntimeException("Not found"))
+    ): List<Verse> {
+        if (shouldFail) throw StorageException("DB error", IllegalStateException())
+        return verses[Triple(bookId, chapter, language)].orEmpty()
     }
 }
 
 @Test
 fun `returns verses from repository`() {
     // Arrange
-    val repository = FakeVerseRepository()
-    repository.setVerses(1, 1, Language.RU, testVerses)
-    val useCase = GetChapterUseCase(repository)
+    val bookRepository = FakeBookRepository(testBook(id = 1))
+    val verseRepository = FakeVerseRepository()
+    verseRepository.setVerses(1, 1, Language.RU, testVerses)
+    val useCase = GetChapterUseCase(bookRepository, verseRepository)
 
     // Act
     val result = runBlocking { useCase(1, 1, Language.RU) }
 
     // Assert
-    assertEquals(testVerses, result.getOrThrow())
+    assertEquals(GetChapterResult.Verses(testVerses), result)
 }
 ```
 
@@ -275,25 +290,40 @@ Pure Kotlin, no platform dependencies. Test use cases with fakes.
 // Location: shared/src/commonTest/kotlin/.../feature/{name}/domain/
 
 class GetChapterUseCaseTest {
-    private val repository = FakeVerseRepository()
-    private val useCase = GetChapterUseCase(repository)
+    private val bookRepository = FakeBookRepository(testBook(id = 1, chapterCount = 50))
+    private val verseRepository = FakeVerseRepository()
+    private val useCase = GetChapterUseCase(bookRepository, verseRepository)
 
     @Test
     fun `returns verses for valid chapter`() {
-        repository.setVerses(1, 1, Language.RU, testVerses)
+        // Arrange
+        verseRepository.setVerses(1, 1, Language.RU, testVerses)
 
+        // Act
         val result = runBlocking { useCase(1, 1, Language.RU) }
 
-        assertEquals(testVerses, result.getOrThrow())
+        // Assert
+        assertEquals(GetChapterResult.Verses(testVerses), result)
     }
 
     @Test
-    fun `returns failure when repository fails`() {
-        repository.setShouldFail(true)
+    fun `returns book not found when book does not exist`() {
+        // Arrange
+        // Act
+        val result = runBlocking { useCase(999, 1, Language.RU) }
 
-        val result = runBlocking { useCase(1, 1, Language.RU) }
+        // Assert
+        assertEquals(GetChapterResult.BookNotFound(bookId = 999), result)
+    }
 
-        assertTrue(result.isFailure)
+    @Test
+    fun `returns chapter out of range when book has fewer chapters`() {
+        // Arrange
+        // Act
+        val result = runBlocking { useCase(1, 51, Language.RU) }
+
+        // Assert
+        assertEquals(GetChapterResult.ChapterOutOfRange(chapter = 51, chapterCount = 50), result)
     }
 }
 ```
@@ -305,9 +335,9 @@ Test with real database (in-memory SQLite). Verify SQL queries and mapping.
 ```kotlin
 // Location: shared/src/commonTest/kotlin/.../feature/{name}/data/
 
-class VerseRepositoryImplTest {
+class DatabaseVerseRepositoryTest {
     private lateinit var db: BibleDatabase
-    private lateinit var repository: VerseRepositoryImpl
+    private lateinit var repository: DatabaseVerseRepository
 
     @BeforeTest
     fun setup() {
@@ -315,14 +345,16 @@ class VerseRepositoryImplTest {
         BibleDatabase.Schema.create(driver)
         db = BibleDatabase(driver)
         insertTestData(db)
-        repository = VerseRepositoryImpl(db)
+        repository = DatabaseVerseRepository(db)
     }
 
     @Test
-    fun `returns verses ordered by id`() {
-        val result = repository.getVerses(bookId = 1, chapter = 1, Language.RU)
+    fun `returns verses ordered by id`() = runTest {
+        // Arrange
+        // Act
+        val verses = repository.getVerses(bookId = 1, chapter = 1, Language.RU)
 
-        val verses = result.getOrThrow()
+        // Assert
         assertEquals(listOf(1L, 2L, 3L), verses.map { it.id })
     }
 }
@@ -330,25 +362,30 @@ class VerseRepositoryImplTest {
 
 ### Presentation Layer (ViewModel Tests)
 
-Test state transitions using Turbine for Flow assertions.
+Test state transitions using Turbine for Flow assertions. The ViewModel is the place that catches `StorageException`, so its tests cover that path.
 
 ```kotlin
 // Location: shared/src/commonTest/kotlin/.../feature/{name}/presentation/
 
 class ReaderViewModelTest {
-    private val repository = FakeVerseRepository()
-    private val useCase = GetChapterUseCase(repository)
-    private val testDispatcher = StandardTestDispatcher()
+    private val bookRepository = FakeBookRepository(testBook(id = 1))
+    private val verseRepository = FakeVerseRepository()
+    private val useCase = GetChapterUseCase(bookRepository, verseRepository)
 
     @Test
     fun `emits loading then success on chapter load`() = runTest {
-        repository.setVerses(1, 1, Language.RU, testVerses)
-        val viewModel = ReaderViewModel(useCase, testDispatcher)
+        // Arrange
+        verseRepository.setVerses(1, 1, Language.RU, testVerses)
+        val viewModel = ReaderViewModel(useCase, StandardTestDispatcher(testScheduler))
 
         viewModel.state.test {
-            assertEquals(ReaderState(), awaitItem()) // Initial
+            val initial = awaitItem()
 
+            // Act
             viewModel.onEvent(ReaderEvent.LoadChapter(1, 1))
+
+            // Assert
+            assertEquals(ReaderState(), initial)
 
             val loading = awaitItem()
             assertTrue(loading.isLoading)
@@ -356,6 +393,27 @@ class ReaderViewModelTest {
             val success = awaitItem()
             assertFalse(success.isLoading)
             assertEquals(testVerses, success.verses)
+        }
+    }
+
+    @Test
+    fun `emits loading then error when storage fails`() = runTest {
+        // Arrange
+        verseRepository.setShouldFail(true)
+        val viewModel = ReaderViewModel(useCase, StandardTestDispatcher(testScheduler))
+
+        viewModel.state.test {
+            skipItems(1)
+
+            // Act
+            viewModel.onEvent(ReaderEvent.LoadChapter(1, 1))
+
+            // Assert
+            assertTrue(awaitItem().isLoading)
+
+            val failed = awaitItem()
+            assertFalse(failed.isLoading)
+            assertNotNull(failed.error)
         }
     }
 }
@@ -368,13 +426,13 @@ class ReaderViewModelTest {
 ### Use Turbine for StateFlow Testing
 
 ```kotlin
-// BAD: Collecting flow manually with timeouts
+// BAD: Collecting flow manually with timeouts; the fixed delay makes the timing fragile
 @Test
 fun `state updates`() = runTest {
     val states = mutableListOf<State>()
     val job = launch { viewModel.state.collect { states.add(it) } }
     viewModel.onEvent(SomeEvent)
-    delay(100) // Fragile timing
+    delay(100)
     assertEquals(2, states.size)
     job.cancel()
 }
@@ -382,10 +440,15 @@ fun `state updates`() = runTest {
 // GOOD: Turbine provides deterministic assertions
 @Test
 fun `state updates on event`() = runTest {
+    // Arrange
     viewModel.state.test {
-        assertEquals(InitialState, awaitItem())
+        val initial = awaitItem()
 
+        // Act
         viewModel.onEvent(SomeEvent)
+
+        // Assert
+        assertEquals(InitialState, initial)
         assertEquals(UpdatedState, awaitItem())
 
         cancelAndConsumeRemainingEvents()
@@ -396,22 +459,25 @@ fun `state updates on event`() = runTest {
 ### Use StandardTestDispatcher for Coroutine Control
 
 ```kotlin
-// BAD: Using real dispatchers in tests
+// BAD: Using real dispatchers in tests: MyViewModel uses Dispatchers.Main, and the test waits a fixed delay and hopes the work is done
 @Test
 fun `loads data`() = runBlocking {
-    val viewModel = MyViewModel(useCase) // Uses Dispatchers.Main
-    delay(1000) // Wait and hope
+    val viewModel = MyViewModel(useCase)
+    delay(1000)
     assertEquals(expected, viewModel.state.value)
 }
 
 // GOOD: Injectable test dispatcher
 @Test
 fun `loads data`() = runTest {
+    // Arrange
     val viewModel = MyViewModel(useCase, StandardTestDispatcher(testScheduler))
 
+    // Act
     viewModel.loadData()
     advanceUntilIdle()
 
+    // Assert
     assertEquals(expected, viewModel.state.value)
 }
 ```
@@ -449,13 +515,25 @@ fun testVerse(
 
 @Test
 fun `test with defaults`() {
+    // Arrange
     val verse = testVerse()
+
+    // Act
+    // ...
+
+    // Assert
     // ...
 }
 
 @Test
 fun `test with specific field`() {
+    // Arrange
     val verse = testVerse(text = "Custom text", cssClass = "red")
+
+    // Act
+    // ...
+
+    // Assert
     // ...
 }
 ```
@@ -511,7 +589,11 @@ final class SearchScreenUITests: XCTestCase {
     }
 
     func test_openSearch_showsScopeChips() {
+        // Arrange
+        // Act
         openSearch()
+
+        // Assert
         XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5))
     }
 }
@@ -524,11 +606,11 @@ final class SearchScreenUITests: XCTestCase {
 - Data classes (auto-generated equals/hashCode/copy)
 - Enum values
 - Direct delegation (a function that just calls another function)
-- Framework code (Compose UI rendering, Koin module wiring)
+- Framework code (Compose UI rendering, Koin module wiring). A composable that makes decisions of its own is covered by a UI test, or its CRAP exception is recorded in the Decisions Log (CLEAN_CODE.md, "One Thing per Function")
 - Third-party library behavior
 
 Focus testing effort on:
-- Business logic (use cases)
+- Business logic (use cases and entities)
 - Data mapping and SQL queries (repositories)
 - State transitions (ViewModels)
 - Edge cases and error paths
@@ -598,13 +680,20 @@ Tests that require files or services not in version control (model files, API ke
 
 ### Pattern: assumeTrue for Optional Resources
 
+When the model file is missing, `assumeTrue` skips the test; the Act and Assert sections run only when the model is present.
+
 ```kotlin
 @Test
 fun `processes model output`() = runTest {
+    // Arrange
     val modelPath = findModelPath()
     assumeTrue("Model file not found. Download to .models/model.gguf", modelPath != null)
 
-    // Test body — only runs when model is present
+    // Act
+    // ...
+
+    // Assert
+    // ...
 }
 ```
 
@@ -621,7 +710,7 @@ fun `processes model output`() = runTest {
 ## Summary Checklist
 
 ### Structure
-- [ ] Every test follows AAA (Arrange-Act-Assert)
+- [ ] Every test follows AAA (Arrange-Act-Assert, or Given-When-Then)
 - [ ] One concept per test
 - [ ] Tests are independent (no shared mutable state)
 - [ ] Test names follow action → [condition] → result pattern

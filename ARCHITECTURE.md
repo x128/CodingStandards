@@ -39,28 +39,33 @@ fun ReaderScreen(db: BibleDatabase) {
     LazyColumn { items(verses) { VerseText(it) } }
 }
 
-// BAD: Domain depends on framework types
-class GetChapterUseCase(private val db: BibleDatabase) // SQLDelight type in domain!
+// BAD: Domain depends on framework types (BibleDatabase is a SQLDelight type)
+class GetChapterUseCase(private val db: BibleDatabase)
 
 // GOOD: Domain defines interface, Data implements
 // Domain layer
 interface VerseRepository {
-    suspend fun getVerses(bookId: Int, chapter: Int, language: Language): Result<List<Verse>>
+    suspend fun getVerses(bookId: Int, chapter: Int, language: Language): List<Verse>
 }
 
 // Data layer
-class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
-    override suspend fun getVerses(bookId: Int, chapter: Int, language: Language): Result<List<Verse>> {
-        // SQLDelight queries here
-    }
+class DatabaseVerseRepository(private val db: BibleDatabase) : VerseRepository {
+    override suspend fun getVerses(bookId: Int, chapter: Int, language: Language): List<Verse> =
+        storageCall("Cannot read verses") {
+            val rows = when (language) {
+                Language.RU -> db.verseQueries.selectRussianVerses(bookId, chapter)
+                Language.CS -> db.verseQueries.selectChurchSlavonicVerses(bookId, chapter)
+                Language.EL -> db.verseQueries.selectGreekVerses(bookId, chapter)
+            }
+            rows.executeAsList().map { it.toDomainVerse() }
+        }
 }
 
-// Domain layer use case depends on interface only
-class GetChapterUseCase(private val repository: VerseRepository) {
-    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): Result<List<Verse>> {
-        return repository.getVerses(bookId, chapter, language)
-    }
-}
+// Domain layer: the use case depends on the interfaces only
+class GetChapterUseCase(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+)
 ```
 
 ---
@@ -76,9 +81,9 @@ domain/
   SearchBibleUseCase.kt
   GetBooksUseCase.kt
 data/
-  VerseRepositoryImpl.kt
-  SearchRepositoryImpl.kt
-  BookRepositoryImpl.kt
+  DatabaseVerseRepository.kt
+  DatabaseSearchRepository.kt
+  DatabaseBookRepository.kt
 presentation/
   ReaderViewModel.kt
   SearchViewModel.kt
@@ -96,10 +101,10 @@ feature/
   reader/
     domain/
       GetChapterUseCase.kt
-      error/ReaderError.kt
+      GetChapterResult.kt
+      VerseRepository.kt           # Interface
     data/
-      VerseRepository.kt       # Interface
-      VerseRepositoryImpl.kt   # Implementation
+      DatabaseVerseRepository.kt   # Implementation
     presentation/
       ReaderViewModel.kt
       ReaderState.kt
@@ -112,10 +117,9 @@ feature/
   search/
     domain/
       SearchBibleUseCase.kt
-      error/SearchError.kt
-    data/
       SearchRepository.kt
-      SearchRepositoryImpl.kt
+    data/
+      DatabaseSearchRepository.kt
     presentation/
       SearchViewModel.kt
       SearchState.kt
@@ -130,7 +134,7 @@ feature/
 |---|---|---|
 | Use case | `{Verb}{Thing}UseCase` | `GetChapterUseCase` |
 | Repository interface | `{Thing}Repository` | `VerseRepository` |
-| Repository impl | `{Thing}RepositoryImpl` | `VerseRepositoryImpl` |
+| Repository implementation | `{WhatMakesItThisOne}{Thing}Repository` | `DatabaseVerseRepository` |
 | ViewModel | `{Feature}ViewModel` | `ReaderViewModel` |
 | State | `{Feature}State` | `ReaderState` |
 | Event | `{Feature}Event` | `ReaderEvent` |
@@ -143,106 +147,269 @@ Use cases implement `operator fun invoke()` for clean call-site syntax.
 
 ## Domain Layer
 
-The domain layer is the **stable center** of the application. Everything else depends on it; it depends on nothing. All business logic — validation, rules, orchestration — lives here in use cases. This is the most important architectural invariant: if business logic creeps into ViewModels or repositories, the architecture is broken.
+The domain layer is the **stable center** of the application. Everything else depends on it; it depends on nothing. All business logic — validation, rules, orchestration — lives here: a rule that is true of an entity whichever use case asks lives with the entity, and application-specific rules live in use cases. This is the most important architectural invariant: if business logic creeps into ViewModels or repositories, the architecture is broken.
 
 ### Use Cases
 
-Each use case represents a single user action. Implement `operator fun invoke` for clean call syntax. Use cases contain **all** business logic: input validation, error mapping, conditional behavior, data combination.
+#### Principles
+
+These hold in any style of code: objects, functions, streams, state machines.
+
+**What a use case is.** A use case holds application-specific business rules. It is described by its input, its output, and the rules between them: what is checked, what is decided, and what is read and changed, in what order. A rule that is true of an entity whichever use case asks is not in the use case: it lives with the entities, and the use case calls it. What the rule answers, a refusal included, is declared with the rule, so no use case decides it again. An entity knows no use case.
+
+**What a use case knows.** A use case reaches other code only through what the domain layer declares. It names no API of a screen, a database, a file system, a network or a platform.
+
+**The form is free.** The same use case can be a class with one method, a function, a publisher or a state machine. A change of form does not change its input, its output or its rules.
+
+**Not a user action.** A use case is not a user action. A user action is a tap, or what a screen sends when the user taps: something in presentation, a plain value with no check and no decision. It may start a use case, and so may a timer or a background task. But use cases are not found by counting buttons: several user actions can lead to one use case, one to several, and some to none.
+
+**From requirements to code.** The requirements text of a use case has a name, an input, an output and rules, in the words of the subject (book, chapter, verse). The code has the same four parts under the same words. Every outcome that the text names, such as "book not found", has its own name in what the use case gives back.
+
+**Failures that the text does not name.** A failure that the text does not name, such as a disk that cannot be read, is not an outcome of the use case. The use case makes no decision on it, does not rename it and does not hide it. It may clean up; then it hands the cause on to the caller unchanged, and the use case ends. Every form has to give such a failure a way to the caller. If the caller has to tell it apart, the text names it first. Cancellation by the caller is not an outcome and not a failure. The use case does not turn it into either: it may clean up, and it ends with no outcome.
+
+**One use case or two.** A use case has its own input, its own output and its own rules. Two use cases that look alike today stay two when they change for different reasons.
+
+**A request with no rules.** A request can have nothing to check and nothing to decide: read the list of books and show it. There are two ways to write it. The caller uses the interface that the domain layer declares, and no use case is written. Or a use case is written whose body is that one call, and the caller uses only use cases. Neither is wrong. A project picks one, records it in the Decisions Log of its implementation plan, and follows it everywhere.
+
+**Where a rule belongs.** To change a business rule, you edit domain code: a use case, an entity, or another type or function of the domain layer. If you have to edit a screen, storage code or wiring to change the rule itself, the rule is in the wrong place.
+
+#### Implementation
+
+In this standard a use case is a Kotlin class in the domain layer, `{Verb}{Thing}UseCase`, with one public function, `operator fun invoke`. Each part of the requirements text becomes one part of the class.
+
+```
+Get a chapter
+Input:   the book id, the chapter, the language
+Output:  the verses of the chapter; or book not found; or chapter out of range
+Rules:   1. Get the book. If there is none: book not found.
+         2. Check that the book has this chapter. If not: chapter out of range.
+         3. Get the verses of the chapter in this language.
+```
 
 ```kotlin
-// BAD: Use case with multiple responsibilities
-class BibleUseCase(private val repo: VerseRepository) {
-    suspend fun getChapter(bookId: Int, chapter: Int, language: Language): Result<List<Verse>> { ... }
-    suspend fun search(query: String, scope: SearchScope): Result<List<SearchResult>> { ... }
-    suspend fun getBooks(): Result<List<Book>> { ... }
+// BAD: rules 1 and 2 of the text are missing
+class GetChapterUseCase(private val verseRepository: VerseRepository) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language) =
+        verseRepository.getVerses(bookId, chapter, language)
 }
 
-// GOOD: Single-responsibility use cases
-class GetChapterUseCase(private val repository: VerseRepository) {
-    suspend operator fun invoke(
-        bookId: Int,
-        chapter: Int,
-        language: Language
-    ): Result<List<Verse>> {
-        return repository.getVerses(bookId, chapter, language)
+// GOOD: the name, the input, the output and the rules of the text
+data class Book(val id: Int, val chapterCount: Int) {
+    fun hasChapter(chapter: Int) = chapter in 1..chapterCount
+}
+
+interface BookRepository {
+    suspend fun getBookById(bookId: Int): Book?
+}
+
+interface VerseRepository {
+    suspend fun getVerses(bookId: Int, chapter: Int, language: Language): List<Verse>
+}
+
+sealed interface GetChapterResult {
+    data class Verses(val verses: List<Verse>) : GetChapterResult
+    data class BookNotFound(val bookId: Int) : GetChapterResult
+    data class ChapterOutOfRange(val chapter: Int, val chapterCount: Int) : GetChapterResult
+}
+
+class GetChapterUseCase(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): GetChapterResult {
+        val book = bookRepository.getBookById(bookId)
+            ?: return GetChapterResult.BookNotFound(bookId)
+        if (!book.hasChapter(chapter)) {
+            return GetChapterResult.ChapterOutOfRange(chapter, book.chapterCount)
+        }
+        return GetChapterResult.Verses(verseRepository.getVerses(bookId, chapter, language))
+    }
+}
+```
+
+When the text names more than one outcome, each is a case of the use case's own sealed type. When it names one, `invoke` returns that value itself. A failure that the text does not name leaves `invoke` as an exception. Where Swift calls the use case, `invoke` is marked `@Throws(StorageException::class, CancellationException::class)`: then a storage failure and a cancellation reach Swift as errors, and a bug still ends the app. The compiler requires `CancellationException` in the list of a `suspend` function. In Swift both arrive as an `NSError` that holds the Kotlin exception in `userInfo["KotlinException"]`; SWIFT.md, "Error Handling", shows the one function that catches them.
+
+A refusal that a rule of an entity gives, the same for every use case that asks, is declared once, next to that rule, and the rule returns it. The sealed type of each use case that asks has one case that carries it. A screen that switches a button off asks the same function, and presentation writes the message of each refusal in one place. Such a type holds the answers of one rule; it is not a type of errors of a feature.
+
+```kotlin
+// BAD: the rule of the book is copied into each use case that asks
+if (book.status == BookStatus.Downloading) return AddBookmarkResult.BookIsDownloading
+if (book.status == BookStatus.Removed) return AddBookmarkResult.BookIsRemoved
+
+// GOOD: the rule and its refusal are written once, with the book
+enum class NoteRefusal { BookIsDownloading, BookIsRemoved }
+
+data class Book(val id: Int, val chapterCount: Int, val status: BookStatus) {
+    fun refusalOfNotes(): NoteRefusal? = when (status) {
+        BookStatus.Available -> null
+        BookStatus.Downloading -> NoteRefusal.BookIsDownloading
+        BookStatus.Removed -> NoteRefusal.BookIsRemoved
     }
 }
 
-// Called cleanly
-val verses = getChapterUseCase(bookId = 1, chapter = 1, language = Language.RU)
+sealed interface AddBookmarkResult {
+    data object Added : AddBookmarkResult
+    data class NotAllowed(val refusal: NoteRefusal) : AddBookmarkResult
+    data class BookNotFound(val bookId: Int) : AddBookmarkResult
+}
+
+class AddBookmarkUseCase(
+    private val bookRepository: BookRepository,
+    private val bookmarkRepository: BookmarkRepository
+) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, verse: Int): AddBookmarkResult {
+        val book = bookRepository.getBookById(bookId) ?: return AddBookmarkResult.BookNotFound(bookId)
+        book.refusalOfNotes()?.let { return AddBookmarkResult.NotAllowed(it) }
+        bookmarkRepository.addBookmark(bookId, chapter, verse)
+        return AddBookmarkResult.Added
+    }
+}
+```
+
+A use case that gives values over time has an `invoke` that is not `suspend` and returns a `Flow`. The outcomes that the text names are the values of the `Flow`. A failure that the text does not name ends the `Flow` as an exception at the collector. `@Throws` on `invoke` does not cover this exception, so Swift does not collect the `Flow` itself: Kotlin code collects it and catches the exception.
+
+The same use case in another style keeps its input, its output and its rules. The two forms below only show this; code under this standard uses the class.
+
+As a function:
+
+```kotlin
+typealias GetBookById = suspend (bookId: Int) -> Book?
+typealias GetVerses = suspend (bookId: Int, chapter: Int, language: Language) -> List<Verse>
+typealias GetChapter = suspend (bookId: Int, chapter: Int, language: Language) -> GetChapterResult
+
+// What the use case needs from outside is passed in first; the function that comes back is the use case
+fun getChapterWith(getBookById: GetBookById, getVerses: GetVerses): GetChapter = { bookId, chapter, language ->
+    val book = getBookById(bookId)
+    when {
+        book == null -> GetChapterResult.BookNotFound(bookId)
+        !book.hasChapter(chapter) -> GetChapterResult.ChapterOutOfRange(chapter, book.chapterCount)
+        else -> GetChapterResult.Verses(getVerses(bookId, chapter, language))
+    }
+}
+```
+
+As a Combine publisher in Swift. The outcomes that the text names are its `Output`; a failure that the text does not name is its `Failure`:
+
+```swift
+enum GetChapterResult {
+    case verses([Verse])
+    case bookNotFound(bookId: Int)
+    case chapterOutOfRange(chapter: Int, chapterCount: Int)
+}
+
+protocol BookRepository {
+    func book(id: Int) -> Future<Book?, Error>
+}
+
+protocol VerseRepository {
+    func verses(bookId: Int, chapter: Int, language: Language) -> Future<[Verse], Error>
+}
+
+struct GetChapter {
+    let bookRepository: BookRepository
+    let verseRepository: VerseRepository
+
+    func callAsFunction(bookId: Int, chapter: Int, language: Language) -> AnyPublisher<GetChapterResult, Error> {
+        Deferred { bookRepository.book(id: bookId) }
+            .flatMap { book -> AnyPublisher<GetChapterResult, Error> in
+                guard let book else {
+                    return result(.bookNotFound(bookId: bookId))
+                }
+                guard book.hasChapter(chapter) else {
+                    return result(.chapterOutOfRange(chapter: chapter, chapterCount: book.chapterCount))
+                }
+                return verseRepository.verses(bookId: bookId, chapter: chapter, language: language)
+                    .map(GetChapterResult.verses)
+                    .eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+
+    private func result(_ result: GetChapterResult) -> AnyPublisher<GetChapterResult, Error> {
+        Just(result).setFailureType(to: Error.self).eraseToAnyPublisher()
+    }
+}
 ```
 
 ### Use Case Independence
 
-Use cases depend **only** on repository interfaces (defined in domain). They never depend on ViewModels, UI types, framework classes, or other use cases. This makes them independently testable and reusable.
+Use cases depend **only** on what the domain layer declares: entities and repository interfaces. They never depend on ViewModels, UI types, framework classes, or other use cases. This makes them independently testable and reusable.
 
 ```kotlin
 // BAD: Use case depends on another use case
 class SelectChapterUseCase(
-    private val getChapter: GetChapterUseCase,  // Use case depending on use case!
+    private val getChapter: GetChapterUseCase,
     private val getBookGroups: GetBookGroupsUseCase
 ) {
-    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): Result<ChapterData> {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): GetChapterResult {
         val groups = getBookGroups()
         val book = groups.flatMap { it.books }.find { it.id == bookId }
-        val verses = getChapter(bookId, chapter, language)
-        return ...
+            ?: return GetChapterResult.BookNotFound(bookId)
+        return getChapter(book.id, chapter, language)
     }
 }
 
-// BAD: Use case depends on framework type
+// BAD: Use case depends on framework type (BibleDatabase is a SQLDelight type)
 class GetChapterUseCase(
-    private val db: BibleDatabase  // SQLDelight type in domain!
+    private val db: BibleDatabase
 )
 
-// BAD: Use case has state or side effects beyond repository calls
-class GetChapterUseCase(private val repository: VerseRepository) {
-    private var lastBookId: Int = 0  // State in use case!
+// BAD: Use case has state or side effects beyond repository calls: lastBookId is state, and invoke writes it as a side effect
+class GetChapterUseCase(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+) {
+    private var lastBookId: Int = 0
 
-    suspend operator fun invoke(...): Result<List<Verse>> {
-        lastBookId = bookId  // Side effect!
-        return repository.getVerses(bookId, chapter, language)
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): GetChapterResult {
+        lastBookId = bookId
+        val book = bookRepository.getBookById(bookId)
+            ?: return GetChapterResult.BookNotFound(bookId)
+        if (!book.hasChapter(chapter)) {
+            return GetChapterResult.ChapterOutOfRange(chapter, book.chapterCount)
+        }
+        return GetChapterResult.Verses(verseRepository.getVerses(bookId, chapter, language))
     }
 }
 
-// GOOD: Use case depends only on repository interfaces, is stateless
+// GOOD: Use case depends only on what the domain layer declares, is stateless
 class GetChapterUseCase(
-    private val verseRepository: VerseRepository,
-    private val bookRepository: BookRepository
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
 ) {
-    operator fun invoke(
-        bookId: Int,
-        chapter: Int,
-        language: Language
-    ): Result<List<Verse>> {
-        val book = bookRepository.getById(bookId)
-            ?: return Result.failure(ReaderError.BookNotFound(bookId))
-        if (chapter < 1 || chapter > book.chapterCount)
-            return Result.failure(ReaderError.ChapterOutOfRange(bookId, chapter, book.chapterCount))
-        return Result.success(verseRepository.getChapter(bookId, chapter, language))
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): GetChapterResult {
+        val book = bookRepository.getBookById(bookId)
+            ?: return GetChapterResult.BookNotFound(bookId)
+        if (!book.hasChapter(chapter)) {
+            return GetChapterResult.ChapterOutOfRange(chapter, book.chapterCount)
+        }
+        return GetChapterResult.Verses(verseRepository.getVerses(bookId, chapter, language))
     }
 }
 ```
 
-### Business Logic Lives in Use Cases, Not ViewModels
+### Business Logic Lives in the Domain Layer, Not ViewModels
 
-If a ViewModel contains `if/when` logic beyond event dispatch and result-to-state mapping, that logic belongs in a use case.
+If a ViewModel contains `if/when` logic beyond event dispatch and result-to-state mapping, that logic belongs in the domain layer: in a use case or an entity.
 
 ```kotlin
-// BAD: Business logic in ViewModel
-class ReaderViewModel(private val repository: VerseRepository) : ViewModel() {
+// BAD: Business logic in ViewModel: it validates that the book exists and that the chapter is in range
+class ReaderViewModel(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+) : ViewModel() {
     private fun loadChapter(bookId: Int, chapter: Int) {
         viewModelScope.launch {
-            val book = repository.getBook(bookId)
-            if (book == null) {                                    // Validation in VM!
+            val book = bookRepository.getBookById(bookId)
+            if (book == null) {
                 _state.update { it.copy(error = "Book not found") }
                 return@launch
             }
-            if (chapter < 1 || chapter > book.chapterCount) {     // Validation in VM!
+            if (chapter < 1 || chapter > book.chapterCount) {
                 _state.update { it.copy(error = "Invalid chapter") }
                 return@launch
             }
-            val verses = repository.getChapter(bookId, chapter, state.value.language)
+            val verses = verseRepository.getVerses(bookId, chapter, state.value.language)
             _state.update { it.copy(verses = verses) }
         }
     }
@@ -251,19 +418,25 @@ class ReaderViewModel(private val repository: VerseRepository) : ViewModel() {
 // GOOD: ViewModel delegates to use case, only maps result to state
 class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
     private fun loadChapter(bookId: Int, chapter: Int) {
-        viewModelScope.launch {
+        viewModelScope.launchCatchingStorage(onStorageFailure = { showError("Could not load the chapter") }) {
             _state.update { it.copy(isLoading = true) }
-            getChapter(bookId, chapter, _state.value.language)
-                .onSuccess { verses -> _state.update { it.copy(verses = verses, isLoading = false) } }
-                .onFailure { error -> _state.update { it.copy(error = mapError(error), isLoading = false) } }
+            show(getChapter(bookId, chapter, _state.value.language))
         }
     }
+
+    private fun show(result: GetChapterResult) = when (result) {
+        is GetChapterResult.Verses -> _state.update { it.copy(verses = result.verses, isLoading = false) }
+        is GetChapterResult.BookNotFound -> showError("Book not found")
+        is GetChapterResult.ChapterOutOfRange -> showError("Invalid chapter")
+    }
+
+    private fun showError(message: String) = _state.update { it.copy(error = message, isLoading = false) }
 }
 ```
 
 ### Domain Entities
 
-Pure data classes with no framework dependencies — no `@Entity`, `@Serializable`, or other annotations. When persistence or serialization is needed, create DTO classes at the data/serialization boundary with `toDomain()` / `toDto()` mapping functions. This protects domain evolution from breaking serialized data.
+Plain classes that hold their data and their own rules, with no framework dependencies — no `@Entity`, `@Serializable`, or other annotations. When persistence or serialization is needed, create DTO classes at the data/serialization boundary with `toDomain()` / `toDto()` mapping functions. This protects domain evolution from breaking serialized data.
 
 ```kotlin
 // BAD: Domain entity with framework annotations
@@ -299,21 +472,22 @@ Repository interface lives in domain, implementation lives in data.
 ```kotlin
 // Domain layer - interface
 interface BookRepository {
-    suspend fun getAllBooks(): Result<List<Book>>
-    suspend fun getBooksByGroup(groupId: Int): Result<List<Book>>
-    suspend fun getBookById(id: Int): Result<Book>
+    suspend fun getAllBooks(): List<Book>
+    suspend fun getBooksByGroup(groupId: Int): List<Book>
+    suspend fun getBookById(bookId: Int): Book?
 }
 
 // Data layer - implementation with DB mapping
-class BookRepositoryImpl(
+class DatabaseBookRepository(
     private val bookQueries: BookQueries
 ) : BookRepository {
 
-    override suspend fun getAllBooks(): Result<List<Book>> {
-        return runCatching {
-            bookQueries.selectAll().executeAsList().map { it.toDomain() }
-        }
-    }
+    override suspend fun getAllBooks(): List<Book> = books(bookQueries.selectAll())
+    override suspend fun getBooksByGroup(groupId: Int): List<Book> = books(bookQueries.selectByGroup(groupId))
+    override suspend fun getBookById(bookId: Int): Book? = books(bookQueries.selectById(bookId)).firstOrNull()
+
+    private fun books(query: Query<BooksRow>): List<Book> =
+        storageCall("Cannot read books") { query.executeAsList().map { it.toDomain() } }
 
     private fun BooksRow.toDomain() = Book(
         id = id.toInt(),
@@ -330,28 +504,29 @@ class BookRepositoryImpl(
 Map between DB/API models and domain models at the repository boundary.
 
 ```kotlin
-// BAD: Leaking DB model to domain
-class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
-    override suspend fun getVerses(...): Result<List<SelectRussianVerses>> { // DB type!
-        return runCatching { db.verseQueries.selectRussianVerses(...).executeAsList() }
-    }
+// BAD: Leaking DB model to domain: getVerses returns SelectRussianVerses, a DB type
+interface VerseRepository {
+    suspend fun getVerses(bookId: Int, chapter: Int, language: Language): List<SelectRussianVerses>
+}
+
+class DatabaseVerseRepository(private val db: BibleDatabase) : VerseRepository {
+    override suspend fun getVerses(bookId: Int, chapter: Int, language: Language): List<SelectRussianVerses> =
+        storageCall("Cannot read verses") { db.verseQueries.selectRussianVerses(bookId, chapter).executeAsList() }
 }
 
 // GOOD: Map to domain model
-class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
+class DatabaseVerseRepository(private val db: BibleDatabase) : VerseRepository {
     override suspend fun getVerses(
         bookId: Int,
         chapter: Int,
         language: Language
-    ): Result<List<Verse>> {
-        return runCatching {
-            val rows = when (language) {
-                Language.RU -> db.verseQueries.selectRussianVerses(bookId, chapter)
-                Language.CS -> db.verseQueries.selectChurchSlavonicVerses(bookId, chapter)
-                Language.EL -> db.verseQueries.selectGreekVerses(bookId, chapter)
-            }
-            rows.executeAsList().map { it.toDomainVerse() }
+    ): List<Verse> = storageCall("Cannot read verses") {
+        val rows = when (language) {
+            Language.RU -> db.verseQueries.selectRussianVerses(bookId, chapter)
+            Language.CS -> db.verseQueries.selectChurchSlavonicVerses(bookId, chapter)
+            Language.EL -> db.verseQueries.selectGreekVerses(bookId, chapter)
         }
+        rows.executeAsList().map { it.toDomainVerse() }
     }
 }
 ```
@@ -362,7 +537,7 @@ class VerseRepositoryImpl(private val db: BibleDatabase) : VerseRepository {
 
 ### ViewModel Discipline
 
-ViewModels are **thin coordinators**. They receive events, call use cases, and map results to UI state. That's it. If a ViewModel grows beyond ~50 lines of logic (excluding boilerplate), it's a sign that business logic has leaked out of the domain layer.
+ViewModels are **thin coordinators**. They receive events, call use cases, map results to UI state, and catch `StorageException` to show a general error. That's it. For a request with nothing to check and nothing to decide, a ViewModel calls a use case or the interface that the domain layer declares, as the Decisions Log of the project's implementation plan records. A ViewModel with an `if` or a `when` that decides something about the subject is a sign that business logic has leaked out of the domain layer.
 
 ### One ViewModel per Concern
 
@@ -444,31 +619,28 @@ fun AppScaffold(
 
 ### Unidirectional Data Flow (UDF)
 
-Events flow up from UI, state flows down from ViewModel.
+Events flow up from UI, state flows down from ViewModel. The state is an immutable data class, the events are a sealed interface, and the ViewModel processes events and emits state.
 
 ```kotlin
-// State: immutable data class
 data class ReaderState(
     val book: Book? = null,
     val chapter: Int = 1,
     val language: Language = Language.RU,
     val verses: List<Verse> = emptyList(),
     val isLoading: Boolean = false,
-    val error: ReaderError? = null
+    val error: String? = null
 )
 
-// Events: sealed interface
 sealed interface ReaderEvent {
     data class LoadChapter(val bookId: Int, val chapter: Int) : ReaderEvent
     data class ChangeLanguage(val language: Language) : ReaderEvent
     data class ChangeChapter(val chapter: Int) : ReaderEvent
 }
 
-// ViewModel: processes events, emits state
 class ReaderViewModel(
     private val getChapterUseCase: GetChapterUseCase,
     private val dispatcher: CoroutineDispatcher
-) : ScreenModel() {
+) : ScreenModel {
 
     private val _state = MutableStateFlow(ReaderState())
     val state: StateFlow<ReaderState> = _state.asStateFlow()
@@ -482,17 +654,19 @@ class ReaderViewModel(
     }
 
     private fun loadChapter(bookId: Int, chapter: Int) {
-        screenModelScope.launch(dispatcher) {
+        screenModelScope.launchCatchingStorage(onStorageFailure = { showError("Could not load the chapter") }, context = dispatcher) {
             _state.update { it.copy(isLoading = true, error = null) }
-            getChapterUseCase(bookId, chapter, _state.value.language)
-                .onSuccess { verses ->
-                    _state.update { it.copy(verses = verses, isLoading = false) }
-                }
-                .onFailure { error ->
-                    _state.update { it.copy(error = mapError(error), isLoading = false) }
-                }
+            show(getChapterUseCase(bookId, chapter, _state.value.language))
         }
     }
+
+    private fun show(result: GetChapterResult) = when (result) {
+        is GetChapterResult.Verses -> _state.update { it.copy(verses = result.verses, isLoading = false) }
+        is GetChapterResult.BookNotFound -> showError("Book not found")
+        is GetChapterResult.ChapterOutOfRange -> showError("Chapter ${result.chapter} does not exist (max: ${result.chapterCount})")
+    }
+
+    private fun showError(message: String) = _state.update { it.copy(error = message, isLoading = false) }
 }
 ```
 
@@ -501,16 +675,16 @@ class ReaderViewModel(
 Screen observes state and sends events. No business logic in Compose.
 
 ```kotlin
-// BAD: Logic in Compose
+// BAD: Logic and data access in Compose
 @Composable
 fun ReaderScreen(db: BibleDatabase) {
     var verses by remember { mutableStateOf(emptyList<Verse>()) }
     LaunchedEffect(Unit) {
-        verses = db.verseQueries.select(1, 1).executeAsList() // Data access in UI!
+        verses = db.verseQueries.select(1, 1).executeAsList()
     }
 }
 
-// GOOD: Screen observes state, delegates events
+// GOOD: Screen observes state, delegates events; ReaderContent is pure UI rendering from state
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel) {
     val state by viewModel.state.collectAsState()
@@ -526,7 +700,6 @@ private fun ReaderContent(
     state: ReaderState,
     onEvent: (ReaderEvent) -> Unit
 ) {
-    // Pure UI rendering from state
     if (state.isLoading) {
         CircularProgressIndicator()
     } else {
@@ -571,13 +744,14 @@ When user intent maps to a known set of actions, capture it with a direct contro
 ```kotlin
 // BAD: "Open or closed kitchen?" as a text field —
 // user types "open", "yes", "the first one", "doesn't matter"…
-// now you need a parser to map free text to two known options.
+// now you need a parser to map free text to two known options,
+// and that parser is fragile, slow and ambiguous.
 TextField(
     value = answer,
     onValueChange = { answer = it },
     label = { Text("Open or closed kitchen?") }
 )
-val style = llmParser.parseKitchenStyle(answer) // fragile, slow, ambiguous
+val style = llmParser.parseKitchenStyle(answer)
 
 // GOOD: Known options presented directly — no parsing, no LLM
 Row {
@@ -599,10 +773,10 @@ Each feature has its own Koin module. Core has a shared module.
 val appModule = module {
     single { DatabaseDriverFactory(get()).createDriver() }
     single { BibleDatabase(get()) }
-    single<VerseRepository> { VerseRepositoryImpl(get()) }
-    single<BookRepository> { BookRepositoryImpl(get()) }
-    single<SearchRepository> { SearchRepositoryImpl(get()) }
-    factory { GetChapterUseCase(get()) }
+    single<VerseRepository> { DatabaseVerseRepository(get()) }
+    single<BookRepository> { DatabaseBookRepository(get<BibleDatabase>().bookQueries) }
+    single<SearchRepository> { DatabaseSearchRepository(get()) }
+    factory { GetChapterUseCase(get(), get()) }
     factory { SearchBibleUseCase(get()) }
     factory { GetBooksUseCase(get()) }
     factory { ReaderViewModel(get(), get()) }
@@ -610,7 +784,7 @@ val appModule = module {
     factory { BookListViewModel(get(), get()) }
 }
 
-// GOOD: Modular DI
+// GOOD: Modular DI, with the feature modules aggregated in appModule
 val coreModule = module {
     single { DatabaseDriverFactory(get()).createDriver() }
     single { BibleDatabase(get()) }
@@ -618,18 +792,18 @@ val coreModule = module {
 }
 
 val readerModule = module {
-    single<VerseRepository> { VerseRepositoryImpl(get()) }
-    factory { GetChapterUseCase(get()) }
+    single<BookRepository> { DatabaseBookRepository(get<BibleDatabase>().bookQueries) }
+    single<VerseRepository> { DatabaseVerseRepository(get()) }
+    factory { GetChapterUseCase(get(), get()) }
     factory { ReaderViewModel(get(), get(named("io"))) }
 }
 
 val searchModule = module {
-    single<SearchRepository> { SearchRepositoryImpl(get()) }
+    single<SearchRepository> { DatabaseSearchRepository(get()) }
     factory { SearchBibleUseCase(get()) }
     factory { SearchViewModel(get(), get(named("io"))) }
 }
 
-// Aggregated
 val appModule = module {
     includes(coreModule, readerModule, searchModule)
 }
@@ -637,41 +811,71 @@ val appModule = module {
 
 ### Scoping Rules
 
-```kotlin
-// single: shared instances (repositories, database)
-single<VerseRepository> { VerseRepositoryImpl(get()) }
+`single`: shared instances (repositories, database). `factory`: new instance per injection (use cases, ViewModels).
 
-// factory: new instance per injection (use cases, ViewModels)
-factory { GetChapterUseCase(get()) }
-factory { ReaderViewModel(get(), get()) }
+```kotlin
+single<VerseRepository> { DatabaseVerseRepository(get()) }
+factory { GetChapterUseCase(get(), get()) }
+factory { ReaderViewModel(get(), get(named("io"))) }
 ```
 
 ---
 
 ## Error Handling
 
-### Sealed Error Types per Feature
+### Named Outcomes and Other Failures
+
+When the requirements text of a use case names more than one outcome, the use case returns its own sealed type with one case per outcome; when it names one, it returns the value itself (see [Use Cases](#use-cases)). `kotlin.Result` is not used for outcomes, and no error type is shared by a whole feature. A repository answers "there is none" with `null`, and the use case turns it into its own named outcome. An outcome is never a generic `Exception` with a message, such as `Exception("Book not found")`: that is unstructured, and the caller would have to parse the string to tell the outcomes apart.
+
+A failure that the text does not name (disk, database, network) is thrown. Code that calls a storage, network or platform library catches that library's own exception types only through one function, `storageCall`, never `Exception`, `Throwable` or `CancellationException`, and throws `StorageException`, which the domain layer declares, with the original as the cause. When common code cannot name the library's exception type, `storageCall` is an `expect` function: the repository passes its call to it as a lambda, and each `actual` runs the lambda in a `try`, catches that platform's exception type and throws `StorageException`. In a function that returns a `Flow`, the lambda holds the call that runs the query, not the call that builds the `Flow`. A use case does not catch it. The ViewModel that starts the use case catches it and shows a general error; all ViewModels do this through one function, so the `catch` is written once. `runCatching` is not used in `suspend` functions.
 
 ```kotlin
-// BAD: String errors or generic exceptions
-class GetChapterUseCase(...) {
-    suspend operator fun invoke(...): Result<List<Verse>> {
-        return Result.failure(Exception("Book not found")) // Unstructured
+// BAD: one error type for the feature, returned in Result; runCatching in a suspend function would also catch CancellationException
+sealed class ReaderError : Exception() {
+    data class BookNotFound(val bookId: Int) : ReaderError()
+}
+
+interface BookRepository {
+    suspend fun getBookById(bookId: Int): Result<Book>
+}
+
+class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Result<Book> = runCatching {
+        bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain() ?: throw ReaderError.BookNotFound(bookId)
     }
 }
 
-// GOOD: Sealed error hierarchy
-sealed class ReaderError {
-    data class BookNotFound(val bookId: Int) : ReaderError()
-    data class ChapterOutOfRange(val chapter: Int, val maxChapter: Int) : ReaderError()
-    data class DatabaseError(val message: String) : ReaderError()
+// GOOD: "there is none" is null; a database failure is thrown as StorageException with the original as its cause
+// Domain layer
+class StorageException(message: String, cause: Throwable) : Exception(message, cause)
+
+// Data layer, commonMain
+internal expect inline fun <T> storageCall(message: String, call: () -> T): T
+
+class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Book? = storageCall("Cannot read book $bookId") {
+        bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain()
+    }
 }
 
-// ViewModel maps errors to UI messages
-private fun mapError(error: ReaderError): String = when (error) {
-    is ReaderError.BookNotFound -> "Book not found"
-    is ReaderError.ChapterOutOfRange -> "Chapter ${error.chapter} does not exist (max: ${error.maxChapter})"
-    is ReaderError.DatabaseError -> "Database error: ${error.message}"
+// Data layer, androidMain
+internal actual inline fun <T> storageCall(message: String, call: () -> T): T = try {
+    call()
+} catch (e: SQLiteException) {
+    throw StorageException(message, e)
+}
+
+// Presentation layer: every ViewModel catches StorageException through this one function
+fun CoroutineScope.launchCatchingStorage(
+    onStorageFailure: () -> Unit,
+    context: CoroutineContext = EmptyCoroutineContext,
+    block: suspend CoroutineScope.() -> Unit
+): Job = launch(context) {
+    try {
+        block()
+    } catch (e: StorageException) {
+        onStorageFailure()
+    }
 }
 ```
 
@@ -687,7 +891,7 @@ Each screen is a Voyager Screen with its required parameters.
 // BAD: String-based navigation with manual argument parsing
 navigator.navigate("reader/$bookId/$chapter")
 
-// GOOD: Type-safe screen objects
+// GOOD: Type-safe screen objects; navigate with type safety by pushing one
 data class ReaderScreen(
     val bookId: Int,
     val chapter: Int
@@ -699,7 +903,6 @@ data class ReaderScreen(
     }
 }
 
-// Navigate with type safety
 navigator.push(ReaderScreen(bookId = 51, chapter = 1))
 ```
 
@@ -710,21 +913,22 @@ navigator.push(ReaderScreen(bookId = 51, chapter = 1))
 ### Architecture
 - [ ] Three layers: Presentation -> Domain <- Data
 - [ ] Domain is the stable center — depends on nothing
-- [ ] All business logic lives in use cases, not ViewModels or repositories
+- [ ] Business logic lives in the domain layer (use cases and entities), not in ViewModels or repositories
 - [ ] Repository interfaces in domain, implementations in data
 - [ ] DB/API models mapped to domain models at repository boundary
 
 ### Domain
-- [ ] One use case per user action
-- [ ] Use cases depend only on repository interfaces
+- [ ] A use case has its own input, output and rules; it is not a user action
+- [ ] Use cases depend only on what the domain layer declares: entities and repository interfaces
 - [ ] Use cases never depend on other use cases, ViewModels, or framework types
 - [ ] Use cases are stateless (no mutable fields)
-- [ ] Validation and business rules live in use cases
-- [ ] Sealed error types per feature
+- [ ] A rule that is true of an entity whichever use case asks lives with the entity; application-specific rules live in use cases
+- [ ] A use case whose requirements text names more than one outcome returns its own sealed type; no `kotlin.Result` for outcomes, no error type shared by a feature
+- [ ] Code that calls a storage, network or platform library catches its exception types only through `storageCall` and throws `StorageException`; use cases do not catch it; no `runCatching` in `suspend` functions
 
 ### Presentation
-- [ ] ViewModels are thin coordinators (~50 lines of logic max)
-- [ ] ViewModels call use cases and map results to state — nothing more
+- [ ] ViewModels are thin coordinators: no `if` or `when` that decides something about the subject
+- [ ] ViewModels call use cases, map results to state, and catch `StorageException` — nothing more; a request with nothing to check and nothing to decide follows the choice recorded in the Decisions Log of the implementation plan
 - [ ] One ViewModel per concern, not per screen
 - [ ] UI containers are dumb layout slots — no domain awareness
 - [ ] Immutable state data class

@@ -109,7 +109,7 @@ name
 count
 users
 UserService
-DefaultUserService (or just UserService)
+DatabaseUserService (an implementation of UserService, named after what makes it this one)
 ```
 
 ### Searchable Names
@@ -133,7 +133,11 @@ totalSeconds = days * SECONDS_PER_DAY
 
 ## Functions
 
-### Small and Focused
+### One Thing per Function
+
+A function does one thing: each step in it is one level of abstraction below its name. A part that can get a name which does not just restate its code becomes a function with that name. A function whose body says no more than its name is put back where it is called; a use case under option (b) of row D-002 stays (ARCHITECTURE.md, "A request with no rules"). Size is not counted in lines, for functions, classes, files or tests.
+
+**CRAP score.** Each function is measured by its CRAP score: complexity² × (1 − coverage)³ + complexity. Complexity is the number of decisions in the function plus one. Coverage is the share of the function that the project's automated tests run, from 0 to 1. The score is 8 or below: a fully tested function may have up to 8 paths, an untested one two. Above 8 the function is split into named parts or covered by tests. A function that reads better whole, such as one `when` over the options of a command line or a flat list of checks in the order of the rules, each returning its refusal, may stay above 8; it is not wrapped in a helper type only to lower the score, and the exception is recorded in the Decisions Log of the implementation plan. (The formula is Savoia's and Evans' crap4j; 8 is the limit at which R. C. Martin's crap4java fails a build. crap4j's own limit of 30 was set for old, untested code.)
 
 ```
 // BAD: Function doing multiple things
@@ -188,7 +192,7 @@ createUser(name, email, age, address, city, country, phone, role, department)
 // GOOD: Group related parameters
 createUser(personalInfo, contactInfo, organizationInfo)
 
-// Or use builder pattern for many optional params
+// GOOD: Or use builder pattern for many optional params
 User.builder()
     .name("Alice")
     .email("alice@example.com")
@@ -199,21 +203,20 @@ User.builder()
 ### No Side Effects
 
 ```
-// BAD: Hidden side effect
+// BAD: Hidden side effect: validatePassword() also initializes the session
 validatePassword(password) {
     if (isValid(password)) {
-        Session.initialize()  // Unexpected side effect!
+        Session.initialize()
         return true
     }
     return false
 }
 
-// GOOD: Do what the name says, nothing more
+// GOOD: Do what the name says, nothing more; the session has its own function
 validatePassword(password) {
     return isValid(password)
 }
 
-// Separate function for session
 initializeSession() {
     Session.initialize()
 }
@@ -228,12 +231,12 @@ addAndReturnCount(item) {
     return list.size()
 }
 
-// GOOD: Separate commands from queries
-add(item) {          // Command: changes state
+// GOOD: Separate commands from queries: add() is a command that changes state, count() is a query that returns data
+add(item) {
     list.add(item)
 }
 
-count() {            // Query: returns data
+count() {
     return list.size()
 }
 ```
@@ -254,9 +257,9 @@ class Employee {
     validateData()
 }
 
-// GOOD: Focused classes
+// GOOD: Focused classes; Employee holds only employee data and behavior
 class Employee {
-    // Only employee data and behavior
+    ...
 }
 
 class PayrollCalculator {
@@ -306,7 +309,7 @@ class Order {
     public total = 0
 }
 
-// External code manipulates directly
+// BAD: External code manipulates directly
 order.items.push(item)
 order.total = order.total + item.price
 
@@ -362,13 +365,13 @@ policeDog = new Dog(
 A class should have only one reason to change.
 
 ```
-// BAD: Multiple reasons to change
+// BAD: Multiple reasons to change: user, validation, email, persistence and reporting logic
 class UserManager {
-    createUser()           // User logic
-    validateEmail()        // Validation logic
-    sendWelcomeEmail()     // Email logic
-    saveToDatabase()       // Persistence logic
-    generateReport()       // Reporting logic
+    createUser()
+    validateEmail()
+    sendWelcomeEmail()
+    saveToDatabase()
+    generateReport()
 }
 
 // GOOD: Each class has one responsibility
@@ -394,7 +397,7 @@ class UserRepository {
 Open for extension, closed for modification.
 
 ```
-// BAD: Must modify class to add new shape
+// BAD: Must modify class to add new shape: each new shape adds another else-if
 class AreaCalculator {
     calculate(shape) {
         if (shape.type == "circle") {
@@ -402,12 +405,12 @@ class AreaCalculator {
         } else if (shape.type == "rectangle") {
             return shape.width * shape.height
         } else if (shape.type == "triangle") {
-            // Keep adding else-if for each new shape
+            return 0.5 * shape.base * shape.height
         }
     }
 }
 
-// GOOD: Extend without modifying
+// GOOD: Extend without modifying: adding a new shape doesn't touch existing code
 interface Shape {
     area()
 }
@@ -420,7 +423,6 @@ class Rectangle implements Shape {
     area() { return width * height }
 }
 
-// Adding new shapes doesn't touch existing code
 class Triangle implements Shape {
     area() { return 0.5 * base * height }
 }
@@ -437,7 +439,7 @@ class AreaCalculator {
 Subtypes must be substitutable for their base types.
 
 ```
-// BAD: Square violates Rectangle contract
+// BAD: Square violates Rectangle contract: its setWidth() and setHeight() change both sides, which breaks expectations
 class Rectangle {
     setWidth(w) { width = w }
     setHeight(h) { height = h }
@@ -445,15 +447,15 @@ class Rectangle {
 }
 
 class Square extends Rectangle {
-    setWidth(w) { width = w; height = w }  // Breaks expectations
-    setHeight(h) { width = h; height = h } // Breaks expectations
+    setWidth(w) { width = w; height = w }
+    setHeight(h) { width = h; height = h }
 }
 
-// This breaks:
+// BAD: This assertion fails, area() returns 100
 r = new Square()
 r.setWidth(5)
 r.setHeight(10)
-assert(r.area() == 50)  // Fails! Returns 100
+assert(r.area() == 50)
 
 // GOOD: Don't inherit if contract differs
 interface Shape {
@@ -485,11 +487,11 @@ interface Worker {
     writeReport()
 }
 
-// Robot can't eat or sleep!
+// BAD: Robot can work, but can't eat or sleep, and is forced to implement both
 class Robot implements Worker {
-    work() { /* OK */ }
-    eat() { throw NotSupported }    // Forced to implement
-    sleep() { throw NotSupported }  // Forced to implement
+    work() { }
+    eat() { throw NotSupported }
+    sleep() { throw NotSupported }
 }
 
 // GOOD: Segregated interfaces
@@ -521,15 +523,15 @@ class Robot implements Workable {
 Depend on abstractions, not concretions.
 
 ```
-// BAD: High-level depends on low-level
+// BAD: High-level depends on low-level: OrderService creates its concrete database and mailer itself
 class OrderService {
     constructor() {
-        this.database = new MySQLDatabase()  // Concrete dependency
-        this.mailer = new SmtpMailer()       // Concrete dependency
+        this.database = new MySQLDatabase()
+        this.mailer = new SmtpMailer()
     }
 }
 
-// GOOD: Depend on abstractions
+// GOOD: Depend on abstractions: the dependencies are injected, so a test can inject mocks
 class OrderService {
     constructor(database: Database, mailer: Mailer) {
         this.database = database
@@ -537,13 +539,11 @@ class OrderService {
     }
 }
 
-// Inject dependencies
 orderService = new OrderService(
     new MySQLDatabase(),
     new SmtpMailer()
 )
 
-// Easy to test with mocks
 testOrderService = new OrderService(
     new MockDatabase(),
     new MockMailer()
@@ -619,16 +619,16 @@ reverse(str) {
 ### YAGNI (You Aren't Gonna Need It)
 
 ```
-// BAD: Building for imaginary future
+// BAD: Building for imaginary future: a cache "we might need", a load balancer "for scale", plugins "for extensibility"
 class UserService {
     constructor() {
-        this.cache = new DistributedCache()  // "We might need it"
-        this.loadBalancer = new LoadBalancer() // "For scale"
-        this.plugins = new PluginSystem()     // "For extensibility"
+        this.cache = new DistributedCache()
+        this.loadBalancer = new LoadBalancer()
+        this.plugins = new PluginSystem()
     }
 }
 
-// GOOD: Build what you need now
+// GOOD: Build what you need now; add caching when you need it, not before
 class UserService {
     constructor(repository) {
         this.repository = repository
@@ -638,18 +638,41 @@ class UserService {
         return repository.find(id)
     }
 }
-
-// Add caching WHEN you need it, not before
 ```
 
 ---
 
 ## Comments
 
-### Code Should Be Self-Documenting
+Code has no comments. What you want to write in a comment becomes code that says it:
+
+| The comment would say | Write instead |
+|---|---|
+| what the next line already says | nothing more: write the line plainly, `counter++` or `users.filter(user => user.isActive)`; the line itself says it |
+| what a block of code does | a function named after what the block is for |
+| what a function is for | a better name for the function |
+| what a value means, or its unit | a name, a named constant or a type |
+| what must be true here | a type that allows nothing else, or a check that fails: `require`, `check`, an assertion |
+| why the obvious way is not used, or a warning | a name at that place in the code that says it, such as `deleteTripRowFirst()`, and a test whose name gives the whole reason and that fails when the code is changed the obvious way |
+| which outside specification, law or algorithm the code follows | the name of the function, and of its test |
+| which rule of the project's requirements the code follows | the name of its test; the name in the code says the rule in words |
+| what a function promises: what it does with a row that is missing, what it never throws | the name of the function, such as `deleteIfPresent`, a type for each outcome, and a test |
+| work still to do | a task in the tracker |
+| who changed what, what was tried | the commit message |
+| old code that might come back | the commit message that deletes it, saying what it did; the history keeps the code |
+
+Tests follow the same rule, with one fixed exception: every test marks its three parts with `// Arrange`, `// Act`, `// Assert` or with `// Given`, `// When`, `// Then`, in capitals or in lower case. A project keeps to one set. Everything else a test has to say goes into its name, its helpers and its assertions.
+
+**A comment is never just deleted.** What an existing comment says first moves where the table says. A reason, a warning, a unit, an outside source or a promise goes into the code where its reader looks — a name, a type, a check — and a test pins it; a test, a plan or a tracker alone is not where the reader of the code looks. The number of a rule of the project's requirements goes into the test name. Only work still to do goes to the tracker, and only history to the commit message. Only then does the comment go. If nothing in the table carries it, the comment stays until something does. Information is not lost.
+
+**Where there is no comment, the same holds.** A reason, a warning, a unit, an outside source or a promise that only a test name, the plan or the tracker gives gets a name in the code it explains, as the table shows, and a review reports each one it finds.
+
+**A project may allow a kind of comment.** Row D-003 of the Decisions Log of the implementation plan records the choice: (a) no comments besides the test markers, or (b) the kinds named there, such as a license header that a contract requires or reference documentation of a library that other teams use, and where they go. Only those kinds are written, and only there.
+
+**The lint step checks it.** The project's lint step fails when the source holds a comment other than the test markers and the kinds that the Decisions Log allows (`templates/review/project/gates.sh` has the commands). A directive that a tool reads from a comment, such as `// swiftlint:disable:next`, is not a comment to a reader; it is used only where an annotation cannot do the same.
 
 ```
-// BAD: Comment explains obvious code
+// BAD: comments repeat what the code says
 // Increment counter by one
 counter = counter + 1
 
@@ -662,44 +685,55 @@ for (user in users) {
     }
 }
 
-// GOOD: Code explains itself
+// GOOD: the code says it itself
 counter++
 
 activeUsers = users.filter(user => user.isActive)
-```
 
-### Comment WHY, Not WHAT
+// BAD: comments give a unit and a reason, say what the code does, and keep dead code
+// Timeout in seconds. iOS ends a background task after 30 s and terminates the app
+t = 30
 
-```
-// BAD: Describes what code does
-// Set timeout to 30 seconds
-timeout = 30
+// Skip files that are too big to upload.
+// file.size is 0 for files over 2 GB (library issue #412), so read the size from disk
+if (fileSystem.sizeOf(file.path) > 5000000) {
+    return
+}
+// size = file.size
 
-// GOOD: Explains why
-// iOS background task limit is 30s; exceeding causes termination
-timeout = 30
+// GOOD: names say what the code does and where it leaves the obvious way; each reason is a test that fails if the code goes the obvious way
+IOS_BACKGROUND_TASK_LIMIT_SECONDS = 30
+MAX_UPLOAD_BYTES = 5000000
 
-// BAD: Describes the code
+if (isTooBigToUpload(file)) {
+    return
+}
+
+isTooBigToUpload(file) {
+    return fileSystem.sizeOf(file.path) > MAX_UPLOAD_BYTES
+}
+
+test("a background task ends within the 30 s that iOS gives it; after that iOS terminates the app") { ... }
+test("a file over 2 GB is too big to upload, although the library gives its size as 0 (library issue #412)") { ... }
+
+// BAD: the comments describe the condition, and give the business rule and its source
 // Check if user is admin
-if (user.role == "admin") { }
-
-// GOOD: Explains business rule
 // Only admins can access financial reports (SOX compliance)
 if (user.role == "admin") { }
-```
 
-### Document Public APIs
+// GOOD: the name says the rule and the law it comes from; its test names the source too
+if (canSeeFinancialReportsUnderSox(user)) { }
 
-```
-// BAD: No documentation
-export(project, options)
+canSeeFinancialReportsUnderSox(user) {
+    return user.role == ADMIN
+}
 
-// GOOD: Clear API documentation
+test("only an admin can see financial reports, as SOX compliance requires") { ... }
+
+// BAD: the documentation comment holds the contract of the function
 /**
  * Exports project to specified format.
- *
  * @param project - Project to export. Must have at least one track.
- * @param options - Export configuration
  * @param options.format - Output format (mp4, mov, webm)
  * @param options.quality - Quality preset (low, medium, high)
  * @returns Promise resolving to exported file path
@@ -707,26 +741,22 @@ export(project, options)
  * @throws InsufficientStorageError if disk space < estimated output size
  */
 export(project, options)
-```
 
-### No Commented-Out Code
+// GOOD: the types hold the contract, and the compiler checks it
+ExportFormat = MP4 | MOV | WEBM
+ExportQuality = LOW | MEDIUM | HIGH
+ExportResult = Exported(file) | ProjectHasNoTracks | NotEnoughStorage(estimatedBytes, freeBytes)
 
-```
-// BAD: Dead code in comments
-processVideo(video) {
-    // Old implementation - keeping just in case
-    // result = legacyProcess(video)
-    // if (result.hasError) {
-    //     return handleLegacyError(result)
-    // }
+async exportProject(project, format: ExportFormat, quality: ExportQuality): ExportResult
 
-    return newProcess(video)
-}
+// BAD: the comment points to the specification
+// RFC 9110, section 14.4
+header = "bytes " + first + "-" + last + "/" + total
 
-// GOOD: Delete it (use version control)
-processVideo(video) {
-    return newProcess(video)
-}
+// GOOD: the name of the function and of its test point to it
+header = rfc9110ContentRangeHeader(first, last, total)
+
+test("the Content-Range header is written as RFC 9110, section 14.4 defines it") { ... }
 ```
 
 ---
@@ -736,49 +766,52 @@ processVideo(video) {
 ### Fail Fast
 
 ```
-// BAD: Continue with bad state
+// BAD: Continue with bad state: missing data is "fixed" with defaults and the function goes on with questionable data
 processOrder(order) {
     if (order == null) {
-        order = new Order()  // "Fix" the problem
+        order = new Order()
     }
     if (order.items == null) {
-        order.items = []     // "Fix" again
+        order.items = []
     }
-    // Continue processing questionable data...
+    ...
 }
 
-// GOOD: Fail immediately on invalid input
-processOrder(order) {
+// GOOD: A bug is thrown at once; an outcome the requirements name is returned; after the checks the function can trust the order
+processOrder(order): ProcessOrderResult {
     if (order == null) throw InvalidArgumentError("Order required")
     if (order.items == null) throw InvalidStateError("Order has no items")
-    if (order.items.isEmpty()) throw BusinessError("Cannot process empty order")
+    if (order.items.isEmpty()) return ProcessOrderResult.EmptyOrder
 
-    // Proceed with confidence
+    ...
 }
 ```
 
 ### Use Specific Exceptions
 
+This is for the code that touches the storage, network or platform. It catches the library's own exception types, never everything, and throws an exception type that the application declares, with the original as the cause.
+
 ```
-// BAD: Generic exceptions
+// BAD: Catches everything and throws a generic exception without the cause, so nobody can tell what went wrong
 save(user) {
     try {
         database.insert(user)
     } catch (e) {
-        throw new Error("Save failed")  // What went wrong?
+        throw new Error("Save failed")
     }
 }
 
-// GOOD: Specific, actionable exceptions
-save(user) {
+// GOOD: The library's own types are caught; an outcome the requirements name is returned
+save(user): SaveUserResult {
     try {
         database.insert(user)
+        return SaveUserResult.Saved
     } catch (DuplicateKeyException e) {
-        throw new UserAlreadyExistsError(user.email)
+        return SaveUserResult.EmailAlreadyUsed
     } catch (ConnectionException e) {
-        throw new ServiceUnavailableError("Database", e)
+        throw new StorageException("Cannot save user", e)
     } catch (ValidationException e) {
-        throw new InvalidUserDataError(e.violations)
+        return SaveUserResult.InvalidUserData(e.violations)
     }
 }
 ```
@@ -786,12 +819,12 @@ save(user) {
 ### Don't Swallow Exceptions
 
 ```
-// BAD: Silent failure
+// BAD: Silent failure: the error is lost and an empty config is returned
 loadConfig() {
     try {
         return parseConfigFile()
     } catch (e) {
-        return {}  // Silently return empty config
+        return {}
     }
 }
 
@@ -808,28 +841,46 @@ loadConfig() {
 }
 ```
 
-### Use Result Types for Expected Failures
+### Report a Failure by Its Kind
+
+A function reports a failure according to its kind.
+
+- A bug: a broken precondition or invariant. It is thrown as an exception. No code catches it in order to continue. Only the top-level handler catches it, to log it and stop the operation.
+- An outcome that the requirements name, such as "book not found" or "no connection". It is returned as a case of the function's result type. The signature names it and the caller must handle it.
+- Any other failure of storage, network or the platform. The code that touches the storage, network or platform throws it as an exception type that the application declares, with the library's exception kept as the cause. It wraps only the library's own failure types, never everything. Each side writes its catch once: the code that touches a library catches through one function, and the code that starts operations catches through one function. One place catches it: the code that started the operation. It tells the user and abandons or retries the operation. Code in between does not catch it in order to continue; it may clean up and rethrow.
+
+Cancellation is not a failure. It is passed on as it is: never wrapped, never shown to the user as an error.
 
 ```
-// BAD: Exceptions for expected cases
+// BAD: An outcome the requirements name is thrown
 getUser(id) {
-    user = database.find(id)
-    if (user == null) throw UserNotFoundException(id)  // Expected!
+    user = userRepository.find(id)
+    if (user == null) throw UserNotFoundException(id)
     return user
 }
 
-// GOOD: Result type for expected failures
-getUser(id): Result<User, UserError> {
-    user = database.find(id)
-    if (user == null) return Failure(UserError.NotFound(id))
-    return Success(user)
+// GOOD: The outcome is a case of the function's result type; the code that started the operation handles every case and is the one place that catches StorageException
+getUser(id): GetUserResult {
+    user = userRepository.find(id)
+    if (user == null) return GetUserResult.UserNotFound(id)
+    return GetUserResult.Found(user)
 }
 
-// Caller handles both cases explicitly
-result = getUser(id)
-match result {
-    Success(user) => display(user)
-    Failure(error) => showError(error)
+showUser(id) {
+    catchingStorageFailure(onFailure = showGeneralError) {
+        match getUser(id) {
+            Found(user) => display(user)
+            UserNotFound(id) => showUserNotFound(id)
+        }
+    }
+}
+
+catchingStorageFailure(onFailure, operation) {
+    try {
+        operation()
+    } catch (StorageException e) {
+        onFailure()
+    }
 }
 ```
 
@@ -840,18 +891,23 @@ match result {
 ### Test Behavior, Not Implementation
 
 ```
-// BAD: Tests implementation details
+// BAD: Tests implementation details: it reads the private state _items
 test("adds item to internal array") {
     cart = new ShoppingCart()
     cart.add(item)
-    assert(cart._items.length == 1)  // Testing private state
+    assert(cart._items.length == 1)
     assert(cart._items[0] == item)
 }
 
 // GOOD: Tests behavior
 test("added item appears in cart") {
+    // Arrange
     cart = new ShoppingCart()
+
+    // Act
     cart.add(item)
+
+    // Assert
     assert(cart.contains(item))
     assert(cart.itemCount() == 1)
 }
@@ -867,7 +923,7 @@ test_1()
 
 // GOOD: Describes scenario and expectation
 test_add_increasesItemCount_whenCartIsEmpty()
-test_add_throwsError_whenItemOutOfStock()
+test_add_returnsOutOfStock_whenItemOutOfStock()
 test_checkout_appliesDiscount_whenCouponIsValid()
 ```
 
@@ -903,29 +959,41 @@ test_process_returnsSuccess_forValidOrder() {
 ### One Assertion Per Test (Conceptually)
 
 ```
-// BAD: Multiple unrelated assertions
+// BAD: Multiple unrelated assertions: the audit log and the welcome email are different concerns
 test_user_creation() {
     user = createUser(data)
     assert(user.name == "Alice")
     assert(user.email == "alice@example.com")
     assert(user.createdAt != null)
-    assert(auditLog.contains("user created"))  // Different concern!
-    assert(welcomeEmail.wasSent())             // Different concern!
+    assert(auditLog.contains("user created"))
+    assert(welcomeEmail.wasSent())
 }
 
 // GOOD: Separate tests for separate behaviors
 test_createUser_setsNameFromInput() {
+    // Arrange
+    // Act
     user = createUser(name: "Alice")
+
+    // Assert
     assert(user.name == "Alice")
 }
 
 test_createUser_logsToAuditTrail() {
+    // Arrange
+    // Act
     createUser(data)
+
+    // Assert
     assert(auditLog.contains("user created"))
 }
 
 test_createUser_sendsWelcomeEmail() {
+    // Arrange
+    // Act
     createUser(data)
+
+    // Assert
     assert(welcomeEmail.wasSent())
 }
 ```
@@ -933,7 +1001,7 @@ test_createUser_sendsWelcomeEmail() {
 ### Test Independence
 
 ```
-// BAD: Tests depend on each other
+// BAD: Tests depend on each other: test_update_user needs the user that test_create_user made
 sharedUser = null
 
 test_create_user() {
@@ -942,14 +1010,14 @@ test_create_user() {
 }
 
 test_update_user() {
-    sharedUser.name = "New Name"  // Depends on previous test!
+    sharedUser.name = "New Name"
     save(sharedUser)
     assert(sharedUser.name == "New Name")
 }
 
-// GOOD: Each test is self-contained
+// GOOD: Each test is self-contained: it creates its own test data
 test_update_changesUserName() {
-    // Arrange - create own test data
+    // Arrange
     user = createUser(name: "Old Name")
 
     // Act
@@ -965,16 +1033,16 @@ test_update_changesUserName() {
 
 ## Code Smells
 
-### Long Method
-**Smell:** Method longer than 20-30 lines
-**Fix:** Extract smaller methods
+### Long Function
+**Smell:** Does more than one thing: parts of it could get names of their own, or its CRAP score is above 8 without a recorded exception
+**Fix:** Extract the parts as functions named after what they do, or cover the function with tests; a function that reads better whole keeps its form and its exception is recorded ("One Thing per Function")
 
 ### Large Class
-**Smell:** Class with too many responsibilities
-**Fix:** Split into focused classes
+**Smell:** More than one responsibility: more than one reason to change, a vague name such as `Manager` or `Processor`, fields that only some of its functions use
+**Fix:** Split into focused classes. Never split by line count
 
 ### Long Parameter List
-**Smell:** More than 3-4 parameters
+**Smell:** More than 3 parameters
 **Fix:** Introduce parameter object or builder
 
 ### Duplicate Code
@@ -1026,7 +1094,7 @@ test_update_changesUserName() {
 - [ ] Searchable (no magic numbers)
 
 ### Functions
-- [ ] Small (under 20 lines)
+- [ ] Does one thing; CRAP score 8 or below, or a recorded exception
 - [ ] Single responsibility
 - [ ] Single level of abstraction
 - [ ] Few parameters (max 3)
@@ -1041,10 +1109,12 @@ test_update_changesUserName() {
 - [ ] Follows SOLID principles
 
 ### Error Handling
-- [ ] Fails fast on invalid input
-- [ ] Specific exceptions
+- [ ] A bug is thrown at once and not caught in order to continue
+- [ ] An outcome the requirements name is returned as a case of the result type, not thrown
+- [ ] Storage, network and platform code catches the library's own exception types and throws an exception type the application declares, with the cause
+- [ ] Only the code that started the operation catches that exception
 - [ ] No swallowed exceptions
-- [ ] Result types for expected failures
+- [ ] Cancellation is passed on, never wrapped
 
 ### Testing
 - [ ] Tests behavior, not implementation

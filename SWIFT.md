@@ -67,12 +67,14 @@ func handle(playbackEvent event: PlaybackEvent)
 func exportProject()
 func loadUserData() -> Data
 
-// Call site reads naturally:
+// GOOD: Call site reads naturally
 processVideo(at: "/path/to/file", quality: 80)
 handle(playbackEvent: .paused)
 ```
 
 ### Types
+
+A protocol name takes an -ing or -able suffix, as `VideoEncoding` does.
 
 ```swift
 // BAD
@@ -84,7 +86,7 @@ enum state { }
 // GOOD
 struct VideoMetadata { }
 class VideoEncoder { }
-protocol VideoEncoding { }  // -ing or -able suffix
+protocol VideoEncoding { }
 enum PlaybackState { }
 ```
 
@@ -98,7 +100,8 @@ let ratio = 1.777778
 
 // GOOD
 enum Constants {
-    static let maxVideoSizeBytes = 50 * 1024 * 1024  // 50 MB
+    static let megabyte = 1024 * 1024
+    static let maxVideoSizeBytes = 50 * megabyte
     static let exportTimeoutSeconds: TimeInterval = 30
     static let widescreenAspectRatio: CGFloat = 16.0 / 9.0
 }
@@ -129,7 +132,7 @@ func encodeToH264(_ data: Data) -> EncodedVideo
 func extractThumbnail(from video: EncodedVideo) -> UIImage
 func upload(_ video: EncodedVideo) async throws -> URL
 
-// Compose in a coordinator
+// GOOD: Compose in a coordinator
 func exportAndUpload(path: String) async throws -> ExportResult {
     let data = try loadVideo(at: path)
     let compressed = compressVideo(data)
@@ -142,64 +145,58 @@ func exportAndUpload(path: String) async throws -> ExportResult {
 ### Parameter Labels
 
 ```swift
-// BAD: Unclear at call site
+// BAD: Unclear at call site: move(point, 2.0, .red)
 func move(_ p: CGPoint, _ d: TimeInterval, _ c: UIColor)
-// move(point, 2.0, .red) - what do these mean?
 
-// BAD: Redundant
+// BAD: Redundant, "view" repeated: moveView(view: myView, toPoint: origin)
 func moveView(view: UIView, toPoint point: CGPoint)
-// moveView(view: myView, toPoint: origin) - "view" repeated
 
-// GOOD: Reads like English
+// GOOD: Reads like English: move(to: origin, duration: 2.0, highlightColor: .red)
 func move(to point: CGPoint, duration: TimeInterval, highlightColor: UIColor)
-// move(to: origin, duration: 2.0, highlightColor: .red)
 
+// GOOD: Reads like English: move(myView, to: origin)
 func move(_ view: UIView, to point: CGPoint)
-// move(myView, to: origin)
 ```
 
 ### Avoid Deep Nesting
 
 ```swift
 // BAD
-func processMedia(file: URL?) -> Result<Media, MediaError> {
+func processMedia(file: URL?) throws -> ProcessMediaResult {
     if let file = file {
         if FileManager.default.fileExists(atPath: file.path) {
             if FileManager.default.isReadableFile(atPath: file.path) {
-                if let data = try? Data(contentsOf: file) {
-                    if !data.isEmpty {
-                        if isValidFormat(data) {
-                            return .success(parse(data))
-                        } else {
-                            return .failure(.invalidFormat)
-                        }
+                let data = try read(file)
+                if !data.isEmpty {
+                    if isValidFormat(data) {
+                        return .media(parse(data))
                     } else {
-                        return .failure(.emptyFile)
+                        return .invalidFormat
                     }
                 } else {
-                    return .failure(.readFailed)
+                    return .emptyFile
                 }
             } else {
-                return .failure(.notReadable)
+                return .notReadable
             }
         } else {
-            return .failure(.notFound)
+            return .notFound
         }
     } else {
-        return .failure(.nilURL)
+        return .nilURL
     }
 }
 
 // GOOD: Guard statements, early exit
-func processMedia(file: URL?) -> Result<Media, MediaError> {
-    guard let file = file else { return .failure(.nilURL) }
-    guard FileManager.default.fileExists(atPath: file.path) else { return .failure(.notFound) }
-    guard FileManager.default.isReadableFile(atPath: file.path) else { return .failure(.notReadable) }
-    guard let data = try? Data(contentsOf: file) else { return .failure(.readFailed) }
-    guard !data.isEmpty else { return .failure(.emptyFile) }
-    guard isValidFormat(data) else { return .failure(.invalidFormat) }
+func processMedia(file: URL?) throws -> ProcessMediaResult {
+    guard let file = file else { return .nilURL }
+    guard FileManager.default.fileExists(atPath: file.path) else { return .notFound }
+    guard FileManager.default.isReadableFile(atPath: file.path) else { return .notReadable }
+    let data = try read(file)
+    guard !data.isEmpty else { return .emptyFile }
+    guard isValidFormat(data) else { return .invalidFormat }
 
-    return .success(parse(data))
+    return .media(parse(data))
 }
 ```
 
@@ -229,13 +226,9 @@ struct VideoSettings {
     let frameRate: Int
     let codec: Codec
 }
-
-// Use class when you need:
-// - Identity (===)
-// - Inheritance
-// - Deinitializers
-// - Reference semantics intentionally
 ```
+
+Use a class when you need identity (`===`), inheritance, a deinitializer, or reference semantics on purpose.
 
 ### Use Enums for Finite States
 
@@ -246,25 +239,24 @@ func setPlaybackState(_ state: String) {
     else if state == "paused" { ... }
 }
 
-// BAD: Multiple booleans
+// BAD: Multiple booleans can have invalid combinations
 struct PlayerState {
     var isPlaying: Bool
     var isPaused: Bool
     var isBuffering: Bool
     var isStopped: Bool
-    // Can have invalid combinations!
 }
 
-// GOOD: Enum with associated values
+// GOOD: Enum with associated values; a failed playback shows the general message (Error Handling)
 enum PlaybackState {
     case idle
     case playing(startTime: Date)
     case paused(at: TimeInterval)
     case buffering(progress: Double)
-    case failed(Error)
+    case failed
 }
 
-// Exhaustive switch
+// GOOD: Exhaustive switch
 func handle(_ state: PlaybackState) {
     switch state {
     case .idle:
@@ -275,8 +267,8 @@ func handle(_ state: PlaybackState) {
         showResumeOption(at: position)
     case .buffering(let progress):
         showBufferingIndicator(progress: progress)
-    case .failed(let error):
-        showError(error)
+    case .failed:
+        showGeneralError()
     }
 }
 ```
@@ -308,7 +300,7 @@ protocol VideoEncoding {
     func encode(_ video: Video) throws -> Data
 }
 
-// Compose via protocol composition
+// GOOD: Compose via protocol composition
 typealias VideoProcessing = VideoLoading & VideoSaving & VideoEncoding
 ```
 
@@ -332,17 +324,18 @@ if let name = dictionary["name"] as? String {
     display(name)
 }
 
+// GOOD: A bug stops the program
 guard let cell = tableView.dequeueReusableCell(withIdentifier: "Cell") else {
-    fatalError("Cell not registered") // Programmer error, crash is appropriate
+    fatalError("Cell not registered")
 }
 ```
 
 ### Avoid Implicit Unwrap
 
 ```swift
-// BAD: IUO as lazy initialization
+// BAD: IUO as lazy initialization is dangerous
 class ViewController: UIViewController {
-    var viewModel: ViewModel!  // Dangerous
+    var viewModel: ViewModel!
 
     override func viewDidLoad() {
         viewModel = ViewModel()
@@ -394,40 +387,128 @@ if let date = event?.date {
 let formattedDate = event?.date.map { dateFormatter.string(from: $0) }
 
 // GOOD: flatMap when transform returns optional
-let firstTrack = project?.tracks.first  // Optional<Track>
-let duration = firstTrack.flatMap { $0.duration }  // Optional<TimeInterval>
+let firstTrack: Track? = project?.tracks.first
+let duration: TimeInterval? = firstTrack.flatMap { $0.duration }
 ```
 
 ---
 
 ## Error Handling
 
+A function reports a failure according to its kind (CLEAN_CODE.md, Error Handling):
+
+- A bug (a broken precondition or invariant) stops the program: `precondition`, `fatalError`.
+- An outcome that the requirements name, such as "video not found", is a case of the enum that the function returns. The signature names it and the caller must handle it. When the only such outcome is "there is none", the function returns `nil`.
+- Any other failure of storage, network or the platform is thrown as the application's own `Error` type, with a message and the library's error as the cause, by the code that calls the library. That code catches only the library's own error types, never every error. Only the code that started the operation catches the application's error.
+
+`CancellationError` is not a failure. It is passed on as it is: never wrapped, never shown to the user as an error.
+
 ### Use Swift Errors
 
 ```swift
-// BAD: Return nil on failure
+// BAD: nil for every failure. The caller cannot tell "no such video" from a disk that cannot be read
 func loadVideo(id: String) -> Video? {
-    // Caller has no idea why it failed
+    try? decode(Data(contentsOf: videoURL(id: id)))
 }
 
-// BAD: Tuple with error
+// BAD: Tuple with error is awkward to use and can have invalid states
 func loadVideo(id: String) -> (Video?, Error?) {
-    // Awkward to use, can have invalid states
+    do {
+        return (try decode(Data(contentsOf: videoURL(id: id))), nil)
+    } catch {
+        return (nil, error)
+    }
 }
 
-// GOOD: Throwing function
-func loadVideo(id: String) throws -> Video {
-    guard let data = storage.read(id) else {
-        throw VideoError.notFound(id)
+// GOOD: nil says "there is none". Any other failure is thrown as the application's
+// own error, with a message and the library's error as the cause. A bug stops the program
+struct StorageError: LocalizedError {
+    let message: String
+    let cause: any Error
+
+    var errorDescription: String? { message }
+}
+
+// GOOD: Code that calls a library catches only the library's own error types, through this one function
+func storageCall<T>(_ message: String, _ call: () throws -> T) throws -> T {
+    do {
+        return try call()
+    } catch let error as CocoaError {
+        throw StorageError(message: message, cause: error)
+    } catch let error as DecodingError {
+        throw StorageError(message: message, cause: error)
     }
-    guard isValidFormat(data) else {
-        throw VideoError.invalidFormat
+}
+
+// GOOD: The same function for a library call that is async
+func storageCall<T>(_ message: String, _ call: () async throws -> T) async throws -> T {
+    do {
+        return try await call()
+    } catch let error as URLError {
+        throw StorageError(message: message, cause: error)
     }
-    return try decode(data)
+}
+
+// GOOD: A missing file is the outcome "there is none", not a failure: loadVideo turns it into nil before storageCall sees it
+func loadVideo(id: String) throws -> Video? {
+    precondition(!id.isEmpty, "Video id is empty")
+    let data: Data? = try storageCall("Cannot read video \(id)") {
+        do {
+            return try Data(contentsOf: videoURL(id: id))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
+    }
+    guard let data else { return nil }
+    return try storageCall("Cannot decode video \(id)") { try decode(data) }
+}
+
+// GOOD: Code that starts an operation catches only StorageError, through this one function.
+// CancellationError passes: it ends the task and is never shown. Any other error is a bug: it stops the program
+@discardableResult
+func launchCatchingStorage(
+    onStorageFailure: @escaping @MainActor () -> Void,
+    _ operation: @escaping @MainActor () async throws -> Void
+) -> Task<Void, Never> {
+    Task { @MainActor in
+        do {
+            try await operation()
+        } catch is StorageError {
+            onStorageFailure()
+        } catch is CancellationError {
+        } catch {
+            fatalError("Unexpected error: \(error)")
+        }
+    }
 }
 ```
 
-### Typed Errors
+In a Kotlin Multiplatform app, Swift calls Kotlin use cases. A Kotlin `StorageException` and a Kotlin cancellation reach Swift as an `NSError` with the domain `KotlinException`; the Kotlin object is in `userInfo["KotlinException"]`, as `StorageException` and `KotlinCancellationException`. The same one function recognizes them too:
+
+```swift
+// GOOD: Kotlin's StorageException is shown like StorageError, Kotlin's cancellation passes like CancellationError
+@discardableResult
+func launchCatchingStorage(
+    onStorageFailure: @escaping @MainActor () -> Void,
+    _ operation: @escaping @MainActor () async throws -> Void
+) -> Task<Void, Never> {
+    Task { @MainActor in
+        do {
+            try await operation()
+        } catch is StorageError {
+            onStorageFailure()
+        } catch let error as NSError where error.userInfo["KotlinException"] is StorageException {
+            onStorageFailure()
+        } catch is CancellationError {
+        } catch let error as NSError where error.userInfo["KotlinException"] is KotlinCancellationException {
+        } catch {
+            fatalError("Unexpected error: \(error)")
+        }
+    }
+}
+```
+
+### Named Outcomes, Not Generic Errors
 
 ```swift
 // BAD: Generic error
@@ -437,51 +518,55 @@ enum AppError: Error {
     case unknown
 }
 
-// GOOD: Specific, contextual errors
-enum VideoError: LocalizedError {
+// GOOD: The function's own result type has one case for each outcome that the requirements name.
+// Each case is specific and carries the values that explain it
+enum OpenVideoResult {
+    case opened(Video)
     case notFound(id: String)
-    case invalidFormat(expected: String, actual: String)
-    case fileTooLarge(size: Int64, maxSize: Int64)
-    case encodingFailed(underlying: Error)
+    case tooLong(duration: TimeInterval, limit: TimeInterval)
+}
 
-    var errorDescription: String? {
-        switch self {
-        case .notFound(let id):
-            return "Video '\(id)' not found"
-        case .invalidFormat(let expected, let actual):
-            return "Expected \(expected) format but got \(actual)"
-        case .fileTooLarge(let size, let maxSize):
-            return "File size \(size) exceeds maximum \(maxSize)"
-        case .encodingFailed(let underlying):
-            return "Encoding failed: \(underlying.localizedDescription)"
-        }
+func openVideo(id: String) throws -> OpenVideoResult {
+    guard let video = try loadVideo(id: id) else {
+        return .notFound(id: id)
     }
+    guard video.duration <= maxDuration else {
+        return .tooLong(duration: video.duration, limit: maxDuration)
+    }
+    return .opened(video)
 }
 ```
 
 ### Result Type
 
 ```swift
-// GOOD: Result for async callbacks (pre-async/await)
-func loadVideo(id: String, completion: @escaping (Result<Video, VideoError>) -> Void)
-
-// Usage
-loadVideo(id: "123") { result in
-    switch result {
-    case .success(let video):
-        display(video)
-    case .failure(let error):
-        showError(error)
+// GOOD: Result for async callbacks (pre-async/await). What the function would throw is .failure
+func openVideo(id: String, completion: @escaping @Sendable (Result<OpenVideoResult, Error>) -> Void) {
+    DispatchQueue.global().async {
+        completion(Result { try openVideo(id: id) })
     }
 }
 
-// Or with get()
-loadVideo(id: "123") { result in
-    do {
-        let video = try result.get()
-        display(video)
-    } catch {
-        showError(error)
+// Usage: .failure is thrown again, so launchCatchingStorage catches only StorageError and shows a general message
+openVideo(id: "123") { result in
+    launchCatchingStorage(onStorageFailure: showGeneralError) {
+        switch result {
+        case .success(.opened(let video)):
+            display(video)
+        case .success(.notFound(let id)):
+            showNotFound(id: id)
+        case .success(.tooLong(_, let limit)):
+            showTooLong(limit: limit)
+        case .failure(let error):
+            throw error
+        }
+    }
+}
+
+// GOOD: get() turns the Result back into a throwing call
+openVideo(id: "123") { result in
+    launchCatchingStorage(onStorageFailure: showGeneralError) {
+        show(try result.get())
     }
 }
 ```
@@ -493,7 +578,7 @@ loadVideo(id: "123") { result in
 ### Immutable View State
 
 ```swift
-// BAD: Scattered mutable state
+// BAD: Scattered mutable state, nothing says who updates the UI
 class EditorViewController: UIViewController {
     var currentVideo: Video?
     var isPlaying = false
@@ -502,7 +587,6 @@ class EditorViewController: UIViewController {
 
     func play() {
         isPlaying = true
-        // Who updates the UI?
     }
 }
 
@@ -521,7 +605,7 @@ enum PlaybackState: Equatable {
     case buffering(Double)
 }
 
-// In ViewModel/Store
+// GOOD: The ViewModel or store holds the state
 @Published private(set) var state = EditorState()
 
 func play() {
@@ -569,7 +653,7 @@ class EditorViewModel: ObservableObject {
     }
 }
 
-// View just renders state
+// GOOD: View just renders state
 struct EditorView: View {
     @ObservedObject var viewModel: EditorViewModel
 
@@ -626,9 +710,9 @@ func loadProject(id: String) async throws -> Project {
 ### Structured Concurrency
 
 ```swift
-// BAD: Unstructured task
+// BAD: Unstructured task has no parent and can't be cancelled
 func loadAllMedia() {
-    Task.detached {  // No parent, can't be cancelled
+    Task.detached {
         await loadVideos()
         await loadImages()
     }
@@ -701,27 +785,28 @@ actor VideoCache {
 ### MainActor for UI
 
 ```swift
-// BAD: Manual dispatch to main
+// BAD: Manual dispatch to main is easy to forget
 func loadVideo() {
     Task {
         let video = try await videoLoader.load(id)
         DispatchQueue.main.async {
-            self.state.video = video  // Easy to forget
+            self.state.video = video
         }
     }
 }
 
-// GOOD: MainActor annotation
+// GOOD: MainActor annotation guarantees the main thread. launchCatchingStorage (Error Handling) catches only
+// StorageError and shows a general message; CancellationError passes
 @MainActor
 class EditorViewModel: ObservableObject {
     @Published private(set) var state = EditorState()
+    private var loadTask: Task<Void, Never>?
 
-    func loadVideo() async {
-        do {
-            let video = try await videoLoader.load(id)
-            state.video = video  // Guaranteed main thread
-        } catch {
-            state.error = error.localizedDescription
+    func loadVideo() {
+        loadTask?.cancel()
+        loadTask = launchCatchingStorage(onStorageFailure: { self.state.error = "Could not load the video" }) {
+            let video = try await self.videoLoader.load(self.id)
+            self.state.video = video
         }
     }
 }
@@ -734,9 +819,9 @@ class EditorViewModel: ObservableObject {
 ### Prefer Immutable
 
 ```swift
-// BAD: Exposing mutable collection
+// BAD: Exposing mutable collection, anyone can mutate
 class Playlist {
-    var tracks = [Track]()  // Anyone can mutate
+    var tracks = [Track]()
 }
 
 // GOOD: Encapsulated mutation
@@ -780,11 +865,11 @@ func getActiveVideoTracks(from project: Project) -> [VideoTrack] {
 ### Lazy for Large Collections
 
 ```swift
-// BAD: Creates intermediate arrays
+// BAD: Creates two intermediate arrays before it takes 10
 let result = hugeArray
-    .map { transform($0) }      // New array
-    .filter { $0.isValid }      // Another new array
-    .prefix(10)                 // Finally takes 10
+    .map { transform($0) }
+    .filter { $0.isValid }
+    .prefix(10)
 
 // GOOD: Lazy evaluation
 let result = hugeArray.lazy
@@ -792,7 +877,7 @@ let result = hugeArray.lazy
     .filter { $0.isValid }
     .prefix(10)
 
-// Or use Array() at the end if you need an array
+// GOOD: Array() at the end if you need an array
 let resultArray = Array(hugeArray.lazy
     .map { transform($0) }
     .filter { $0.isValid }
@@ -890,17 +975,17 @@ struct TrackListView: View {
 ### Prefer Value Types in Views
 
 ```swift
-// BAD: Reference type causes unnecessary updates
+// BAD: Reference type, the entire view rebuilds on any change
 class TrackModel: ObservableObject {
     @Published var name: String
     @Published var duration: TimeInterval
 }
 
 struct TrackView: View {
-    @ObservedObject var model: TrackModel  // Entire view rebuilds on any change
+    @ObservedObject var model: TrackModel
 }
 
-// GOOD: Value type, only affected views update
+// GOOD: Value type, only affected views update. TrackView rebuilds only when track changes
 struct Track: Identifiable, Equatable {
     let id: UUID
     var name: String
@@ -908,7 +993,7 @@ struct Track: Identifiable, Equatable {
 }
 
 struct TrackView: View {
-    let track: Track  // Only rebuilds when track changes
+    let track: Track
 }
 ```
 
@@ -926,8 +1011,8 @@ func testExport()
 
 // GOOD: Describes behavior
 func test_loadVideo_returnsVideo_whenFileExists()
-func test_loadVideo_throwsNotFound_whenFileMissing()
-func test_export_failsWithClearError_whenNoTracks()
+func test_loadVideo_returnsNil_whenFileMissing()
+func test_export_returnsNoTracks_whenProjectHasNoTracks()
 ```
 
 ### Arrange-Act-Assert
@@ -974,7 +1059,7 @@ func test_process_reducesFileSize_whenQualityIsLow() {
 ### Protocol-Based Mocking
 
 ```swift
-// Define protocol
+// GOOD: The dependency is a protocol, so the test can pass a mock
 protocol VideoLoading {
     func load(id: String) async throws -> Video
 }
@@ -1031,7 +1116,10 @@ func test_viewModel_loadsVideo_onAppear() async {
 ### Safety
 - [ ] No force unwraps (`!`) except IBOutlets
 - [ ] Guard statements for early exit
-- [ ] Errors are typed and descriptive
+- [ ] A bug stops the program (`precondition`, `fatalError`)
+- [ ] An outcome that the requirements name is returned, not thrown; when there is more than one, each is a case of the function's own result enum and carries the values that explain it
+- [ ] Any other failure is thrown as the application's own `Error` type, with a message and the library's error as the cause
+- [ ] `CancellationError` is passed on, never wrapped or shown as an error
 - [ ] No implicitly unwrapped optionals (except IBOutlets)
 
 ### Types

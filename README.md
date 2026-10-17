@@ -16,6 +16,7 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 | [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md) | Rules for getting a task from to-do to committed — whoever does the work |
 | [TASK_LOOP.md](./TASK_LOOP.md) | The machine that runs task work: gates, executor, reviewer, maintainer, landing, advancing |
 | [MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) | How a correction becomes a rule, and which file it goes in |
+| [EVALUATION.md](./EVALUATION.md) | What measuring these standards on real projects has shown, and the open directions |
 
 ## Skills
 
@@ -26,10 +27,14 @@ Claude Code skills (slash commands) for enforcing standards:
 | [review](./skills/review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
 | [refactor](./skills/refactor.md) | `/refactor` | Guided refactoring with patterns |
 | [test](./skills/test.md) | `/test` | Test generation with best practices |
-| [document](./skills/document.md) | `/document` | Documentation generation |
+| [document](./skills/document.md) | `/document` | Architecture and module documents in Markdown |
+| [self-document](./skills/self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
 | [theory](./skills/theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
 | [maintain](./skills/maintain.md) | `/maintain` | Run or set up the task loop: review, land, advance |
 | [policy](./skills/policy.md) | `/policy` | Turn a disagreement with the maintainer into a rule or threshold |
+| [self-improve](./skills/self-improve.md) | `/self-improve` | Improve these standards by evidence: agents build and refactor projects, each change is measured before and after |
+| [reflect](./skills/reflect.md) | `/reflect` | Look back at a piece of work: causes in the text, what was lost, next changes |
+| [loss-check](./skills/loss-check.md) | `/loss-check` | Check that a change lost no information |
 
 ## Templates
 
@@ -40,6 +45,7 @@ Copy-and-fill starting points, not documentation:
 | [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing script, `triage.py`, prompts, schemas. Never copied, never edited |
 | [templates/review/project/](./templates/review/project/) | `.review/` | Gates, policy, landing config, decision logs — yours to edit |
 | [templates/agents/](./templates/agents/) | `.claude/agents/` | `diff-reviewer` and `maintainer` subagents |
+| [templates/self-improve/](./templates/self-improve/) | — `setup.sh` copies the tools into the work folder | Tools, workflows and an example project for `/self-improve`. Never copied into a project that is measured |
 
 ## Usage
 

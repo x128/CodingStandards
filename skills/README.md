@@ -9,10 +9,14 @@ Reusable skills (slash commands) for Claude Code that enforce clean code princip
 | [review](./review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
 | [refactor](./refactor.md) | `/refactor` | Guided refactoring with patterns |
 | [test](./test.md) | `/test` | Test generation with best practices |
-| [document](./document.md) | `/document` | Documentation generation |
+| [document](./document.md) | `/document` | Architecture and module documents in Markdown |
+| [self-document](./self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
 | [theory](./theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
 | [maintain](./maintain.md) | `/maintain` | Run or set up the task loop: review, land, advance |
 | [policy](./policy.md) | `/policy` | Turn a disagreement with the maintainer into a rule |
+| [self-improve](./self-improve.md) | `/self-improve` | Improve these standards by evidence: agents build and refactor projects, each change is measured before and after |
+| [reflect](./reflect.md) | `/reflect` | Look back at a piece of work: causes in the text, what was lost, next changes |
+| [loss-check](./loss-check.md) | `/loss-check` | Check that a change lost no information |
 
 ## Setup
 
@@ -81,11 +85,11 @@ Add to `~/.claude/settings.json`:
 
 ### Documentation
 ```bash
-# Document file/class
-/document src/services/ExportService.kt
+# Move the explanations in a file's comments into names, types, checks and tests
+/self-document src/services/ExportService.kt
 
-# Generate API reference
-/document --api
+# Document a module in Markdown
+/document src/services/
 
 # Architecture overview
 /document --architecture

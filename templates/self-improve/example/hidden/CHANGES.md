@@ -1,0 +1,5 @@
+C1 (rule 4.5, split equally). The owner changes the rule: when an expense is split equally and its payer is one of the participants, the cents that are left over go to the payer first (one cent), and only the rest are given out as before, starting with the first participant in the order in which they were chosen and skipping nobody. When the payer is not a participant, nothing changes. Example: 100.00 EUR paid by Ann for Bob, Cid, Ann gives Bob 33.33, Cid 33.33, Ann 33.34. The preview in the editor (rule 4.10) follows the same rule.
+
+C2 (rule 2.5, close). The owner adds a rule: "Close" is also refused while the trip has an expense dated today or yesterday: "Wait until two days after the last expense". This check comes after "Not everyone has settled up".
+
+C3 (rule 6.2, reminders). The owner changes the rule: a member gets a reminder only if the member owes 5.00 or more and what the member owes is at least 1% of the total spent of the trip (rule 10.5). Example: in a trip with a total spent of 1000.00 EUR a member who owes 9.99 EUR gets no reminder, and one who owes 10.00 EUR gets one.

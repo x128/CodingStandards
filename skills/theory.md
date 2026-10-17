@@ -36,7 +36,7 @@ user input = **observation**, a Bayesian update
 generated layout = **posterior sample**, a draw from P(geometry | B(t))
 ```
 
-The theoretical terms become part of the project's vocabulary — alongside UX terms, developer terms, platform terms, and everything else the project uses.
+The theoretical term explains a concept; it does not rename it. It is written in THEORY.md and in the correspondences of CLAUDE.md (step 10). Code, tasks and the plan keep the project's one name for the concept ([CLEAN_CODE.md § Consistent Vocabulary](../CLEAN_CODE.md)).
 
 4. **Document each stage/loop** — show how each phase of the project's pipeline is an instance of a theoretical operation:
 
@@ -82,7 +82,7 @@ Each stage gets: what it does, why it works, the formal objective, and the metho
 
 ### Principles
 
-- **Add, don't replace.** The theoretical terms join the project's vocabulary alongside UX terms, developer terms, platform terms. A "constraint state" IS a "belief state" — the theoretical name enriches the concept, it doesn't compete with other names for it.
+- **Explain, don't rename.** A "constraint state" IS a "belief state": THEORY.md and CLAUDE.md say so, and the code, the tasks and the plan keep "constraint state". The theoretical name tells why the concept works; it is never a second name for it ([CLEAN_CODE.md § Consistent Vocabulary](../CLEAN_CODE.md)).
 - **Multiple frameworks.** A system that does Bayesian updating also does constraint satisfaction also does optimization. Show all the lenses.
 - **Ground in code.** Every theoretical claim should point to an actual class, function, or data flow in the codebase. Theory that doesn't touch code is speculation.
 - **Show the stages.** The most useful part of the document is showing how each pipeline stage maps to a theoretical operation. This is where "why it works" lives.

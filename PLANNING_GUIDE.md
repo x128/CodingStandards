@@ -131,14 +131,15 @@ The emotional journey. What motivates the user.
 ## 6. Use Cases (MVP)
 
 ### UC1: [Name]
-**Actor**: ...
-**Flow**:
+**Input**: ...
+**Output**: ...; or [each other outcome, by name]
+**Rules**:
 1. ...
 2. ...
-3. ...
 
-(Cover: happy path, detailed input, feedback, direct manipulation,
-comparison, external stakeholders, API access if any.)
+(Every use case has this form: a name, an input, an output that names
+every outcome, and rules, in the words of the product's subject. A filled
+example is in `ARCHITECTURE.md`, "Use Cases".)
 
 ---
 
@@ -175,6 +176,8 @@ System diagram (ASCII), component descriptions, key interfaces.
 | ID | Decision | Options | Chosen | Rationale |
 |----|----------|---------|--------|-----------|
 | D-001 | ... | ... | TBD in T-NNN | ... |
+| D-002 | A request with nothing to check or decide, such as "read a list and show it". Every project must make this decision | (a) the caller uses the interface that the domain layer declares, and no use case is written; (b) a use case whose body is that one call, and callers use only use cases | (a) or (b) | ... |
+| D-003 | Comments in the code. Every project must make this decision | (a) none besides the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`, `// Then`); (b) the test markers and only the kinds named here, only where named here, such as a license header in every file | (a), unless the project has a reason for (b) | ... |
 
 ---
 
@@ -207,7 +210,8 @@ experience — not invented. Revise iteratively as real usage data comes in.
 ### Plan Rules
 
 - **Philosophy**: 3–6 named principles, each a non-obvious design choice
-- **Use cases**: short — actor + 3–7 numbered steps each
+- **Use cases**: short — name, input, output that names every outcome, and
+  at most 7 numbered rules, in the words of the subject. Not one per user action
 - **Epics & Tasks**: reference index only — `- [ ] T-NNN Title`, grouped
   by epic. Post-MVP uses `F-NNN`. No descriptions here.
 - **Decisions log**: pre-populate TBDs, reference the task where each
@@ -264,7 +268,7 @@ Omit any relation line that has no entries. Every reference includes ID + title.
 This task shows the format. Append notes over time:
 
 - 2026-03-01: Discovered X doesn't work with Y. Workaround: Z.
-- 2026-03-05: Resolved. Switched to W per decision D-003.
+- 2026-03-05: Resolved. Switched to W per decision D-001.
 
 Measurable exit criteria:
 - ✅ Criterion described as a verifiable fact
@@ -364,7 +368,8 @@ in **Shares context with** — the blocking relation implies shared context.
 **Exit criteria**: every task needs ≥1 verifiable criterion.
 
 **Prototype tasks**: need a criterion for the code they leave behind — deleted,
-or taken over by a named task.
+or taken over by a named task. There is no prototype mode: code written in a
+prototype task follows the same standards as any other code.
 
 **Separators**: `————————` full-width line between every task.
 

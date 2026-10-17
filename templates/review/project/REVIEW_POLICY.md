@@ -58,16 +58,16 @@ accepted anyway". That is a real rule. "Reject out-of-scope findings" is not.
   cannot move to Layer 0.
 - **Added**: <date>, after T-0nn / F-0nn
 
-### R-003: Internal utilities are not documented
+### R-003: Internal utilities need no changelog entry
 
 - **Level**: MAY
 - **Applies to**: `src/internal/**`
-- **Verdict**: reject missing-documentation findings
-- **Rationale**: Documentation churn on code with no external consumers. Public
+- **Verdict**: reject missing-changelog findings
+- **Rationale**: Changelog churn on code with no external consumers. Public
   API is a different matter — see R-004.
 - **Added**: <date>, after T-0nn / F-0nn
 
-### R-004: Public API changes without documentation are blocked
+### R-004: Public API changes without a changelog entry are blocked
 
 - **Level**: MUST
 - **Applies to**: exported symbols in `src/api/**`

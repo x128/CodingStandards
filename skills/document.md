@@ -1,105 +1,27 @@
 # Document Skill
 
-Generate clear, useful documentation following clean code principles.
+Write documents in Markdown that give a reader the whole picture: the architecture, the data
+flow, the decisions. The code itself explains itself through names, types, checks and tests;
+moving explanations from comments into code is the `/self-document` skill.
 
 ## Instructions
 
-When invoked, generate appropriate documentation:
+When invoked:
 
 1. **Identify scope**:
-   - Specific file/function if provided
-   - Public API if documenting a module
-   - Architecture if documenting system
+   - A module, if one is named: one document for it, written with the module template below
+   - `--architecture`, or no argument: the whole system, written with the system template below
 
-2. **Apply documentation principles**:
+   Documents go into the project's `docs/` folder, one file per module or system.
 
-### Document WHY, Not WHAT
-Code shows WHAT; docs explain WHY:
-```
-// BAD: Restates the code
-/// Sets the timeout to 30 seconds
-timeout = 30
+2. **Read the code and the project's plan** (its Decisions Log in particular), so that the
+   document says what the code really does and why.
 
-// GOOD: Explains the reason
-/// iOS background tasks terminate after 30s; this ensures completion
-timeout = 30
-```
+3. **Write what a reader needs and cannot get from one file**: the parts and what each is for,
+   what depends on what, how data moves, which decisions were made and why. Do not repeat what
+   the names and types of the code already say. Do not write comments into the code.
 
-### Document Public APIs
-Every public interface needs docs:
-```
-/**
- * Exports project to video file.
- *
- * Combines all video and audio tracks, applies effects,
- * and encodes to the specified format.
- *
- * @param project Project to export (must have at least one track)
- * @param options Export configuration
- * @returns Path to exported file
- * @throws InsufficientStorageError if disk space < estimated size
- * @throws InvalidProjectError if project has no tracks
- *
- * @example
- * val path = exporter.export(project, ExportOptions(format = MP4))
- */
-fun export(project: Project, options: ExportOptions): Path
-```
-
-### Keep Docs Close to Code
-- Inline docs in source files
-- Update docs when code changes
-- Delete docs for deleted code
-
-### Use Examples
-Show, don't just tell:
-```
-/**
- * Formats duration as human-readable string.
- *
- * @example
- * formatDuration(90)    // "1:30"
- * formatDuration(3661)  // "1:01:01"
- * formatDuration(0)     // "0:00"
- */
-fun formatDuration(seconds: Int): String
-```
-
-3. **Documentation types**:
-
-### Function/Method Documentation
-```
-/**
- * [Brief one-line description]
- *
- * [Longer explanation if needed - when to use, caveats, etc.]
- *
- * @param name Description of parameter
- * @returns Description of return value
- * @throws ExceptionType When/why this is thrown
- *
- * @example
- * [Usage example]
- */
-```
-
-### Class/Module Documentation
-```
-/**
- * [One-line purpose]
- *
- * [Responsibilities - what this class does]
- * [Usage context - when to use this]
- * [Dependencies - what it needs]
- *
- * @example
- * val service = UserService(repository)
- * val user = service.findById(id)
- */
-class UserService
-```
-
-### Architecture Documentation
+### Module template
 ```
 # [Component Name]
 
@@ -121,30 +43,11 @@ class UserService
 - [Decision]: [Rationale]
 ```
 
-4. **Avoid**:
-- Redundant comments (code already clear)
-- Commented-out code (use version control)
-- TODO comments without tickets
-- Outdated documentation
-- Documentation for private implementation details
+4. **Keep documents true**: update a document in the same change as the code it describes;
+   delete what no longer holds.
 
-5. **Output format**:
+### System template
 
-For code documentation:
-```
-## Documentation: [target]
-
-### Public API
-[Generated docs for public methods/classes]
-
-### Usage Examples
-[Code examples showing common usage]
-
-### Notes
-[Any important caveats or context]
-```
-
-For architecture docs:
 ```
 # [Component/System Name]
 
@@ -164,12 +67,11 @@ For architecture docs:
 ## Allowed Prompts
 - Read source files
 - Analyze code structure
-- Write documentation
+- Write documentation files
 
 ## Example Usage
 
 ```
-/document src/services/ExportService.kt
-/document --api (generates API reference)
-/document --architecture (generates architecture overview)
+/document src/services/
+/document --architecture
 ```

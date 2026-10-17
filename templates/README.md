@@ -100,3 +100,20 @@ and needs no override.
 | `review/project/decisions/` | project | Decision log format (training data) |
 | `agents/diff-reviewer.md` | project | Reviewer subagent, least-privilege tools |
 | `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh and read-only git |
+
+## Self-improve
+
+`self-improve/` holds the tools of `/self-improve`. `tools/setup.sh` copies them into the work folder,
+and the projects that are measured run that copy:
+
+```
+self-improve/
+├── tools/          setup, build, lint, CRAP, counts, loss tracing, checks of quotes and transcripts
+├── workflows/      build, refactor, measure, loss — Claude Code workflow scripts
+├── platform/       a small library the example project builds on, and the test runner
+└── example/        a finished project spec: what the builders get, and the hidden scenarios and rules
+```
+
+It is never copied into a project that is being measured, because it holds the hidden scenarios.
+`tools/make-project.sh` leaves it, `skills/self-improve.md` and `EVALUATION.md` out of the copy of
+the standards that a project gets, together with this section and every index line that names them.

@@ -88,8 +88,9 @@ val timeout = 30000
 val ratio = 1.777778
 
 // GOOD: Named constants with units
-const val MAX_VIDEO_SIZE_BYTES = 50 * 1024 * 1024  // 50 MB
-const val EXPORT_TIMEOUT_MILLIS = 30_000L          // 30 seconds
+const val MEGABYTE = 1024 * 1024
+const val MAX_VIDEO_SIZE_BYTES = 50 * MEGABYTE
+val EXPORT_TIMEOUT = 30.seconds
 const val WIDESCREEN_ASPECT_RATIO = 16.0 / 9.0
 ```
 
@@ -120,27 +121,27 @@ fun uploadVideo(video: EncodedVideo): Url
 
 // Compose in a use case
 class ExportAndUploadUseCase(...) {
-    suspend operator fun invoke(videoPath: String): Result<ExportResult> {
-        return loadVideo(videoPath)
-            .mapCatching { compressVideo(it) }
-            .mapCatching { encodeToH264(it) }
-            .mapCatching { uploadVideo(it) }
+    suspend operator fun invoke(videoPath: String): Url {
+        val video = loadVideo(videoPath)
+        val compressed = compressVideo(video)
+        val encoded = encodeToH264(compressed)
+        return uploadVideo(encoded)
     }
 }
 ```
 
-### Function Length
+### One Thing per Function
 
 ```kotlin
 // BAD: Long function with multiple levels of abstraction
 fun exportProject(project: Project): ExportResult {
-    // 15 lines of validation...
-    // 20 lines of video processing...
-    // 15 lines of audio mixing...
-    // 10 lines of encoding...
-    // 10 lines of file writing...
-    // 10 lines of cleanup...
-    // Total: 80+ lines
+    // validation...
+    // video processing...
+    // audio mixing...
+    // encoding...
+    // file writing...
+    // cleanup...
+    // all of them in this one function
 }
 
 // GOOD: Short functions, each doing one thing
@@ -152,9 +153,9 @@ fun exportProject(project: Project): ExportResult {
     return writeToFile(encoded, project.outputPath)
 }
 
-private fun validateProject(project: Project) { /* 10 lines */ }
-private fun processVideoTracks(tracks: List<VideoTrack>): VideoTrack { /* 15 lines */ }
-private fun mixAudioTracks(tracks: List<AudioTrack>): AudioTrack { /* 15 lines */ }
+private fun validateProject(project: Project) { /* validation */ }
+private fun processVideoTracks(tracks: List<VideoTrack>): VideoTrack { /* video processing */ }
+private fun mixAudioTracks(tracks: List<AudioTrack>): AudioTrack { /* audio mixing */ }
 ```
 
 ### Parameters
@@ -204,42 +205,42 @@ fun createVideo(
 
 ```kotlin
 // BAD: Deep nesting, hard to follow
-fun processMedia(file: File?): Result<Media> {
+fun processMedia(file: File?): ProcessMediaResult {
     if (file != null) {
         if (file.exists()) {
             if (file.canRead()) {
                 val content = file.readBytes()
                 if (content.isNotEmpty()) {
                     if (isValidFormat(content)) {
-                        return Result.success(parseMedia(content))
+                        return ProcessMediaResult.Parsed(parseMedia(content))
                     } else {
-                        return Result.failure(InvalidFormatError())
+                        return ProcessMediaResult.InvalidFormat
                     }
                 } else {
-                    return Result.failure(EmptyFileError())
+                    return ProcessMediaResult.EmptyFile
                 }
             } else {
-                return Result.failure(ReadPermissionError())
+                return ProcessMediaResult.NoReadPermission
             }
         } else {
-            return Result.failure(FileNotFoundError())
+            return ProcessMediaResult.FileNotFound
         }
     } else {
-        return Result.failure(NullFileError())
+        return ProcessMediaResult.NoFile
     }
 }
 
 // GOOD: Early returns, flat structure
-fun processMedia(file: File?): Result<Media> {
-    if (file == null) return Result.failure(NullFileError())
-    if (!file.exists()) return Result.failure(FileNotFoundError())
-    if (!file.canRead()) return Result.failure(ReadPermissionError())
+fun processMedia(file: File?): ProcessMediaResult {
+    if (file == null) return ProcessMediaResult.NoFile
+    if (!file.exists()) return ProcessMediaResult.FileNotFound
+    if (!file.canRead()) return ProcessMediaResult.NoReadPermission
 
     val content = file.readBytes()
-    if (content.isEmpty()) return Result.failure(EmptyFileError())
-    if (!isValidFormat(content)) return Result.failure(InvalidFormatError())
+    if (content.isEmpty()) return ProcessMediaResult.EmptyFile
+    if (!isValidFormat(content)) return ProcessMediaResult.InvalidFormat
 
-    return Result.success(parseMedia(content))
+    return ProcessMediaResult.Parsed(parseMedia(content))
 }
 ```
 
@@ -292,7 +293,7 @@ class ProjectState {
     }
 }
 
-// GOOD: Immutable data class with copy
+// GOOD: Immutable data class, updated via copy
 data class ProjectState(
     val currentVideo: Video? = null,
     val tracks: List<Track> = emptyList(),
@@ -300,7 +301,6 @@ data class ProjectState(
     val volume: Float = 1.0f
 )
 
-// Update via copy
 val newState = state.copy(
     tracks = state.tracks + newTrack,
     isPlaying = true
@@ -310,11 +310,11 @@ val newState = state.copy(
 ### Dependency Injection
 
 ```kotlin
-// BAD: Creating dependencies internally
+// BAD: Creating dependencies internally; a test cannot replace them, and the database is a singleton
 class VideoRepository {
-    private val api = VideoApi()  // Hard to test
-    private val cache = DiskCache()  // Hard to test
-    private val database = VideoDatabase.getInstance()  // Singleton
+    private val api = VideoApi()
+    private val cache = DiskCache()
+    private val database = VideoDatabase.getInstance()
 
     fun loadVideo(id: String): Video {
         return cache.get(id) ?: api.fetch(id).also { cache.put(id, it) }
@@ -381,13 +381,12 @@ fun getVideoDuration(video: Video?): Int {
     return video!!.duration!!
 }
 
-// BAD: Assuming non-null after check in different scope
+// BAD: Assuming non-null after check in different scope; another thread can set cachedVideo to null in between, and then `!!` crashes
 var cachedVideo: Video? = null
 
 fun processVideo() {
     if (cachedVideo != null) {
-        // Another thread could set cachedVideo to null here
-        println(cachedVideo!!.title)  // Potential crash
+        println(cachedVideo!!.title)
     }
 }
 
@@ -400,43 +399,43 @@ fun getVideoDurationOrDefault(video: Video?): Int {
     return video?.duration ?: 0
 }
 
-// GOOD: Smart cast with local val
+// GOOD: Smart cast with local val; safe, because no other thread can change a local val
 fun processVideo() {
     val video = cachedVideo ?: return
-    println(video.title)  // Smart cast, safe
+    println(video.title)
 }
 ```
 
 ### Meaningful Null Handling
 
 ```kotlin
-// BAD: Swallowing nulls silently
+// BAD: Swallowing nulls silently; the Video.empty() fallback hides problems
 fun loadUserVideo(): Video {
     val user = getUser()
     val videoId = user?.lastVideoId
     val video = videoId?.let { loadVideo(it) }
-    return video ?: Video.empty()  // Silent fallback hides problems
+    return video ?: Video.empty()
 }
 
-// GOOD: Explicit error handling
-fun loadUserVideo(): Result<Video> {
-    val user = getUser() ?: return Result.failure(UserNotLoggedInError())
-    val videoId = user.lastVideoId ?: return Result.failure(NoVideoSelectedError())
-    return loadVideo(videoId)
+// GOOD: Each null becomes a named outcome
+fun loadUserVideo(): LoadUserVideoResult {
+    val user = getUser() ?: return LoadUserVideoResult.UserNotLoggedIn
+    val videoId = user.lastVideoId ?: return LoadUserVideoResult.NoVideoSelected
+    return LoadUserVideoResult.Loaded(loadVideo(videoId))
 }
 ```
 
 ### Nullable Collections
 
 ```kotlin
-// BAD: Nullable collection
+// BAD: Nullable collection; callers must handle null AND empty
 fun getTracks(): List<Track>? {
-    // Now callers must handle null AND empty
+    return tracks.takeIf { it.isNotEmpty() }
 }
 
 // GOOD: Return empty collection instead of null
 fun getTracks(): List<Track> {
-    return tracks.toList()  // Returns empty list if no tracks
+    return tracks.toList()
 }
 ```
 
@@ -444,18 +443,22 @@ fun getTracks(): List<Track> {
 
 ## Error Handling
 
-### Use Result Type
+### Return Named Outcomes, Not `Result`
+
+An outcome that the requirements name is returned, not thrown. When the requirements name more than one outcome, the use case returns its own sealed type with one case per outcome. When they name one, it returns the value itself. `kotlin.Result` is not used for outcomes, and a feature has no shared error type. A refusal that a rule of an entity gives is declared with that rule, and each use case carries it in one case (ARCHITECTURE.md, "Use Cases"). A repository answers "there is none" with `null`; the use case turns it into its own named outcome.
+
+A failure that the requirements do not name (disk, database, network) is thrown as a `StorageException`. The use case does not catch it. The ViewModel that starts the use case catches it and shows a general error; all ViewModels do this through one function, so the `catch` is written once.
 
 ```kotlin
 // BAD: Exceptions for expected failures
 fun loadVideo(id: String): Video {
     val video = database.findById(id)
-    if (video == null) throw VideoNotFoundException(id)  // Expected case
-    if (video.isCorrupted) throw CorruptedVideoException(id)  // Expected case
+    if (video == null) throw VideoNotFoundException(id)
+    if (video.isCorrupted) throw CorruptedVideoException(id)
     return video
 }
 
-// Caller has no idea what to catch
+// BAD: The caller has no idea what to catch, so it also catches Exception for whatever else could happen
 fun caller() {
     try {
         val video = loadVideo(id)
@@ -464,61 +467,122 @@ fun caller() {
     } catch (e: CorruptedVideoException) {
         // ...
     } catch (e: Exception) {
-        // What else could happen?
+        // ...
     }
 }
 
-// GOOD: Result type with sealed errors
-sealed class VideoError {
-    data class NotFound(val id: String) : VideoError()
-    data class Corrupted(val id: String) : VideoError()
-    data class StorageFull(val required: Long, val available: Long) : VideoError()
+// GOOD: loadVideo returns its expected failures as cases; the caller handles each one
+sealed interface LoadVideoResult {
+    data class Loaded(val video: Video) : LoadVideoResult
+    data class NotFound(val id: String) : LoadVideoResult
+    data class Corrupted(val id: String) : LoadVideoResult
 }
 
-fun loadVideo(id: String): Result<Video, VideoError> {
-    val video = database.findById(id)
-        ?: return Result.failure(VideoError.NotFound(id))
-    if (video.isCorrupted)
-        return Result.failure(VideoError.Corrupted(id))
-    return Result.success(video)
+fun loadVideo(id: String): LoadVideoResult {
+    val video = database.findById(id) ?: return LoadVideoResult.NotFound(id)
+    if (video.isCorrupted) return LoadVideoResult.Corrupted(id)
+    return LoadVideoResult.Loaded(video)
 }
 
-// Caller handles all cases explicitly
 fun caller() {
-    loadVideo(id)
-        .onSuccess { video -> displayVideo(video) }
-        .onFailure { error ->
-            when (error) {
-                is VideoError.NotFound -> showNotFoundMessage()
-                is VideoError.Corrupted -> offerRecoveryOptions()
-                is VideoError.StorageFull -> showStorageWarning(error.required)
+    when (val result = loadVideo(id)) {
+        is LoadVideoResult.Loaded -> displayVideo(result.video)
+        is LoadVideoResult.NotFound -> showNotFoundMessage()
+        is LoadVideoResult.Corrupted -> offerRecoveryOptions()
+    }
+}
+
+// BAD: The signature names no outcome; ReaderError is one error type shared by the feature
+class GetChapterUseCase(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): Result<List<Verse>> {
+        val book = bookRepository.getBookById(bookId)
+            ?: return Result.failure(ReaderError.BookNotFound(bookId))
+        if (!book.hasChapter(chapter)) return Result.failure(ReaderError.ChapterOutOfRange(chapter))
+        return Result.success(verseRepository.getVerses(bookId, chapter, language))
+    }
+}
+
+// GOOD: One case per named outcome; the caller handles every case
+sealed interface GetChapterResult {
+    data class Verses(val verses: List<Verse>) : GetChapterResult
+    data class BookNotFound(val bookId: Int) : GetChapterResult
+    data class ChapterOutOfRange(val chapter: Int, val chapterCount: Int) : GetChapterResult
+}
+
+class GetChapterUseCase(
+    private val bookRepository: BookRepository,
+    private val verseRepository: VerseRepository
+) {
+    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): GetChapterResult {
+        val book = bookRepository.getBookById(bookId)
+            ?: return GetChapterResult.BookNotFound(bookId)
+        if (!book.hasChapter(chapter)) {
+            return GetChapterResult.ChapterOutOfRange(chapter, book.chapterCount)
+        }
+        return GetChapterResult.Verses(verseRepository.getVerses(bookId, chapter, language))
+    }
+}
+
+// GOOD: Every ViewModel catches StorageException through this one function
+fun CoroutineScope.launchCatchingStorage(
+    onStorageFailure: () -> Unit,
+    context: CoroutineContext = EmptyCoroutineContext,
+    block: suspend CoroutineScope.() -> Unit
+): Job = launch(context) {
+    try {
+        block()
+    } catch (e: StorageException) {
+        onStorageFailure()
+    }
+}
+
+class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
+    fun loadChapter(bookId: Int, chapter: Int, language: Language) {
+        viewModelScope.launchCatchingStorage(onStorageFailure = ::showGeneralError) {
+            when (val result = getChapter(bookId, chapter, language)) {
+                is GetChapterResult.Verses -> showVerses(result.verses)
+                is GetChapterResult.BookNotFound -> showBookNotFound()
+                is GetChapterResult.ChapterOutOfRange -> showChapterOutOfRange(result.chapterCount)
             }
         }
+    }
 }
 ```
 
 ### Don't Catch Generic Exceptions
 
+Code that calls a storage, network or platform library catches only the exception types of that library, and only through one function, `storageCall`: never `Exception` or `Throwable`, and never `CancellationException`. It throws `StorageException`, a type that the domain layer declares, with the original as the cause. `runCatching` is not used in `suspend` functions: it catches `CancellationException` too. Programming errors such as `NullPointerException` or `IndexOutOfBoundsException` are not caught: they are bugs, and they crash. When common code of a multiplatform project cannot name the library's exception type, `storageCall` is an `expect` function with an `actual` on each platform (ARCHITECTURE.md, "Named Outcomes and Other Failures").
+
 ```kotlin
-// BAD: Catching everything
-fun processVideo(path: String): Video? {
-    return try {
-        loadAndProcess(path)
+// BAD: Catching everything, bugs and CancellationException too; a database failure reads as "no book"
+class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Book? = try {
+        bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain()
     } catch (e: Exception) {
-        null  // Swallows ALL errors including bugs
+        null
     }
 }
 
-// GOOD: Catch specific exceptions
-fun processVideo(path: String): Result<Video> {
-    return try {
-        Result.success(loadAndProcess(path))
-    } catch (e: IOException) {
-        Result.failure(FileAccessError(path, e))
-    } catch (e: CodecException) {
-        Result.failure(EncodingError(e.message))
+// BAD: runCatching in a suspend function does the same
+class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Book? =
+        runCatching { bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain() }.getOrNull()
+}
+
+// GOOD: One function catches the library's own exception type and throws StorageException with it as the cause
+inline fun <T> storageCall(message: String, call: () -> T): T = try {
+    call()
+} catch (e: SQLiteException) {
+    throw StorageException(message, e)
+}
+
+class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
+    override suspend fun getBookById(bookId: Int): Book? = storageCall("Cannot read book $bookId") {
+        bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain()
     }
-    // Let programming errors (NPE, IndexOutOfBounds) crash - they're bugs
 }
 ```
 
@@ -529,7 +593,7 @@ fun processVideo(path: String): Result<Video> {
 ### Immutable UI State
 
 ```kotlin
-// BAD: Mutable state with multiple sources of truth
+// BAD: Mutable state with multiple sources of truth; nothing tells the UI about a change
 class EditorViewModel : ViewModel() {
     var currentVideo: Video? = null
     var isPlaying = false
@@ -537,7 +601,7 @@ class EditorViewModel : ViewModel() {
     var error: String? = null
 
     fun play() {
-        isPlaying = true  // Who updates the UI?
+        isPlaying = true
     }
 }
 
@@ -631,15 +695,14 @@ fun saveProject(project: Project) {
     }
 }
 
-// GOOD: Structured concurrency with proper scope
+// GOOD: Structured concurrency with proper scope: launchCatchingStorage (Error Handling) launches in viewModelScope; videos and images load in parallel
 class MediaViewModel(
     private val loadVideosUseCase: LoadVideosUseCase,
     private val loadImagesUseCase: LoadImagesUseCase
 ) : ViewModel() {
 
     fun loadAllMedia() {
-        viewModelScope.launch {
-            // Parallel loading with structured concurrency
+        viewModelScope.launchCatchingStorage(onStorageFailure = { _state.update { it.copy(error = UiError.General) } }) {
             coroutineScope {
                 val videosDeferred = async { loadVideosUseCase() }
                 val imagesDeferred = async { loadImagesUseCase() }
@@ -657,17 +720,17 @@ class MediaViewModel(
 ### Dispatcher Usage
 
 ```kotlin
-// BAD: Blocking main thread
+// BAD: Blocking main thread; heavyProcessing blocks the calling thread
 class VideoProcessor {
     fun processVideo(video: Video): ProcessedVideo {
-        return heavyProcessing(video)  // Blocks calling thread
+        return heavyProcessing(video)
     }
 }
 
-// BAD: Hardcoded dispatcher
+// BAD: Hardcoded dispatcher; a test cannot replace it
 class VideoProcessor {
     suspend fun processVideo(video: Video): ProcessedVideo {
-        return withContext(Dispatchers.Default) {  // Not testable
+        return withContext(Dispatchers.Default) {
             heavyProcessing(video)
         }
     }
@@ -684,7 +747,7 @@ class VideoProcessor(
     }
 }
 
-// In tests:
+// GOOD: A test passes its own dispatcher
 val testDispatcher = StandardTestDispatcher()
 val processor = VideoProcessor(testDispatcher)
 ```
@@ -692,10 +755,10 @@ val processor = VideoProcessor(testDispatcher)
 ### Flow Best Practices
 
 ```kotlin
-// BAD: Not handling backpressure
+// BAD: Not handling backpressure; it can overwhelm consumers
 fun observeFrames(): Flow<Frame> = flow {
     while (true) {
-        emit(captureFrame())  // Can overwhelm consumers
+        emit(captureFrame())
     }
 }
 
@@ -703,12 +766,12 @@ fun observeFrames(): Flow<Frame> = flow {
 viewModelScope.launch { flow1.collect { handleFlow1(it) } }
 viewModelScope.launch { flow2.collect { handleFlow2(it) } }
 
-// GOOD: Conflate for UI, buffer for processing
+// GOOD: Conflate for UI, buffer for processing; conflate drops intermediate frames if the consumer is slow
 fun observeFrames(): Flow<Frame> = flow {
     while (currentCoroutineContext().isActive) {
         emit(captureFrame())
     }
-}.conflate()  // Drop intermediate frames if consumer is slow
+}.conflate()
 
 // GOOD: Combine related flows
 combine(
@@ -729,9 +792,9 @@ combine(
 ### Prefer Immutable
 
 ```kotlin
-// BAD: Exposing mutable collections
+// BAD: Exposing mutable collections; external code can modify them
 class Playlist {
-    val tracks = mutableListOf<Track>()  // External code can modify
+    val tracks = mutableListOf<Track>()
 }
 
 // GOOD: Expose immutable, mutate internally
@@ -782,12 +845,12 @@ fun getActiveVideoTracks(project: Project): List<VideoTrack> =
 ### Avoid Unnecessary Allocations
 
 ```kotlin
-// BAD: Multiple intermediate collections
+// BAD: Multiple intermediate collections: map creates a List, filter another List, toSet a Set
 fun processIds(items: List<Item>): Set<String> {
     return items
-        .map { it.id }          // Creates List
-        .filter { it.isNotEmpty() }  // Creates another List
-        .toSet()                // Creates Set
+        .map { it.id }
+        .filter { it.isNotEmpty() }
+        .toSet()
 }
 
 // GOOD: Use sequences for large collections
@@ -810,10 +873,12 @@ fun processIds(items: List<Item>): Set<String> {
 
 ## Comments & Documentation
 
-### Code Should Be Self-Documenting
+The rule is the "Comments" section of [CLEAN_CODE.md](CLEAN_CODE.md#comments): no comments and no KDoc, except the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`, `// Then`) and the kinds that the Decisions Log of the implementation plan allows. An existing comment is never just deleted: a reason, a warning, a unit, an outside source or a promise first moves into a name, a type or a check in the code, pinned by a test, and the number of a rule of the project's requirements into the test name; work to do goes to the tracker, history to the commit message. This section shows the Kotlin forms.
+
+### A Name, a Type or a Check Instead of a Comment
 
 ```kotlin
-// BAD: Comment explains what code does (redundant)
+// BAD: comments say what the code, a name or a check can say
 // Loop through all tracks and find video tracks that are enabled
 for (track in tracks) {
     if (track is VideoTrack && track.isEnabled) {
@@ -822,53 +887,114 @@ for (track in tracks) {
     }
 }
 
-// GOOD: Code is clear, no comment needed
+// Volume must be between 0 and 1
+fun withVolume(state: ProjectState, volume: Float) = state.copy(volume = volume)
+
+// Max duration in hours
+val max = 4
+
+// GOOD: the code says it
 val enabledVideoTracks = tracks
     .filterIsInstance<VideoTrack>()
     .filter { it.isEnabled }
-```
 
-### Comment WHY, Not WHAT
-
-```kotlin
-// BAD: Describes what code does
-// Check if duration is greater than max
-if (duration > MAX_DURATION) {
-    // Truncate to max duration
-    duration = MAX_DURATION
+fun withVolume(state: ProjectState, volume: Float): ProjectState {
+    require(volume in 0f..1f) { "Volume $volume is outside 0..1" }
+    return state.copy(volume = volume)
 }
 
-// GOOD: Explains WHY
+val MAX_EXPORT_DURATION = 4.hours
+```
+
+### A Name and a Test Instead of a Reason or a KDoc
+
+```kotlin
+// BAD: the reason is a comment that nothing checks
 // Platform limitation: iOS AVFoundation crashes with videos > 4 hours
-if (duration > MAX_DURATION) {
-    duration = MAX_DURATION
+if (duration > MAX_EXPORT_DURATION) {
+    duration = MAX_EXPORT_DURATION
 }
-```
 
-### Document Public APIs
+// BAD: the KDoc states a precondition, an option set, a completion promise and a failure, and nothing checks them
+interface ProjectExporter {
+    /**
+     * Exports a project to a video file.
+     *
+     * @param project The project to export. Must have at least one video track.
+     * @param options Export configuration including format, quality, and output path.
+     * @return A flow that emits progress updates. Completes when export finishes.
+     *         Throws [InsufficientStorageException] if disk space runs out.
+     * @throws IllegalArgumentException if project has no video tracks.
+     */
+    fun export(project: Project, options: ExportOptions): Flow<ExportProgress>
+}
 
-```kotlin
-// BAD: No documentation on public API
-fun export(project: Project, options: ExportOptions): Flow<ExportProgress>
+// GOOD: the purpose and the limit are names, the options and the precondition are types; completing and throwing StorageException are what every flow of the project does (ARCHITECTURE.md), pinned by tests that fail when one is broken, and the test of the limit gives its reason
+val LONGEST_VIDEO_AVFOUNDATION_EXPORTS = 4.hours
 
-// GOOD: Clear documentation
-/**
- * Exports a project to a video file.
- *
- * @param project The project to export. Must have at least one video track.
- * @param options Export configuration including format, quality, and output path.
- * @return A flow that emits progress updates. Completes when export finishes.
- *         Throws [InsufficientStorageException] if disk space runs out.
- * @throws IllegalArgumentException if project has no video tracks.
- */
-fun export(project: Project, options: ExportOptions): Flow<ExportProgress>
+duration = duration.coerceAtMost(LONGEST_VIDEO_AVFOUNDATION_EXPORTS)
+
+data class ExportOptions(val format: VideoFormat, val quality: Quality, val outputPath: Path)
+
+class ProjectWithVideo(val project: Project) {
+    init {
+        require(project.videoTracks.isNotEmpty()) { "A project to export needs a video track" }
+    }
+}
+
+interface ProjectExporter {
+    fun exportToVideoFile(project: ProjectWithVideo, options: ExportOptions): Flow<ExportProgress>
+}
+
+@Test
+fun `export truncates a video longer than 4 hours to 4 hours because iOS AVFoundation crashes on longer videos`() = runTest {
+    // Arrange
+    // Act
+    exporter.exportToVideoFile(projectLasting(4.hours + 1.seconds), options).toList()
+
+    // Assert
+    assertEquals(LONGEST_VIDEO_AVFOUNDATION_EXPORTS, videoDuration(options.outputPath))
+}
+
+@Test
+fun `a project without a video track cannot be exported`() {
+    // Arrange
+    val project = projectWithoutVideoTracks()
+
+    // Act
+    val failure = assertFails { ProjectWithVideo(project) }
+
+    // Assert
+    assertIs<IllegalArgumentException>(failure)
+}
+
+@Test
+fun `export flow completes after the video file is written`() = runTest {
+    // Arrange
+    // Act
+    val progress = exporter.exportToVideoFile(projectLasting(1.minutes), options).toList()
+
+    // Assert
+    assertEquals(ExportProgress.Done, progress.last())
+    assertTrue(options.outputPath.toFile().exists())
+}
+
+@Test
+fun `export throws StorageException when the disk runs out of space`() = runTest {
+    // Arrange
+    // Act
+    val failure = assertFails { exporter.exportToVideoFile(projectLasting(1.minutes), fullDiskOptions).toList() }
+
+    // Assert
+    assertIs<StorageException>(failure)
+}
 ```
 
 ### No Commented-Out Code
 
 ```kotlin
 // BAD: Dead code left in comments
-fun processVideo(video: Video) {
+fun processVideo(video: Video): Video {
     // val oldResult = legacyProcess(video)
     // if (oldResult.isValid) {
     //     return oldResult
@@ -876,7 +1002,7 @@ fun processVideo(video: Video) {
     return newProcess(video)
 }
 
-// GOOD: Delete unused code (use git history if needed)
+// GOOD: Delete unused code; the commit message that deletes it says what it did
 fun processVideo(video: Video) = newProcess(video)
 ```
 
@@ -916,12 +1042,12 @@ fun `undo restores previous state after track deletion`()
 fun `test video loading`() {
     val loader = VideoLoader(mockFileSystem)
     val result = loader.load("test.mp4")
-    assertEquals(1920, result.width)
+    assertEquals(1920, result?.width)
     val anotherResult = loader.load("test2.mp4")
-    assertTrue(anotherResult.isValid)
+    assertTrue(anotherResult?.isValid == true)
     whenever(mockFileSystem.exists(any())).thenReturn(false)
     val failResult = loader.load("missing.mp4")
-    assertTrue(failResult.isFailure)
+    assertNull(failResult)
 }
 
 // GOOD: Clear AAA structure, one assertion focus
@@ -932,35 +1058,34 @@ fun `load returns video with correct dimensions`() {
     val loader = VideoLoader(mockFileSystem)
 
     // Act
-    val result = loader.load(mockFile.path)
+    val video = loader.load(mockFile.path)
 
     // Assert
-    assertEquals(1920, result.getOrThrow().width)
-    assertEquals(1080, result.getOrThrow().height)
+    assertEquals(1920, video?.width)
+    assertEquals(1080, video?.height)
 }
 
 @Test
-fun `load returns failure when file does not exist`() {
+fun `load returns null when file does not exist`() {
     // Arrange
     whenever(mockFileSystem.exists(any())).thenReturn(false)
     val loader = VideoLoader(mockFileSystem)
 
     // Act
-    val result = loader.load("missing.mp4")
+    val video = loader.load("missing.mp4")
 
     // Assert
-    assertTrue(result.isFailure)
-    assertIs<VideoError.NotFound>(result.exceptionOrNull())
+    assertNull(video)
 }
 ```
 
 ### Test Independence
 
 ```kotlin
-// BAD: Tests depend on each other or shared mutable state
+// BAD: Tests depend on each other or shared mutable state; `test process` depends on `test load` running first
 class VideoTests {
     companion object {
-        var sharedVideo: Video? = null  // Shared between tests
+        var sharedVideo: Video? = null
     }
 
     @Test
@@ -971,12 +1096,12 @@ class VideoTests {
 
     @Test
     fun `test process`() {
-        val result = process(sharedVideo!!)  // Depends on previous test
-        assertTrue(result.isSuccess)
+        val result = process(sharedVideo!!)
+        assertTrue(result.isValid)
     }
 }
 
-// GOOD: Each test is independent
+// GOOD: Each test is independent and creates its own fresh test data
 class VideoTests {
     private lateinit var loader: VideoLoader
 
@@ -987,15 +1112,24 @@ class VideoTests {
 
     @Test
     fun `load returns valid video`() {
+        // Arrange
+        // Act
         val video = loader.load("test.mp4")
+
+        // Assert
         assertNotNull(video)
     }
 
     @Test
     fun `process transforms video correctly`() {
-        val video = createTestVideo()  // Create fresh test data
+        // Arrange
+        val video = createTestVideo()
+
+        // Act
         val result = process(video)
-        assertTrue(result.isSuccess)
+
+        // Assert
+        assertTrue(result.isValid)
     }
 }
 ```
@@ -1014,7 +1148,7 @@ Before committing code, verify:
 
 ### Functions
 - [ ] Each function does one thing
-- [ ] Under 30 lines
+- [ ] CRAP score 8 or below, or a recorded exception (see CLEAN_CODE.md, "One Thing per Function")
 - [ ] Max 3 parameters (use data class for more)
 - [ ] Max 3 nesting levels
 
@@ -1022,13 +1156,15 @@ Before committing code, verify:
 - [ ] Single responsibility
 - [ ] Dependencies injected via constructor
 - [ ] State is immutable where possible
-- [ ] Under 200 lines
+- [ ] One reason to change; its fields are used by most of its functions
 
 ### Safety
 - [ ] No `!!` operators
 - [ ] No mutable public properties
-- [ ] Errors handled with Result type
-- [ ] No generic exception catching
+- [ ] Named outcomes are returned: the use case's own sealed type, or the value itself when there is one outcome; no `kotlin.Result` for outcomes
+- [ ] No generic exception catching: never `Exception` or `Throwable`
+- [ ] A repository implementation catches only its library's exception types, never `Exception`, `Throwable` or `CancellationException`, and throws `StorageException`
+- [ ] Only the ViewModel that starts the use case catches `StorageException`; no `runCatching` in `suspend` functions
 
 ### Async
 - [ ] Uses structured concurrency

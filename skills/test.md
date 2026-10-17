@@ -30,18 +30,18 @@ test_calculateTotal_throwsError_whenItemsAreNull()
 ```
 
 ### Arrange-Act-Assert (AAA)
-Structure every test clearly:
+Structure every test clearly: Arrange sets up the test data and the dependencies, Act executes the behavior under test, Assert verifies the result. Each part is opened by its marker, and the markers are the only comments in a test. `// Given`, `// When`, `// Then` mark the same three parts; a project keeps to one set.
 ```
 test_example() {
-    // Arrange - Set up test data and dependencies
+    // Arrange
     cart = ShoppingCart()
     item = Item(price: 100)
 
-    // Act - Execute the behavior under test
+    // Act
     cart.add(item)
     total = cart.calculateTotal()
 
-    // Assert - Verify the result
+    // Assert
     assertEquals(100, total)
 }
 ```
@@ -79,14 +79,14 @@ assert(cart.getTotal() == 100)
 ### Test Independence
 Each test must be self-contained:
 ```
-// Each test creates its own data
+// Each test creates its own data: a fresh user, not shared
 test_A() {
     user = createTestUser()
     // test with user
 }
 
 test_B() {
-    user = createTestUser()  // Fresh user, not shared
+    user = createTestUser()
     // test with user
 }
 ```
@@ -146,7 +146,8 @@ describe("ClassName") {
 
         test("throws error when Z") {
             // Arrange
-            // Act & Assert
+            // Act
+            // Assert
         }
     }
 }

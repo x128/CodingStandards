@@ -3,7 +3,7 @@
 Review code for inconsistencies, replication, potential problems, and
 complications that make it harder to read.
 
-This is review as an activity: you ask, it reports, you decide what to do.
+This is review as an activity: you ask, it reports, you choose what to do with each finding, and it carries out that choice.
 
 The task loop uses the same hunts through a machine-readable contract —
 JSON findings, triage, a landing decision ([TASK_LOOP.md](../TASK_LOOP.md)).
@@ -72,7 +72,9 @@ So the brief is always four specific hunts, in this order:
 3. **Run the four hunts.** Then check against the standards —
    [CLEAN_CODE.md](../CLEAN_CODE.md) and the language document — for anything
    the hunts did not already cover: naming, function size, single
-   responsibility, dependency direction, error handling, dead code.
+   responsibility, dependency direction, error handling, dead code, and a
+   reason, a warning, a unit, an outside source or a promise that only a test
+   name or the plan gives (CLEAN_CODE.md, "Comments").
 
 4. **Prove or downgrade every finding.** For each one, either give a concrete
    case where it goes wrong (input → wrong output, a sequence of calls, a
@@ -166,7 +168,7 @@ than letting them slide.
 
 The rest of this section is the file branch.
 
-**This skill writes nothing inside the project.** Ask the tool where the file
+**The findings file is never written inside the project.** Ask the tool where the file
 goes rather than building the path yourself — it owns that rule, and a path
 assembled twice is a path that eventually differs:
 
@@ -265,7 +267,7 @@ recommendation.
   The tool then draws three plain buttons — Починить · Пропустить · Обсудить —
   under a heading that names no verb (`Исправление`), with the explanation above
   them where it can be read, and the keys are `f`, `s`, `d`. So `do` is the
-  actual act, whatever it is: «Починить», «Добавить в git», «Включить
+  actual act, whatever it is: «Починить», «Удалить файл», «Включить
   edge-to-edge». There is no "1", because picking one out of one is not a choice. Do
   not push the description onto the button: it becomes an unreadable label, and
   the section that should have carried it is missing. With several options there
@@ -329,8 +331,8 @@ one gets read as the title of the whole review.
 `decision` and `note` are the user's — leave `decision` null and omit `note`.
 They press an option's number, or `s`, or `d`, and can add a comment to any
 answer; the finish button closes the tool, and asks first if anything is still
-unanswered. Then carry out the option each finding was answered with, and bring
-each `discuss` back as a question. Read every comment: it is the only thing in
+unanswered. Then carry out the option each finding was answered with, together with what
+its comment adds, and bring each `discuss` back as a question. Read every comment: it is the only thing in
 the file they wrote themselves, and it is there because the button did not say
 everything they wanted to say.
 
@@ -386,8 +388,11 @@ separate commits and separate lines. In the loop `land.sh` writes it from the ta
 - **Separate proven from suspected**, always. Pattern-matched bug priors
   (off-by-one, null, boundary) look identical to real findings and are wrong
   most of the time.
-- **Do not fix anything.** This skill reports. The fix is a separate decision by
-  whoever owns the code.
+- **Do not fix anything on your own.** This skill reports. A fix is a separate
+  decision by whoever owns the code: carry out only the option the user chose for
+  a finding, with what their comment on it adds, and nothing else. If carrying it
+  out shows the option is wrong, stop and bring it back as a question
+  ([CLAUDE.md](../CLAUDE.md#handling-review-feedback)).
 - **The reader owns the fix.** Findings are pointers to look at, not change
   orders — state that in the output when handing it to someone who will act on
   it ([CLAUDE.md](../CLAUDE.md#handling-review-feedback)).
@@ -398,7 +403,8 @@ separate commits and separate lines. In the loop `land.sh` writes it from the ta
 - Search for related patterns, existing conventions, and other call sites
 - Run tests or a snippet to prove a finding
 - Read the project's standards documents
-- Never edit source files
+- Write the findings file where `triage.py --where` says, and launch `triage.py`
+- Edit project files (source, the tracker, the plan's Decisions Log) only to carry out the option the user chose for a finding
 
 ## Example Usage
 

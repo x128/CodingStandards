@@ -14,8 +14,10 @@ KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
 TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
 MAINTAINER_TRAINING.md # How a correction becomes a rule, and which file it goes in
+EVALUATION.md      # What measuring these standards has shown; read by /self-improve
 skills/            # Claude Code skills (slash commands)
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
+templates/self-improve/ # Tools of /self-improve; never copied into a project that is measured
 ```
 
 Language-specific standards (KOTLIN.md, SWIFT.md) are per-stack. Everything

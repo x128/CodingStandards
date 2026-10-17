@@ -97,14 +97,16 @@ run_gate arch yes "echo 'TODO: architecture rule tests' && false"
 #   run_gate build yes  "./gradlew compileKotlinMetadata compileKotlinJvm"
 #   run_gate test  yes  "./gradlew allTests"
 #   run_gate format yes "./gradlew ktlintCheck"
-#   run_gate lint  yes  "./gradlew detekt"
+#   run_gate lint  yes  "./gradlew detekt && ! grep -rnE --include='*.kt' --exclude-dir=build '(^|[[:space:]])(//|/[*])' . | grep -viE '// (arrange|act|assert|given|when|then)\$'"
+#     (the grep fails the gate on any comment but the test markers, CLEAN_CODE.md "Comments";
+#      add "| grep -v '<pattern>'" for each kind of comment that the Decisions Log of the plan allows)
 #   run_gate arch  yes  "./gradlew :architecture:test"
 #
 # Swift
 #   run_gate build yes  "swift build"
 #   run_gate test  yes  "swift test"
 #   run_gate format yes "swift-format lint --recursive Sources"
-#   run_gate lint  yes  "swiftlint --strict"
+#   run_gate lint  yes  "swiftlint --strict && ! grep -rnE --include='*.swift' --exclude-dir=.build '(^|[[:space:]])(//|/[*])' . | grep -v 'swiftlint:' | grep -viE '// (arrange|act|assert|given|when|then)\$'"
 #   run_gate arch  yes  "swift test --filter ArchitectureTests"
 #
 # TypeScript

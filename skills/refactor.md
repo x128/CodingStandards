@@ -42,10 +42,10 @@ When: Class has multiple responsibilities
 ```
 // Before: UserManager handles user logic + email + persistence
 
-// After
-UserService       // Core user logic
-UserNotifier      // Email handling
-UserRepository    // Persistence
+// After: UserService has the core user logic, UserNotifier the email handling, UserRepository the persistence
+UserService
+UserNotifier
+UserRepository
 ```
 
 ### Replace Conditionals with Polymorphism
@@ -78,14 +78,16 @@ When: Unexplained literal values
 if (size > 52428800) { }
 
 // After
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  // 50 MB
+MEGABYTE = 1024 * 1024
+MAX_FILE_SIZE_BYTES = 50 * MEGABYTE
 if (size > MAX_FILE_SIZE_BYTES) { }
 ```
 
 ### Remove Dead Code
 When: Unreachable or unused code exists
 - Delete it entirely
-- Trust version control for history
+- Trust version control for history; the commit message says what was removed and why
+- Commented-out code is dead code too; what it shows goes into that commit message
 
 ### Flatten Nested Conditionals
 When: Deep nesting (>3 levels)
