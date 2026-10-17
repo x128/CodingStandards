@@ -11,6 +11,7 @@ for index in README.md skills/README.md CLAUDE.md MAINTAINER_TRAINING.md; do
   grep -v -e 'self-improve' -e 'EVALUATION.md' "$COPY/$index" > "$COPY/$index.kept" && mv "$COPY/$index.kept" "$COPY/$index"
 done
 sed '/^## Self-improve$/,$d' "$COPY/templates/README.md" > "$COPY/templates/README.md.kept" && mv "$COPY/templates/README.md.kept" "$COPY/templates/README.md"
+awk '/^## Hand It to \/self-improve$/ { skip = 1; next } skip && /^## / { skip = 0 } !skip' "$COPY/skills/refactor.md" > "$COPY/skills/refactor.md.kept" && mv "$COPY/skills/refactor.md.kept" "$COPY/skills/refactor.md"
 LEFT=$(grep -rln -e 'self-improve' -e 'EVALUATION.md' "$COPY")
 [ -z "$LEFT" ] || { echo "REFRESH FAILED: the copy of the standards still names the evaluation in: $LEFT"; exit 1; }
 for script in build lint; do

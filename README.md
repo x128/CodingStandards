@@ -25,7 +25,7 @@ Claude Code skills (slash commands) for enforcing standards:
 | Skill | Command | Purpose |
 |-------|---------|---------|
 | [review](./skills/review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
-| [refactor](./skills/refactor.md) | `/refactor` | Guided refactoring with patterns |
+| [refactor](./skills/refactor.md) | `/refactor` | Refactor to the standards: one target with patterns, or the whole project in rounds; each ends with how the rules worked |
 | [test](./skills/test.md) | `/test` | Test generation with best practices |
 | [document](./skills/document.md) | `/document` | Architecture and module documents in Markdown |
 | [self-document](./skills/self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |

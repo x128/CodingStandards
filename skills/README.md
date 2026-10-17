@@ -7,7 +7,7 @@ Reusable skills (slash commands) for Claude Code that enforce clean code princip
 | Skill | Command | Purpose |
 |-------|---------|---------|
 | [review](./review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
-| [refactor](./refactor.md) | `/refactor` | Guided refactoring with patterns |
+| [refactor](./refactor.md) | `/refactor` | Refactor to the standards: one target with patterns, or the whole project in rounds; each ends with how the rules worked |
 | [test](./test.md) | `/test` | Test generation with best practices |
 | [document](./document.md) | `/document` | Architecture and module documents in Markdown |
 | [self-document](./self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
@@ -61,6 +61,9 @@ Add to `~/.claude/settings.json`:
 
 ### Refactoring
 ```bash
+# Refactor the whole project, in rounds
+/refactor
+
 # Refactor a file
 /refactor src/services/OrderService.kt
 

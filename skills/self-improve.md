@@ -9,7 +9,9 @@ corrects; every change of a rule is measured before and after. The state of this
 ## Instructions
 
 When invoked with no argument, continue from `EVALUATION.md`. When invoked with a direction,
-start an iteration on it.
+start an iteration on it. Directions also come from real projects: after each refactoring,
+`/refactor` writes what the rules did to the code into `EVALUATION.md`, "Open directions", with
+the project and the quoted lines.
 
 ### 1. Read the state
 
@@ -78,7 +80,9 @@ longer than it unless the evidence asks for more. Before any project sees the ch
 ### 5. Measure before and after
 
 All projects live in the work folder. The human's own projects are never touched; a copy of one
-is used only when the human asks for it.
+is used only when the human asks for it. For a direction that came from a refactoring of the
+human's project, offer that: both arms start from a copy of the project as it was before that
+round.
 
 **The project.** By default a new one each iteration, so the rules are not tuned to one codebase:
 another domain, about 2 500 lines of main code, business rules with numbers, failures of storage

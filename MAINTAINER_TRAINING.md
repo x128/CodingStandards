@@ -46,6 +46,7 @@ document about reviewing code, will never be read while writing a report.
 | doing a task | `EXECUTION_GUIDE.md` |
 | writing the report back to the user | `EXECUTION_GUIDE.md`, the reporting section |
 | looking for bugs in the code | `skills/review.md` |
+| refactoring code to the standards | `skills/refactor.md` |
 | running the automatic loop | `TASK_LOOP.md` |
 | measuring or changing these standards | `skills/self-improve.md` |
 
