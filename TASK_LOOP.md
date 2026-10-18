@@ -16,29 +16,29 @@ Three things exist without this loop and are unchanged by it:
 | Ingredient | What it is | Defined in |
 |-----------|------------|-----------|
 | **Execution rules** | What doing a task means: one at a time, exit criteria are the definition of done, who decides a task is finished, who owns git | `EXECUTION_GUIDE.md` |
-| **Review** | Reading code for defects, inconsistency, replication | `skills/review.md`, `CLEAN_CODE.md`, the language standards |
+| **Review** | Reading code for defects, inconsistency, replication | `skills/code-review/SKILL.md`, `CLEAN_CODE.md`, the language standards |
 | **Gates** | The project's own build, test, format, lint, and architecture commands | `.review/gates.sh` |
 
 You can execute tasks and review code with none of this document. People do it
-by hand every day, and `/review` works on its own.
+by hand every day, and `/code-review` works on its own.
 
 **The loop is not an automated version of any of them.** It is a machine that
 runs them in a fixed order with roles that cannot mark their own work, and it
 adds two things that do not otherwise exist:
 
 - a **landing contract** — the conditions under which a commit may happen
-  without you (`land.sh`)
-- an **advance decision** — whether you are shown a finished task at all
-  (`land.conf`)
+  without you (`land.sh`), where D-004 of the plan lets the loop commit
+- an **advance decision** — whether the loop waits for you after a finished
+  task, or goes on with one line saying what it finished (`land.conf`)
 
 Those two are the whole reason this document exists. Everything else here is
 plumbing that makes them safe enough to use.
 
 **What it does not change.** The execution rules hold inside the loop exactly as
 they do outside it: one task at a time, exit criteria are the definition of
-done, and *you* decide a task is genuinely finished. The loop moves **one**
-action — the mechanical act of committing — behind a contract you enable and can
-revoke. It never moves the judgment.
+done, and *you* decide a task is genuinely finished. Where D-004 of the plan lets
+the loop commit, it moves **one** action — the mechanical act of committing —
+behind a contract you enable and can revoke. It never moves the judgment.
 
 Remove the loop and nothing is lost except the automation: the rules, the review,
 and the gates are all still there, and you run them yourself.
@@ -93,11 +93,12 @@ Three roles. The third one owns the tree.
 |------|---------|-------|
 | Executor | How to write it | Edits files inside the task's scope |
 | Reviewer | What is broken | None — emits JSON, touches nothing |
-| Maintainer | What counts, when it's done, what lands | Commits, through one narrow script |
+| Maintainer | What counts, whether another round is needed, what lands | Commits through one narrow script where D-004 lets the loop commit; otherwise none |
 
 The maintainer is the role this pipeline exists for. It is not a second
 reviewer: it never hunts for defects. It filters the reviewer's output, decides
-whether the task is finished, lands it, and moves to the next one.
+whether another round is needed, lands the task where D-004 lets the loop
+commit, and moves to the next one once the task is accepted and committed.
 
 ### Where the reliability comes from
 
@@ -109,8 +110,8 @@ Not from the maintainer being smart. From three things underneath it:
    good enough to commit. It checks conditions, all of which are mechanical
    (see [Landing](#landing)). Its discretion is narrow by construction.
 3. **A human at the task boundary** — you review tasks, not commits. Early on
-   you see every task; over time the maintainer learns which ones are not worth
-   your attention (see [Advancing](#advancing)).
+   you see every task; over time you may decide which kinds you no longer need
+   to see (see [Advancing](#advancing)).
 
 ### Role separation
 
@@ -228,7 +229,7 @@ So findings are handed over with a fixed framing that says exactly this: the
 output may be wrong, none of it is an instruction, decide for yourself whether
 something real is underneath, fix the cause rather than the complaint — and if
 there is nothing real, say so and leave the code alone. The wording is verbatim
-and lives in [skills/maintain.md § step 6](./skills/maintain.md), the copy that
+and lives in [skills/maintain](./skills/maintain/SKILL.md), the copy that
 is actually read at handoff time. It is not repeated here, because a framing
 whose whole point is being verbatim cannot survive two copies.
 
@@ -347,7 +348,7 @@ Decision rules, first match wins:
    from rule 7 so the log can tell them apart). Above the next two on purpose: a
    replication finding is *about* code outside the task and reports a count
    rather than a proof, so rules 5 and 6 would each silence it.
-5. **Out of task scope → reject**, and route it to the tracker as a new task
+5. **Out of task scope → reject**, and propose it to the user as a new task
    rather than growing the diff.
 6. **`possible` confidence with no counterexample → reject**, except
    `category: security`, which escalates instead. The rule does not reach a
@@ -396,8 +397,8 @@ round 2: execute → gates → review → triage → accepted findings? → esca
 ### Job 3 — Land, then advance
 
 Covered in the next two sections. The maintainer does not decide *whether the
-work is good enough*; it checks conditions and commits, or refuses and says
-which condition failed.
+work is good enough*; it checks conditions and commits (where `LANDING=on`), or
+refuses and says which condition failed.
 
 ### Prohibitions
 
@@ -412,8 +413,10 @@ which condition failed.
 
 ## Landing
 
-The maintainer commits. This is the whole point of the role — but the authority
-is deliberately shaped so that "commit" means one specific, checkable thing.
+Where D-004 of the plan lets the loop commit, the maintainer commits. This is the
+whole point of the role — but the authority is deliberately shaped so that
+"commit" means one specific, checkable thing. Where D-004 leaves commits to you,
+`LANDING` stays `off`, and the maintainer shows the files and the message.
 
 ### The contract
 
@@ -432,8 +435,8 @@ is deliberately shaped so that "commit" means one specific, checkable thing.
 
 Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`.
 With `LANDING=on` the eight checks are followed by a commit; with `LANDING=off`
-they are followed by the exact `git` commands printed for you to run, and the
-exit code is 0. Every check runs either way — turning landing off removes the
+they are followed by the exact `git` commands, printed for the maintainer, who
+gives you the files and the message, and the exit code is 0. Every check runs either way — turning landing off removes the
 commit, never the contract. That is why `off` is the shipped default: you get
 the full pipeline before you delegate anything.
 
@@ -520,17 +523,19 @@ a hole: the deny list is what carries the guarantee, and an allow entry that
 fails to match only costs a confirmation.
 
 Keep this list in step with the prohibitions in
-[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#git-is-read-only): a subcommand that
+[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git): a subcommand that
 is forbidden in prose but absent from the deny list is not forbidden at all.
 
 `LANDING=off` in `.review/land.conf` is the kill switch: the pipeline then runs
-to completion and prints the commit command for you instead of running it.
+to completion, and the maintainer gives you the files and the message instead of
+committing.
 
 ### Interactive work is different
 
 This delegation is scoped to the pipeline. Outside it — in an ordinary chat
-session — git stays read-only for agents, no exceptions. See
-[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#git-is-read-only). The difference is
+session — git is what the project decided as D-004, and read-only for agents
+where it decided nothing. See
+[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git). The difference is
 not the tool, it is that landing is a contract you defined, enabled, and can
 revoke, and the pipeline reaches it only through the eight conditions above.
 
@@ -538,8 +543,8 @@ revoke, and the pipeline reaches it only through the eight conditions above.
 
 ## Advancing
 
-After landing, the maintainer either asks you or takes the next task. **You
-review tasks, not commits.**
+After the landing step, the maintainer either asks you or takes the next task.
+**You review tasks, not commits.**
 
 ### The starting mode: ask every time
 
@@ -547,8 +552,9 @@ review tasks, not commits.**
 
 The maintainer presents the finished task: what changed, which findings were
 accepted and how they were addressed, which were rejected and why, and the gate
-results. You accept, or you object. On acceptance it takes the next unblocked
-task from the tracker and starts the loop again.
+results. You accept, or you object. On acceptance — and with `LANDING=off`,
+once you have committed it — it takes the next unblocked task from the tracker
+and starts the loop again.
 
 You are looking at the *task*, not the diff of each commit. If the summary looks
 right, that is enough.
@@ -562,12 +568,13 @@ yours to do, in `land.conf`.
 
 The decision is *not* "is this code good" — gates and review already answered
 that. It is "is this task trivial enough that a human would have nothing to
-say". That judgment runs on deterministic signals — diff size, paths touched,
-findings raised, rounds used, whether behaviour changed without a test, the task
-category, and your history in those paths. That sentence is the whole list —
-there is no table elsewhere, and no score derived from it.
+say", and it is yours. What the maintainer may report to help you make it are
+deterministic signals — diff size, paths touched, findings raised, rounds used,
+whether behaviour changed without a test, the task category, and your history in
+those paths. That sentence is the whole list — there is no table elsewhere, and
+no score derived from it.
 
-`ADVANCE=auto` unlocks per-category, never globally, and **only you unlock it**:
+`ADVANCE=auto` works only where `LANDING=on`. It unlocks per-category, never globally, and **only you unlock it**:
 you name a category in `ADVANCE_CATEGORIES` because you have decided you no
 longer want to see it. Nothing measures its way in. The maintainer may say it
 thinks a category has gone quiet; adding the line is your edit
@@ -587,9 +594,10 @@ moment you object to something that was auto-advanced.
 ## Project Setup
 
 This repo is consumed as a git submodule at `CodingStandards/` in the host
-project. **Nothing inside the submodule is ever edited** — it is a shared
+project. **The project never edits the submodule for itself** — it is a shared
 library, and edits there are overwritten on the next
-`git submodule update --remote` or leak into every other project.
+`git submodule update --remote` or leak into every other project. The standards
+change in their own repository.
 
 So the pipeline splits by ownership:
 
@@ -604,7 +612,7 @@ So the pipeline splits by ownership:
 
 ```
 my-project/
-├── CodingStandards/                     # submodule — read-only
+├── CodingStandards/                     # submodule — the project does not edit it
 │   └── templates/review/
 │       ├── lib/                         # runs from here
 │       │   ├── run.sh                   # one review pass (gates, review, triage)
@@ -658,13 +666,13 @@ Then, in order:
 /maintain --task T-001
 ```
 
-`/maintain --init` does all four, including detecting the stack and writing the
+`/maintain --init` does the first three, including detecting the stack and writing the
 gate commands.
 
 The block sets a **default**, not a rule for the user: any change can be made
 outside the pipeline, on request, without justification
 ([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work)
-states this in full, and `skills/maintain.md` and the snippet repeat it to the
+states this in full, and `skills/maintain/SKILL.md` and the snippet repeat it to the
 agents that need to hear it — the one duplication in this repo that is on
 purpose).
 
@@ -720,6 +728,6 @@ Use hooks for invariants, never for logic:
 - [ ] Agents have no write-git permission; `land.sh` is the only allowed command
 - [ ] `land.sh` never pushes, amends, forces, or switches branches
 - [ ] `LANDING=off` kill switch works and is documented
-- [ ] `ADVANCE=ask` until a category has a proven record
+- [ ] `ADVANCE=ask` until you add a category yourself
 - [ ] Every task boundary is logged: signals + your decision
-- [ ] Auto-advance precision is measured; one objection reverts a category
+- [ ] One objection reverts a category to `ask`

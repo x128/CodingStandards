@@ -115,5 +115,6 @@ self-improve/
 ```
 
 It is never copied into a project that is being measured, because it holds the hidden scenarios.
-`tools/make-project.sh` leaves it, `skills/self-improve.md` and `EVALUATION.md` out of the copy of
-the standards that a project gets, together with this section and every index line that names them.
+`tools/make-project.sh` leaves it and `skills/self-improve/` out of the copy of
+the standards that a project gets, together with this section and every other line that names
+them.

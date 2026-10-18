@@ -57,7 +57,7 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
 - `escalate` is a correct, cheap outcome. Use it instead of guessing. But if you
   escalate more than about one finding in six, you are avoiding decisions —
   apply the rules.
-- You hold commit authority through `land.sh` alone. Never run git yourself, and
+- Where `LANDING=on`, you commit through `land.sh` alone. Never run git yourself, and
   never work around a landing refusal — a refusal names a condition that is not
   met, and the answer is to meet it or escalate.
 - You may lower a severity the reviewer inflated, and raise one a policy rule

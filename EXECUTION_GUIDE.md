@@ -15,7 +15,8 @@ It is not an alternative set of rules, and this document does not describe it.
 
 - **By hand** — the user writes the code. Nothing here constrains that; the
   rules describe what makes a task finished, not who types.
-- **On request** — Claude implements, presents, the user reviews and commits.
+- **On request** — Claude implements, presents, the user reviews; the change is
+  committed as the project decided (see "Who writes to git").
 - **Through the loop** — where a project has `.review/`, this is the default
   path for task work, with or without the skill name being typed. See
   `TASK_LOOP.md`.
@@ -47,9 +48,9 @@ The shape of every task:
 6. **Repeat** — the next task starts only once this one is settled
 
 Steps 4 and 5 are the only ones the loop changes, and only in *mechanism*:
-there, the user reviews the finished task rather than the raw diff, and the
-commit happens through the landing contract instead of by hand. Who decides —
-step 4 — never moves.
+there, the user reviews the finished task rather than the raw diff, and, where
+D-004 lets the loop commit, the commit happens through the landing contract
+instead of by hand. Who decides — step 4 — never moves.
 
 ---
 
@@ -60,7 +61,18 @@ step 4 — never moves.
 Do not start T-002 until T-001 is reviewed and committed. Even if tasks
 seem small or related, each one goes through the full cycle. No exceptions.
 
-### Git is read-only
+### Who writes to git
+
+The project decides, and records it as D-004 ([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents
+only read git and the user commits; or, besides, the loop commits through `land.sh` (below). It is
+the user's preference, not a rule of these standards, and the user may change it. Until it is
+recorded, git is read-only for agents: before it presents its first finished work, the agent asks
+the question of D-004 and writes the answer into the plan's Decisions Log, adding the row when it
+is missing (PLANNING_GUIDE.md, "Decisions every project makes"). Wherever these standards say
+D-004, they mean that row, whatever number the project gave it (its `CLAUDE.md` says). When the user asks in chat for a commit where git is read-only for agents, give the
+files and the message; the user makes it.
+
+Where git is read-only for agents:
 
 **Never run a git command that changes anything.** Not `add`, `commit`,
 `reset`, `checkout`, `switch`, `restore`, `stash`, `rm`, `mv`, `branch`,
@@ -81,26 +93,27 @@ Say what changed instead — which files, and what is in each — and stop there
 They commit in their own tool, where staging is visible before it happens.
 Print a git command only when they ask for one.
 
-### The one exception: `land.sh`
+### The loop's landing: `land.sh`
 
-The loop commits — that is the point of the maintainer role. It does so through
-exactly one script, `land.sh`, which the user enabled deliberately and can
-revoke with one line in `.review/land.conf`. That script
+Where D-004 says so, the loop commits — that is the point of the maintainer
+role. It does so through exactly one script, `land.sh`, which the user enabled
+deliberately and can revoke with one line in `.review/land.conf`. That script
 refuses unless eight conditions hold, stages *and commits* only the task's
 declared files, and has no code path for push, amend, force, or branch switching
 ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
 
-Everything about that exception is what makes it different from an agent running
+Everything about the loop's landing is what makes it different from an agent running
 `git commit`: it is delegated in advance, narrow in what it can do, revocable,
 and auditable in the commit trailers. **Nothing generalizes from it.** In a chat
-session, and everywhere outside the loop, git stays read-only — including "just
-staging" and "just tidying up".
+session, and everywhere outside the loop, git is what D-004 says, and read-only
+where it says nothing — including "just staging" and "just tidying up".
 
 ### The task boundary belongs to the user
 
-By hand or on request, the user reviews the diff and commits. Through the loop,
-the maintainer commits and the user reviews **the finished task** — what
-changed, what the review found, what was rejected and why.
+By hand or on request, the user reviews the diff, and it is committed as D-004 says. Through the loop,
+the user reviews **the finished task** — what changed, what the review found,
+what was rejected and why — and the maintainer commits it where D-004 lets the
+loop commit; otherwise the user does.
 
 The unit of review differs; the authority does not. The user, never the agent,
 decides that a task is genuinely done and that work may continue. The maintainer
@@ -110,6 +123,22 @@ measures its way out of asking
 
 ### Reporting to the user
 
+- **Say first what you need from the user**: a decision with its options, or a
+  place to look. When nothing is needed, say that too; it never means the user
+  need not look.
+- **Answer a question before anything else**, with where the claim comes from.
+  An edit is not an answer.
+- **Ask in the chat, one thing at a time**, except where a skill gathers them:
+  review findings go where `/code-review` sends them,
+  the intake questions of PLANNING_GUIDE.md come as one set, books are asked for
+  in one list. A long file does not replace
+  the questions; it is named by its absolute path for the rest.
+- **A path or a command works where the user is**: absolute, and checked to exist
+  before it is sent. To have the user look at a change, give the file, the line,
+  and what to look for.
+- **During long work, say what runs and what comes next** when a step starts or
+  ends, in the user's terms: what it does to their product, not a step name.
+  Never leave the user without word.
 - **Frame the report in the user's request**, never in the pipeline's steps.
 - **Never invent step numbers** (`0a`, `1b`), and never use a word from your own
   documents unexpanded: `Layer 0`, `gate`, `round`, `threshold`, `landing`,
@@ -127,7 +156,7 @@ measures its way out of asking
   the judgment the user asked for.
 - **A diagram may show the process, never its output.** The loop is worth
   drawing; a list of findings is not — that goes to the triage tool
-  ([skills/review.md](./skills/review.md)).
+  ([skills/code-review](./skills/code-review/SKILL.md)).
 - **A second telling never carries less than the first.** Point back at the
   original rather than restate it shorter — a recap missing what the reader
   needed to act is worse than no recap.
@@ -136,6 +165,13 @@ measures its way out of asking
   where the whole thing is instead of shortening it.
 - Before sending, check: reading only this, can the user say what changed in
   their product and what you think they should do first?
+
+### Work given to other agents
+
+Their assignment names the task and the standards they follow — these documents,
+the project's `CLAUDE.md`, its `.review/` — and adds no rule of its own. A rule
+they need that the standards lack goes to the user first. The one exception is a
+measurement of these standards, whose skill lists the rules its assignments add.
 
 ### No moving on without confirmation
 

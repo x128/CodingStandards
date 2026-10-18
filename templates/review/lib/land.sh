@@ -265,11 +265,18 @@ COMMIT_BODY="$(printf 'Task-Id: %s\nGates: %s\nFindings: %s reviewed, %s rejecte
 
 if [ "$DRY_RUN" -eq 1 ]; then
   if [ "$LANDING" != "on" ]; then
-    echo "LANDING=off in $CONFIG — not committing. Run this yourself:"
+    echo "LANDING=off in $CONFIG — not committing. For the user to commit:"
   else
     echo "dry run — not committing. The commit would be:"
   fi
   echo
+  echo "Files:"
+  printf '  %s\n' "${IN_SCOPE[@]}"
+  echo
+  echo "Message:"
+  printf '%s\n\n%s\n' "$MESSAGE" "$COMMIT_BODY" | sed 's/^/  /'
+  echo
+  echo "Commands (for the user only when they ask for them; never run them):"
   printf '  git add --'
   printf ' %q' "${IN_SCOPE[@]}"
   printf '\n'

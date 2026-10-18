@@ -16,25 +16,10 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 | [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md) | Rules for getting a task from to-do to committed — whoever does the work |
 | [TASK_LOOP.md](./TASK_LOOP.md) | The machine that runs task work: gates, executor, reviewer, maintainer, landing, advancing |
 | [MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) | How a correction becomes a rule, and which file it goes in |
-| [EVALUATION.md](./EVALUATION.md) | What measuring these standards on real projects has shown, and the open directions |
 
 ## Skills
 
-Claude Code skills (slash commands) for enforcing standards:
-
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| [review](./skills/review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
-| [refactor](./skills/refactor.md) | `/refactor` | Refactor to the standards: one target with patterns, or the whole project in rounds; each ends with how the rules worked |
-| [test](./skills/test.md) | `/test` | Test generation with best practices |
-| [document](./skills/document.md) | `/document` | Architecture and module documents in Markdown |
-| [self-document](./skills/self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
-| [theory](./skills/theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
-| [maintain](./skills/maintain.md) | `/maintain` | Run or set up the task loop: review, land, advance |
-| [policy](./skills/policy.md) | `/policy` | Turn a disagreement with the maintainer into a rule or threshold |
-| [self-improve](./skills/self-improve.md) | `/self-improve` | Improve these standards by evidence: agents build and refactor projects, each change is measured before and after |
-| [reflect](./skills/reflect.md) | `/reflect` | Look back at a piece of work: causes in the text, what was lost, next changes |
-| [loss-check](./skills/loss-check.md) | `/loss-check` | Check that a change lost no information |
+Claude Code skills (slash commands) for enforcing standards: see [skills/README.md](./skills/README.md).
 
 ## Templates
 
@@ -79,17 +64,20 @@ project up to use those standards.
    write IMPLEMENTATION_PLAN.md and TASK_TRACKER.md. If I say the plan already
    exists, show me the file.
 2. Write this project's CLAUDE.md, referencing the standards by submodule path:
-   CLEAN_CODE.md, ARCHITECTURE.md, TESTING.md, and the language standard for
+   CLEAN_CODE.md, ARCHITECTURE.md, TESTING.md, EXECUTION_GUIDE.md, and the language standard for
    this stack (KOTLIN.md or SWIFT.md). If there is no standard for this
-   language, say so plainly and use the language-agnostic three.
+   language, say so plainly and use the language-agnostic four. Link the
+   skills as CodingStandards/skills/README.md, "Setup", says.
 3. Run /maintain --init to set up the review loop: detect the stack, fill in
    .review/gates.sh, wire permissions, and install the routing block.
-4. Stop and give me the command to commit the plan, the tracker and CLAUDE.md.
-   That is this project's first commit, and no feature code is in it.
+4. Stop and list the files of the first commit for me to commit: the plan, the
+   tracker, CLAUDE.md, .claude/skills/, and the files /maintain --init wrote. No feature code is
+   in them.
 
-Report back: the plan and tracker paths, the five gate commands, the risk paths,
-any gate slot you could not fill and why, and confirmation that the routing
-block is in CLAUDE.md. Do not write any feature code yet.
+Report back, starting with what I have to do: the files to commit, and any
+check you could not fill and why. Then the plan and tracker paths, the five
+checks that run on every task with their commands, the risk paths, and
+confirmation that the routing block is in CLAUDE.md. Do not write any feature code yet.
 ```
 
 Three things in that prompt are load-bearing. **Step 1 comes first and produces
@@ -101,8 +89,9 @@ write any feature code yet"** keeps setup from sliding into implementation
 before you have looked at the gates.
 
 Landing starts at `LANDING=off` on purpose: the loop runs end to end and prints
-the commit instead of making it. Turn it on in `.review/land.conf` once you have
-watched a few refusals behave.
+the commit instead of making it. Turn it on in `.review/land.conf` only where
+D-004 of the plan says the loop commits, and once you have watched a few refusals
+behave.
 
 ### If the code already exists
 
@@ -135,7 +124,7 @@ the review", "I'll write this one myself" are complete instructions — see
 
 ```
 MyApp/
-├── CodingStandards/          # this repo, as a submodule — never edited here
+├── CodingStandards/          # this repo, as a submodule
 │   ├── CLEAN_CODE.md
 │   ├── KOTLIN.md
 │   ├── TASK_LOOP.md
@@ -198,7 +187,7 @@ MyApp/
 ### EXECUTION_GUIDE.md
 - Rules that hold by hand, on request, and inside the loop alike
 - One task at a time — never batch
-- Git is read-only, with one delegated exception
+- Who writes to git is the project's decision (D-004); read-only for agents until it is made
 - The task boundary and the definition of done belong to the user
 - Reporting: the user's terms, ranked by what blocks the product, findings in a file
 
@@ -215,7 +204,7 @@ MyApp/
 ### MAINTAINER_TRAINING.md
 - Why a correction has to be a file in git, not something a session remembers
 - File it by the moment it happens, not by its topic — the table of moments
-- What is never recorded: rejected findings, counts, thresholds
+- What never becomes a rule: a rejected finding, a count of rejections, a threshold for not asking
 - The user is not an agent: nothing decides whether they look
 - The two calls on a review: is it about the right thing, is anything left
 - This project's rule versus the standard, and what it takes to move up

@@ -147,7 +147,7 @@ Use cases implement `operator fun invoke()` for clean call-site syntax.
 
 ## Domain Layer
 
-The domain layer is the **stable center** of the application. Everything else depends on it; it depends on nothing. All business logic — validation, rules, orchestration — lives here: a rule that is true of an entity whichever use case asks lives with the entity, and application-specific rules live in use cases. This is the most important architectural invariant: if business logic creeps into ViewModels or repositories, the architecture is broken.
+The domain layer is the **stable center** of the application. Everything else depends on it; it depends on nothing. All business logic lives here: what is checked, what is decided, and in what order data is read and changed: a rule that is true of an entity whichever use case asks lives with the entity, and application-specific rules live in use cases. This is the most important architectural invariant: if business logic creeps into ViewModels or repositories, the architecture is broken.
 
 ### Use Cases
 

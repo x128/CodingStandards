@@ -39,9 +39,9 @@ ${note(root)}
 
 The application is finished: ./build.sh passes. The team's standards in CodingStandards/ may have changed since the code was written. Read ${root}/CLAUDE.md and the standards it lists, then all of src/main and enough of src/test to judge the tests. Run ./lint.sh and read what it reports. Change no code.
 
-Find every place where the code does not follow the standards as they stand now. Report only real departures from a rule of the standards, not taste. Look in particular at what ./lint.sh reports, at a decision that is made in more than one place, and at anything else the standards ask that the code does not do.
+Nobody can be asked here, so what would wait for the human is written as an item with its reason. Find every place where the code does not follow the standards as they stand now. Report only real departures from a rule of the standards, not taste. Look in particular at what ./lint.sh reports, at a decision that is made in more than one place, and at anything else the standards ask that the code does not do.
 
-If REFACTORING.md exists from an earlier round, rename it to REFACTORING-ROUND-<the next free number>.md first. Then write the list into ${root}/REFACTORING.md (the only files you write): numbered items, most costly first, each with the file and line (or, for a kind of problem found in many places, the rule and how to find them all), the rule it breaks (file and section of the standard, quoted in a few words), what to change, and the status "to do". Write in plain short sentences. The engineers who will do the work have only this file and the project folder.
+If REFACTORING.md exists from an earlier round, rename it to REFACTORING-ROUND-<the next free number>.md first. Then write the list into ${root}/REFACTORING.md (the only files you write): numbered items, most costly first, each with the file and line (or, for a kind of problem found in many places, the rule and how to find them all), the rule it breaks (file and section of the standard, quoted in a few words), what to change, and the status "to do". At the end, under "Notes on the standards": two files of the standards that say different things, a rule that can be read two ways, a problem of the code that no rule names, each with the quoted line. Write in plain short sentences. The engineers who will do the work have only this file and the project folder.
 
 ${KEEP}
 Say this in the file too, so that the engineers know it.`
@@ -49,10 +49,10 @@ Say this in the file too, so that the engineers know it.`
 const sittingPrompt = (root, n) => `You are one of several engineers who refactor this project one after another.
 ${note(root)}
 
-Read ${root}/CLAUDE.md first and follow it, and the standards it lists. Then read ${root}/REFACTORING.md : it is the list of places where the code does not follow the standards, written by a reviewer. This is refactoring sitting ${n} of this round.
+Read ${root}/CLAUDE.md first and follow it, and the standards it lists. Nobody can be asked here, so what would wait for the human is marked "not done" with its reason, except a decision of the plan your changes alter or one the standards ask to record, which you note in the Decisions Log (below) and go on, and a comment that says work still to do, which becomes a task in TASK_TRACKER.md and in the epic list of IMPLEMENTATION_PLAN.md. Then read ${root}/REFACTORING.md : it is the list of places where the code does not follow the standards, written by a reviewer. This is refactoring sitting ${n} of this round.
 
 1. Run ./build.sh. If it fails, repair that first.
-2. Do the items of REFACTORING.md that are still "to do", in order, one at a time: change the code and its tests, make ./build.sh pass, mark the item "done" with one sentence on what you did. If an item turns out to be wrong, mark it "not done" and say why.
+2. Do the items of REFACTORING.md that are still "to do", in order, one at a time: change the code and its tests, make ./build.sh pass, mark the item "done" with one sentence on what you did and the files it changed; what a removed comment or commented-out code said that belongs in a commit message is written there too, because nobody commits here. An item that asks for what no rule of the standards asks, or that made the code worse when done, is undone and marked "not done" with the reason. A test or an assertion you remove or loosen is named in the item, with the reason. What you notice about the standards themselves goes under "Notes on the standards". Where an item's way would break the rule it cites, the rule wins.
 3. When all items are done, run ./lint.sh and fix what it still reports.
 4. Stop when the list is finished and both scripts pass, or earlier when the next item is too large for what is left of your sitting; leave the list truthful.
 

@@ -6,13 +6,12 @@ WORK="$(cd "$1" && pwd)"; STANDARDS="$2"; PROJECT="$3"
 . "$WORK/env.sh"
 COPY="$PROJECT/CodingStandards"
 rm -rf "${COPY:?}"; mkdir -p "$COPY"
-rsync -a --exclude .git --exclude templates/self-improve --exclude EVALUATION.md --exclude skills/self-improve.md "$STANDARDS/" "$COPY/"
-for index in README.md skills/README.md CLAUDE.md MAINTAINER_TRAINING.md; do
-  grep -v -e 'self-improve' -e 'EVALUATION.md' "$COPY/$index" > "$COPY/$index.kept" && mv "$COPY/$index.kept" "$COPY/$index"
+rsync -a --exclude .git --exclude templates/self-improve --exclude skills/self-improve "$STANDARDS/" "$COPY/"
+for index in README.md CLAUDE.md MAINTAINER_TRAINING.md skills/README.md $(cd "$COPY" && ls skills/*/SKILL.md); do
+  grep -v -e 'self-improve' "$COPY/$index" > "$COPY/$index.kept" && mv "$COPY/$index.kept" "$COPY/$index"
 done
 sed '/^## Self-improve$/,$d' "$COPY/templates/README.md" > "$COPY/templates/README.md.kept" && mv "$COPY/templates/README.md.kept" "$COPY/templates/README.md"
-awk '/^## Hand It to \/self-improve$/ { skip = 1; next } skip && /^## / { skip = 0 } !skip' "$COPY/skills/refactor.md" > "$COPY/skills/refactor.md.kept" && mv "$COPY/skills/refactor.md.kept" "$COPY/skills/refactor.md"
-LEFT=$(grep -rln -e 'self-improve' -e 'EVALUATION.md' "$COPY")
+LEFT=$(grep -rln -e 'self-improve' "$COPY")
 [ -z "$LEFT" ] || { echo "REFRESH FAILED: the copy of the standards still names the evaluation in: $LEFT"; exit 1; }
 for script in build lint; do
   printf '#!/bin/sh\nexport SELF_IMPROVE_JARS="%s" SELF_IMPROVE_JAVA="%s"\nexec sh "%s/%s-project.sh" "$(cd "$(dirname "$0")" && pwd)"\n' "$SELF_IMPROVE_JARS" "$SELF_IMPROVE_JAVA" "$SELF_IMPROVE_TOOLS" "$script" > "$PROJECT/$script.sh"

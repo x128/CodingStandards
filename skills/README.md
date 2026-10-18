@@ -1,136 +1,58 @@
 # Claude Code Skills
 
-Reusable skills (slash commands) for Claude Code that enforce clean code principles.
+Skills (slash commands) for Claude Code that work by the standards of this repository. Each
+skill's own file says how to call it.
 
 ## Available Skills
 
 | Skill | Command | Purpose |
 |-------|---------|---------|
-| [review](./review.md) | `/review` | Hunt inconsistencies, potential problems, and complications |
-| [refactor](./refactor.md) | `/refactor` | Refactor to the standards: one target with patterns, or the whole project in rounds; each ends with how the rules worked |
-| [test](./test.md) | `/test` | Test generation with best practices |
-| [document](./document.md) | `/document` | Architecture and module documents in Markdown |
-| [self-document](./self-document.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
-| [theory](./theory.md) | `/theory` | Theoretical foundation (THEORY.md) generation |
-| [maintain](./maintain.md) | `/maintain` | Run or set up the task loop: review, land, advance |
-| [policy](./policy.md) | `/policy` | Turn a disagreement with the maintainer into a rule |
-| [self-improve](./self-improve.md) | `/self-improve` | Improve these standards by evidence: agents build and refactor projects, each change is measured before and after |
-| [reflect](./reflect.md) | `/reflect` | Look back at a piece of work: causes in the text, what was lost, next changes |
-| [loss-check](./loss-check.md) | `/loss-check` | Check that a change lost no information |
+| [code-review](./code-review/SKILL.md) | `/code-review` | Find what is wrong in code; each finding comes with options, and the user chooses |
+| [refactor](./refactor/SKILL.md) | `/refactor` | Bring code to the standards — one target, or the whole project in rounds — and say how the rules worked |
+| [test](./test/SKILL.md) | `/test` | Write or improve tests by TESTING.md |
+| [document](./document/SKILL.md) | `/document` | Write a document of a module or of the system in `docs/` |
+| [self-document](./self-document/SKILL.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
+| [theory](./theory/SKILL.md) | `/theory` | Write THEORY.md: where the project's concepts come from |
+| [maintain](./maintain/SKILL.md) | `/maintain` | Run the task loop on one task at a time, or set it up |
+| [policy](./policy/SKILL.md) | `/policy` | Turn a disagreement with the task loop into a rule or setting of the project |
+| [self-improve](./self-improve/SKILL.md) | `/self-improve` | Improve these standards by evidence, measuring each change before and after |
+| [reflect](./reflect/SKILL.md) | `/reflect` | Look back at a piece of work: what differed from the expected, its cause, what to change |
+| [loss-check](./loss-check/SKILL.md) | `/loss-check` | Check that a change lost no information |
 
 ## Setup
 
-### Option 1: Project-Level (Recommended)
+Claude Code finds a skill only at `.claude/skills/<name>/SKILL.md` and puts its `description` into
+every session. Link each skill there from the project root; the links are relative, so they work
+in every clone where the submodule is initialised:
 
-Add to your project's `CLAUDE.md`:
-
-```markdown
-## Skills
-Follow skills from `../CodingStandards/skills/`
-```
-
-Or copy the skills directory to your project:
 ```bash
-cp -r /path/to/CodingStandards/skills .claude/skills/
+mkdir -p .claude/skills && for s in CodingStandards/skills/*/; do ln -sfn "../../${s%/}" ".claude/skills/$(basename "$s")"; done
 ```
 
-### Option 2: Global Configuration
-
-Add to `~/.claude/settings.json`:
-```json
-{
-  "skills": {
-    "paths": ["/path/to/CodingStandards/skills"]
-  }
-}
-```
-
-## Usage
-
-### Code Review
-```bash
-# Review specific file
-/review src/services/UserService.kt
-
-# Review staged changes
-/review
-
-# Strict mode (includes minor issues)
-/review --strict
-```
-
-### Refactoring
-```bash
-# Refactor the whole project, in rounds
-/refactor
-
-# Refactor a file
-/refactor src/services/OrderService.kt
-
-# Extract method
-/refactor --extract-method processPayment
-
-# Fix specific smell
-/refactor --smell duplicate-code
-```
-
-### Test Generation
-```bash
-# Generate tests for file
-/test src/services/PaymentService.kt
-
-# Focus on edge cases
-/test --edge-cases processOrder
-
-# Find untested code
-/test --coverage
-```
-
-### Documentation
-```bash
-# Move the explanations in a file's comments into names, types, checks and tests
-/self-document src/services/ExportService.kt
-
-# Document a module in Markdown
-/document src/services/
-
-# Architecture overview
-/document --architecture
-```
-
-### Theoretical Foundation
-```bash
-# Generate THEORY.md for the project
-/theory
-
-# Focus on a subsystem
-/theory src/solver/
-```
-
-## Integration with Standards
-
-These skills reference the coding standards:
-- [CLEAN_CODE.md](../CLEAN_CODE.md) - Language-agnostic principles
-- [KOTLIN.md](../KOTLIN.md) - Kotlin/KMP standards
-- [SWIFT.md](../SWIFT.md) - Swift/iOS standards
+Commit `.claude/skills/` with the project. A skill added to the standards later needs the same
+command again.
 
 ## Creating Custom Skills
 
-1. Create a new `.md` file in this directory
+1. Create `<name>/SKILL.md` in this directory; `<name>` is the command.
 2. Follow the structure:
    ```markdown
+   ---
+   description: What it does. Use when ...
+   ---
+
    # Skill Name
 
-   Brief description.
+   What it does, what it needs, what it gives back.
 
    ## Instructions
-   [What Claude should do when skill is invoked]
+   [What Claude should do when the skill is invoked]
 
    ## Allowed Prompts
-   [What tools/actions are permitted]
+   [What tools and actions are permitted]
 
    ## Example Usage
    [How to invoke the skill]
    ```
-
-3. Reference coding standards as needed
+3. Point to the standards by file and section instead of repeating them.
+4. Name another skill only by its name and purpose, never by its steps, sections or files.

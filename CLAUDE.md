@@ -14,7 +14,6 @@ KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
 TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
 MAINTAINER_TRAINING.md # How a correction becomes a rule, and which file it goes in
-EVALUATION.md      # What measuring these standards has shown; read by /self-improve
 skills/            # Claude Code skills (slash commands)
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 templates/self-improve/ # Tools of /self-improve; never copied into a project that is measured
@@ -47,11 +46,6 @@ Reviewers — human or AI — find issues. They don't have your full context. Tr
 - Keep examples concise but realistic
 - Include a Summary Checklist at the end
 - Follow the existing section structure (Table of Contents, clear headers)
-
-### Skills
-- Each skill is a markdown file in `skills/`
-- Include: Instructions, Allowed Prompts, Example Usage
-- Reference the standards documents where applicable
 
 ## Adding New Standards
 

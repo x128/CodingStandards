@@ -45,6 +45,9 @@ questions — only ones whose answers materially change the plan.
 16. What's the deployment model?
 17. Any AI/ML components? What size/where?
 
+**Working with agents**
+18. May agents write to git? Recorded as D-004; the options are in its row.
+
 ### Ask if relevant:
 
 - Does the product have a versioning/history model?
@@ -178,6 +181,7 @@ System diagram (ASCII), component descriptions, key interfaces.
 | D-001 | ... | ... | TBD in T-NNN | ... |
 | D-002 | A request with nothing to check or decide, such as "read a list and show it". Every project must make this decision | (a) the caller uses the interface that the domain layer declares, and no use case is written; (b) a use case whose body is that one call, and callers use only use cases | (a) or (b) | ... |
 | D-003 | Comments in the code. Every project must make this decision | (a) none besides the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`, `// Then`); (b) the test markers and only the kinds named here, only where named here, such as a license header in every file | (a), unless the project has a reason for (b) | ... |
+| D-004 | Who writes to git. Every project must make this decision | (a) agents only read git; the user commits; (b) the same, and the loop of `TASK_LOOP.md` also commits, through `land.sh` with `LANDING=on`, after its checks | Asked at intake: the user's preference, not a rule of the standards; the user may change it at any time | ... |
 
 ---
 
@@ -209,6 +213,11 @@ experience — not invented. Revise iteratively as real usage data comes in.
 
 ### Plan Rules
 
+**Decisions every project makes.** D-002, D-003 and D-004 of the sample log are decisions every
+project records, and the standards name them by these numbers. In a log that already uses one of
+these numbers for something else, the decision takes the number after the highest one in the log and keeps its Decision
+text, and the project's `CLAUDE.md` says which number it has (Step 4).
+
 - **Philosophy**: 3–6 named principles, each a non-obvious design choice
 - **Use cases**: short — name, input, output that names every outcome, and
   at most 7 numbered rules, in the words of the subject. Not one per user action
@@ -222,9 +231,8 @@ experience — not invented. Revise iteratively as real usage data comes in.
   relevant: domain research, competitor analysis, market research (target
   audience, pricing, distribution)
 - **No week numbers** in epic names
-- **Theoretical foundation** (ML/AI projects): generate THEORY.md via
-  `/theory` skill, add the key correspondences to CLAUDE.md under
-  `## Theoretical Foundation`
+- **Theoretical foundation** (ML/AI projects): generate THEORY.md via the
+  `/theory` skill
 
 **Write it to `IMPLEMENTATION_PLAN.md` at the project root before moving on.**
 Step 4 explains why this is the step that gets skipped and what it costs.
@@ -390,6 +398,9 @@ Same format, descriptions can be shorter.
 ### Task Decomposition Tips
 
 - **One deliverable** per task
+- **One request, one task**: a feature the user asked for is not split into look-alike tasks,
+  and no task or section is added that nobody asked for. Tasks and sections this guide requires
+  count as asked for; a task that comes from a finding is proposed to the user
 - **Write exit criteria first** — if you can't, the task isn't specific enough
 - **>5 exit criteria** → consider splitting
 - **No description beyond title** → might be a sub-bullet, not a task
@@ -460,7 +471,8 @@ Create the project-level artifacts that complete the planning process.
    from a submodule or remote URL, the repo folder name, or `git config`. Offering
    a guess as a ready-made option is the same mistake as writing one: it reads as
    already established, and it propagates into signing and every import.
-2. **Add `x128/CodingStandards` as a git submodule**
+2. **Add `x128/CodingStandards` as a git submodule** — the user does it; agents never write
+   to git outside `land.sh`, and `land.sh` only commits a task
 3. **Create `CLAUDE.md`** at the project root, referencing only the
    CodingStandards documents relevant to this project's stack. Example for
    a Kotlin/KMP project:
@@ -475,20 +487,20 @@ Create the project-level artifacts that complete the planning process.
    Follow `CodingStandards/ARCHITECTURE.md`
    Follow `CodingStandards/TESTING.md`
    Follow `CodingStandards/KOTLIN_MULTIPLATFORM.md`
-
-   ## Skills
-   Follow skills from `CodingStandards/skills/`
+   Follow `CodingStandards/EXECUTION_GUIDE.md`
 
    ## Project
    - Package: `com.example.projectname`
    - Module: `composeApp` (desktop target)
+   - Decisions the standards name: D-002, D-003, D-004 (or the numbers this log gives them)
    ```
    Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
    project). Add project-specific context (package name, modules,
-   constraints) under `## Project`.
+   constraints) under `## Project`. Link the skills into `.claude/skills/` as
+   [skills/README.md](./skills/README.md), "Setup", says; `CLAUDE.md` does not list them.
 
-4. **Commit the plan, the tracker, and `CLAUDE.md` before a line of product code
-   exists.** The plan and the tracker are the first commit.
+4. **The user commits the plan, the tracker, `CLAUDE.md`, `.claude/skills/`, and the files `/maintain --init` wrote if it ran, before a line of product code
+   exists.** They are the first commit.
 
    **The failure to guard against is planning that never leaves the
    conversation.** Steps 0–3 can be run entirely in dialogue: the questions get

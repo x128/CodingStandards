@@ -26,7 +26,12 @@ never offer to.
 
 ## What to do when the user says something is wrong
 
-1. **Write down what they said, in their words.**
+1. **Write down what they said, in their words**, right away, with what is
+   still open, where the next session reads it: for a project, as a row of the
+   Decisions Log of its plan, "TBD" under Chosen and the task it came up in under
+   Rationale; for these standards, into the file the table below names. The rule
+   itself goes into its file once the user agrees with its wording, and Chosen then
+   says the rule and where it went.
 
 2. **Work out *when* it happened — not what it was about.** While installing a
    compiler? While writing the report? While looking for bugs in the code?
@@ -34,7 +39,9 @@ never offer to.
 
 3. **Put the rule in the file that gets read at that point.**
 
-4. **Commit it.** A rule that is not committed lasted one session.
+4. **Have it committed**: a file of the project as its D-004 says (EXECUTION_GUIDE.md,
+   "Who writes to git"), a file of these standards by the user. A rule
+   that is not committed lasted one session.
 
 Step 2 is the one that goes wrong. A rule about writing reports, put into the
 document about reviewing code, will never be read while writing a report.
@@ -44,11 +51,12 @@ document about reviewing code, will never be read while writing a report.
 | installing or configuring a build | the language document (`KOTLIN_MULTIPLATFORM.md`, …) |
 | planning, before any code exists | `PLANNING_GUIDE.md` |
 | doing a task | `EXECUTION_GUIDE.md` |
+| giving work to another agent | `EXECUTION_GUIDE.md`, "Work given to other agents" |
 | writing the report back to the user | `EXECUTION_GUIDE.md`, the reporting section |
-| looking for bugs in the code | `skills/review.md` |
-| refactoring code to the standards | `skills/refactor.md` |
+| looking for bugs in the code | `skills/code-review/SKILL.md` |
+| refactoring code to the standards | the project's `CLAUDE.md` for this project; `skills/refactor/SKILL.md` for how a refactoring runs |
 | running the automatic loop | `TASK_LOOP.md` |
-| measuring or changing these standards | `skills/self-improve.md` |
+| measuring these standards | `skills/self-improve/SKILL.md` |
 
 ---
 

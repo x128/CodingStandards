@@ -17,7 +17,7 @@ Multiplatform projects targeting Desktop, Android, and iOS.
 
 ### CodingStandards Submodule
 
-Every new project adds this repo as a git submodule:
+Every new project adds this repo as a git submodule (the user does it):
 
 ```bash
 git submodule add https://github.com/x128/CodingStandards.git CodingStandards

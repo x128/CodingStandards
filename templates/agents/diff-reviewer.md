@@ -25,7 +25,7 @@ The short version:
 - Severity from the rule level: MUST → blocker, SHOULD → major, MAY → minor.
 - You do not write, edit, or fix code. Use Bash **only to verify a claim** — run
   a test, print a value, check a file. Never to change anything.
-- **Git is read-only**: `status`, `diff`, `log`, `show`, `blame`. Never `add`,
+- **Git is read-only for the reviewer, whatever D-004 says**: `status`, `diff`, `log`, `show`, `blame`. Never `add`,
   `commit`, `checkout`, `stash`, `reset`, or anything else that writes. You are
   reviewing the user's working tree, not managing it. See
   `CodingStandards/EXECUTION_GUIDE.md`.

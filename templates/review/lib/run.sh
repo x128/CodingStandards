@@ -94,7 +94,7 @@ done
 }
 
 # The task file has to live under `.review/`. That directory is the one place
-# excluded from the tree fingerprint, and step 8 of the loop writes `verified_by`
+# excluded from the tree fingerprint, and the loop writes `verified_by`
 # into the task file AFTER this review has run. Anywhere else, that write changes
 # the fingerprint and landing refuses with "the tree changed after this review" —
 # on every task, with nothing in the message pointing at the real cause.
@@ -339,7 +339,7 @@ validate_verdicts() {
     echo "     severity      $(printf '%s' "$severity_values" | jq -r 'join("|")')" >&2
     echo "     decision_rule $(printf '%s' "$rule_values" | jq -r 'join("|")')" >&2
     echo "     reason        at least $min_reason characters" >&2
-    echo "   decision_rule is the field Track A is analysed on; a verdict without" >&2
+    echo "   decision_rule is what /policy reads when a verdict was wrong; a verdict without" >&2
     echo "   one is not a decision, it is an opinion." >&2
     return 1
   }
@@ -552,7 +552,7 @@ fi
   echo
   if [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ]; then
     echo "## The task: scope and exit criteria"
-    echo "Decision rule 4 (out of task scope) and any scope-based policy rule are"
+    echo "Decision rule 5 (out of task scope) and any scope-based policy rule are"
     echo "judged against this. Files outside .scope are not this task's problem."
     cat "$TASK_FILE"
     echo
