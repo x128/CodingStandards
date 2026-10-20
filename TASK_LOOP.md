@@ -156,7 +156,7 @@ Fill in `.review/gates.sh`. Reference commands:
 
 | Stack | build | test | format | lint | arch |
 |-------|-------|------|--------|------|------|
-| Kotlin / KMP | `./gradlew compileKotlinMetadata compileKotlinJvm` | `./gradlew allTests` | `ktlintCheck` | `detekt` | Konsist tests |
+| Kotlin / KMP | `./gradlew :composeApp:compileKotlinMetadata :composeApp:linkDebugFrameworkIosSimulatorArm64 :androidApp:assembleDebug` | `./gradlew :composeApp:allTests :androidApp:testDebugUnitTest` | `ktlintCheck` | `detekt` | Konsist tests |
 | Swift | `swift build` / `xcodebuild` | `swift test` | `swift-format lint` | `SwiftLint` | custom test target |
 | TypeScript | `tsc --noEmit` | `vitest run` | `prettier --check` | `eslint` | `dependency-cruiser` |
 | Python | `mypy` / `pyright` | `pytest` | `ruff format --check` | `ruff check` | `import-linter` |

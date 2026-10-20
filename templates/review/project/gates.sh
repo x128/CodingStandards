@@ -93,9 +93,9 @@ run_gate arch yes "echo 'TODO: architecture rule tests' && false"
 
 # Examples (delete the stubs above and uncomment what fits):
 #
-# Kotlin / KMP
-#   run_gate build yes  "./gradlew compileKotlinMetadata compileKotlinJvm"
-#   run_gate test  yes  "./gradlew allTests"
+# Kotlin / KMP (modules composeApp and androidApp, KOTLIN_MULTIPLATFORM.md)
+#   run_gate build yes  "./gradlew :composeApp:compileKotlinMetadata :composeApp:linkDebugFrameworkIosSimulatorArm64 :androidApp:assembleDebug"
+#   run_gate test  yes  "./gradlew :composeApp:allTests :androidApp:testDebugUnitTest"
 #   run_gate format yes "./gradlew ktlintCheck"
 #   run_gate lint  yes  "./gradlew detekt && ! grep -rnE --include='*.kt' --exclude-dir=build '(^|[[:space:]])(//|/[*])' . | grep -viE '// (arrange|act|assert|given|when|then)\$'"
 #     (the grep fails the gate on any comment but the test markers, CLEAN_CODE.md "Comments";

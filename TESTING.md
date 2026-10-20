@@ -287,7 +287,7 @@ fun `returns verses from repository`() {
 Pure Kotlin, no platform dependencies. Test use cases with fakes.
 
 ```kotlin
-// Location: shared/src/commonTest/kotlin/.../feature/{name}/domain/
+// Location: composeApp/src/commonTest/kotlin/.../feature/{name}/domain/
 
 class GetChapterUseCaseTest {
     private val bookRepository = FakeBookRepository(testBook(id = 1, chapterCount = 50))
@@ -333,7 +333,7 @@ class GetChapterUseCaseTest {
 Test with real database (in-memory SQLite). Verify SQL queries and mapping.
 
 ```kotlin
-// Location: shared/src/commonTest/kotlin/.../feature/{name}/data/
+// Location: composeApp/src/commonTest/kotlin/.../feature/{name}/data/
 
 class DatabaseVerseRepositoryTest {
     private lateinit var db: BibleDatabase
@@ -365,7 +365,7 @@ class DatabaseVerseRepositoryTest {
 Test state transitions using Turbine for Flow assertions. The ViewModel is the place that catches `StorageException`, so its tests cover that path.
 
 ```kotlin
-// Location: shared/src/commonTest/kotlin/.../feature/{name}/presentation/
+// Location: composeApp/src/commonTest/kotlin/.../feature/{name}/presentation/
 
 class ReaderViewModelTest {
     private val bookRepository = FakeBookRepository(testBook(id = 1))

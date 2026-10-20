@@ -57,6 +57,7 @@ document about reviewing code, will never be read while writing a report.
 | refactoring code to the standards | the project's `CLAUDE.md` for this project; `skills/refactor/SKILL.md` for how a refactoring runs |
 | running the automatic loop | `TASK_LOOP.md` |
 | measuring these standards | `skills/self-improve/SKILL.md` |
+| editing these standards | `CLAUDE.md` of this repo, "Contributing Guidelines" |
 
 ---
 

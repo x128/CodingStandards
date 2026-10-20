@@ -640,7 +640,7 @@ sealed interface ReaderEvent {
 class ReaderViewModel(
     private val getChapterUseCase: GetChapterUseCase,
     private val dispatcher: CoroutineDispatcher
-) : ScreenModel {
+) : ViewModel() {
 
     private val _state = MutableStateFlow(ReaderState())
     val state: StateFlow<ReaderState> = _state.asStateFlow()
@@ -654,7 +654,7 @@ class ReaderViewModel(
     }
 
     private fun loadChapter(bookId: Int, chapter: Int) {
-        screenModelScope.launchCatchingStorage(onStorageFailure = { showError("Could not load the chapter") }, context = dispatcher) {
+        viewModelScope.launchCatchingStorage(onStorageFailure = { showError("Could not load the chapter") }, context = dispatcher) {
             _state.update { it.copy(isLoading = true, error = null) }
             show(getChapterUseCase(bookId, chapter, _state.value.language))
         }
@@ -885,26 +885,41 @@ fun CoroutineScope.launchCatchingStorage(
 
 ### Type-Safe Screen Definitions
 
-Each screen is a Voyager Screen with its required parameters.
+Navigation is Navigation 3 (`org.jetbrains.androidx.navigation3`). Each screen
+is a route: a data class with its required parameters. The back stack is a list
+of routes, and `NavDisplay` shows its last one.
 
 ```kotlin
 // BAD: String-based navigation with manual argument parsing
-navigator.navigate("reader/$bookId/$chapter")
+navController.navigate("reader/$bookId/$chapter")
 
-// GOOD: Type-safe screen objects; navigate with type safety by pushing one
-data class ReaderScreen(
-    val bookId: Int,
-    val chapter: Int
-) : Screen {
-    @Composable
-    override fun Content() {
-        val viewModel = koinScreenModel<ReaderViewModel>()
-        // ...
-    }
+// GOOD: Type-safe routes; navigate by adding one to the back stack
+sealed interface Route {
+    data object Library : Route
+    data class Reader(val bookId: Int, val chapter: Int) : Route
 }
 
-navigator.push(ReaderScreen(bookId = 51, chapter = 1))
+@Composable
+fun AppNavigation() {
+    val backStack = remember { mutableStateListOf<Route>(Route.Library) }
+    NavDisplay(
+        backStack = backStack,
+        onBack = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) },
+        entryProvider = entryProvider {
+            entry<Route.Library> {
+                LibraryScreen(onOpenBook = { bookId -> backStack.add(Route.Reader(bookId, chapter = 1)) })
+            }
+            entry<Route.Reader> { route ->
+                ReaderScreen(bookId = route.bookId, chapter = route.chapter)
+            }
+        }
+    )
+}
 ```
+
+`onBack` never empties the back stack. A leaving screen still takes taps while
+it animates out, so its "Back" button can fire twice; on an empty back stack
+`NavDisplay` throws.
 
 ---
 
@@ -939,6 +954,10 @@ navigator.push(ReaderScreen(bookId = 51, chapter = 1))
 ### Features
 - [ ] Package by feature, layer within feature
 - [ ] Koin module per feature
+
+### Navigation
+- [ ] Routes are data classes with their required parameters; no string routes
+- [ ] `onBack` never empties the back stack
 
 ### DI
 - [ ] All dependencies injected via constructor
