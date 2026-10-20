@@ -18,6 +18,7 @@ skill's own file says how to call it.
 | [self-improve](./self-improve/SKILL.md) | `/self-improve` | Improve these standards by evidence, measuring each change before and after |
 | [reflect](./reflect/SKILL.md) | `/reflect` | Look back at a piece of work: what differed from the expected, its cause, what to change |
 | [loss-check](./loss-check/SKILL.md) | `/loss-check` | Check that a change lost no information |
+| [research](./research/SKILL.md) | `/research` | Research a question and keep its journal, to come back to it later |
 
 ## Setup
 
