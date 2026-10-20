@@ -8,18 +8,24 @@ Writes <out.md>: a header (url, title, retrieved) between --- lines, then the te
   html     readable text; headings as #, list items as -, table cells joined by |
   pdf      text under [page N] markers (needs pypdf)
   youtube  the caption track as [mm:ss] lines; --lang picks the track, else the spoken one
-  text     the body as it came: JSON APIs, RSS and Atom feeds, plain text
+  text     the body as it came: RSS and Atom feeds, plain text; JSON is pretty-printed, with
+           HTML entities in its strings decoded, so a quote can be found as it reads
 
+Never overwrites: a capture an earlier note cites must not change. When <out.md> exists, it
+writes nothing and prints status "exists" with the url from that file's header.
 Prints one JSON line: {"status", "http", "out", "chars", "title"}, plus "reason" when not ok.
 Exit codes: 0 ok; 2 blocked (401, 403, 429 or a challenge page; never worked around);
 3 nothing readable; 4 a dependency missing (pypdf); 1 any other failure, including an
-audio or video URL, which is refused unread because downloading it is the user's call.
+existing <out.md>, a URL that cannot be requested, and an audio or video URL, which is
+refused unread because downloading it is the user's call.
 """
 
 import argparse
 import html
+import http.client
 import io
 import json
+import logging
 import os
 import re
 import sys
@@ -57,6 +63,7 @@ CHALLENGE_MARKERS = (
 JAVASCRIPT_NOTICE = re.compile(r"\b(enable|turn on|requires?|need)\b.{0,40}\bjavascript\b"
                                r"|\bjavascript\b.{0,40}\b(required|disabled|needed)\b", re.I)
 
+ARXIV_HTML = re.compile(r"(?:www\.)?arxiv\.org/html/([^/]+)/?")
 YOUTUBE_HOST = re.compile(r"(www\.|m\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be)")
 YOUTUBE_ID = re.compile(r"(?:[?&]v=|youtu\.be/|/shorts/|/live/|/embed/)([\w-]{11})(?![\w-])")
 YOUTUBE_PLAYER = "https://www.youtube.com/youtubei/v1/player"
@@ -127,6 +134,8 @@ def fetch(url, data=None, headers=None, kind="auto"):
         body = error.read(CHALLENGE_PAGE_MAX_BYTES)
     except (urllib.error.URLError, OSError) as error:
         raise Failure(f"cannot reach {host_of(url)}: {error}") from error
+    except (http.client.HTTPException, ValueError) as error:
+        raise Failure(f"cannot request this URL: {type(error).__name__}: {error}") from error
     if len(body) > MAX_BODY_BYTES:
         raise Failure(f"the body is over {MAX_BODY_BYTES >> 20} MB: ask the user first", code)
     host = host_of(final_url)
@@ -223,6 +232,8 @@ def text_of_pdf(body):
     except ImportError as error:
         raise Failure("pypdf is missing: python3 -m pip install --user pypdf",
                       exit_code=MISSING_DEPENDENCY) from error
+    # pypdf warns on every broken cross-reference, and the noise hides the JSON line.
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
     try:
         reader = pypdf.PdfReader(io.BytesIO(body))
         pages = [re.sub(r"[ \t]+", " ", page.extract_text() or "").strip() for page in reader.pages]
@@ -326,7 +337,14 @@ def capture(url, kind, languages):
     """Returns (http code, title, text)."""
     if kind == "youtube" or (kind == "auto" and youtube_id(url)):
         return text_of_youtube(url, languages)
-    code, final_url, content_type, body = fetch(url, kind=kind)
+    try:
+        code, final_url, content_type, body = fetch(url, kind=kind)
+    except Failure as failure:
+        arxiv = ARXIV_HTML.fullmatch(host_of(url) + urllib.parse.urlsplit(url).path)
+        if arxiv and failure.http == 404:
+            failure.reason = (f"arXiv has no HTML version of {arxiv.group(1)}: capture "
+                              f"https://arxiv.org/abs/{arxiv.group(1)} or the PDF")
+        raise
     if not body.strip():
         raise Failure("the answer has an empty body", code, NOTHING_READABLE)
     if kind == "auto":
@@ -337,7 +355,22 @@ def capture(url, kind, languages):
         return (code, *text_of_html(body, final_url))
     path = urllib.parse.urlsplit(final_url).path.rstrip("/")
     title = urllib.parse.unquote(path.rsplit("/", 1)[-1]) or host_of(final_url)
-    return code, title, body.decode("utf-8", "replace").replace("\r\n", "\n")
+    text = body.decode("utf-8", "replace").replace("\r\n", "\n")
+    if text.lstrip()[:1] in ("{", "["):
+        try:
+            text = json.dumps(unescaped(json.loads(text)), indent=1, ensure_ascii=False)
+        except ValueError:
+            pass
+    return code, title, text
+
+
+def unescaped(value):
+    """APIs such as HN's send &#x27; and &quot; inside JSON strings."""
+    if isinstance(value, dict):
+        return {key: unescaped(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [unescaped(item) for item in value]
+    return html.unescape(value) if isinstance(value, str) else value
 
 
 def auto_kind(content_type, body):
@@ -352,7 +385,7 @@ def auto_kind(content_type, body):
 
 
 def redacted_url(url):
-    """Captures may be committed, so key-like query values and user:password@ never reach them."""
+    """Notes, which are committed, copy the header's url: key-like values and user:password@ go."""
     parts = urllib.parse.urlsplit(url)
     netloc = parts.netloc
     if "@" in netloc:
@@ -371,13 +404,23 @@ def write_capture(out_path, url, title, text):
     retrieved = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     header = f"url: {redacted_url(url)}\ntitle: {one_line(title)}\nretrieved: {retrieved}"
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as handle:
+    with open(out_path, "x", encoding="utf-8") as handle:
         handle.write(f"---\n{header}\n---\n" + text.strip("\n") + "\n")
 
 
-def report(status, out=None, chars=0, title=None, http=None, reason=None):
+def url_in_header(out_path):
+    try:
+        with open(out_path, encoding="utf-8", errors="replace") as handle:
+            lines = [handle.readline() for _ in range(5)]
+    except OSError:
+        return None
+    return next((line[5:].strip() for line in lines if line.startswith("url: ")), None)
+
+
+def report(status, out=None, chars=0, title=None, http=None, reason=None, url=None):
     line = {"status": status, "http": http, "out": out, "chars": chars, "title": title}
-    print(json.dumps({**line, **({"reason": reason} if reason else {})}, ensure_ascii=False))
+    extra = {key: value for key, value in (("reason", reason), ("url", url)) if value}
+    print(json.dumps({**line, **extra}, ensure_ascii=False))
 
 
 def main(argv):
@@ -393,6 +436,10 @@ def main(argv):
         return OK if exit_request.code == 0 else FAILED
     if urllib.parse.urlsplit(arguments.url).scheme not in ("http", "https"):
         print("capture.py: the URL must start with http:// or https://", file=sys.stderr)
+        return FAILED
+    if os.path.exists(arguments.out):
+        report("exists", arguments.out, url=url_in_header(arguments.out),
+               reason="the file exists and is left as it is: cite it, or capture to a new name")
         return FAILED
     languages = [code.strip() for code in arguments.lang.split(",") if code.strip()]
     try:

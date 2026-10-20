@@ -4,15 +4,20 @@ Where to look and how to reach each place. SKILL is the folder of this file.
 
 ## Tools
 
-- **WebSearch**: finds pages; a snippet is a pointer, not a source to quote.
+- **WebSearch**: finds pages and returns a model-written summary of them: a pointer, never a
+  source. Check every figure in the capture, including whether it was later withdrawn.
 - **capture.py**: `python3 SKILL/capture.py <url> research/<name>/captures/<slug>.md` reads a page,
-  a PDF or YouTube captions into text you can quote; `--kind text` keeps a JSON or RSS answer
-  as it came; `--lang ru,en` picks the caption language.
+  a PDF or YouTube captions into text you can quote; `--kind text` keeps an RSS answer as it
+  came and pretty-prints JSON; `--lang ru,en` picks the caption language. Capture only what a
+  note or REPORT.md cites. Outside the research it writes only the time of its last request to
+  each host, in the system's temporary folder.
 - **transcribe.sh**: `bash SKILL/transcribe.sh <file> research/<name>/captures/<slug>.md --url <source>`
   turns a local audio or video file into `[mm:ss]` lines.
 - **fetch-media.sh**: `bash SKILL/fetch-media.sh <url> <folder>` downloads audio; only after
   the user said yes to the file, the source and the size.
-- **gh**: GitHub's CLI for repositories, issues, commits and code search.
+- **gh**: GitHub's CLI for repositories, issues, commits and code search. To quote its output,
+  capture the matching `https://api.github.com/...` URL with `capture.py --kind text`, which
+  keeps a header.
 
 ## How to use them
 
@@ -30,7 +35,12 @@ Where to look and how to reach each place. SKILL is the folder of this file.
 
 ## Web
 
-- **WebSearch**: discovery in any language; search in the language of the people who know.
+- **WebSearch**: discovery; search in the language of the people who know. It is centred on
+  English and the US, so for another language go to that language's channels with capture.py:
+  Habr (`https://habr.com/ru/rss/search/?q=term&target_type=posts&order=date`; the search page is
+  JavaScript), `https://t.me/s/<channel>`, Qiita (`https://qiita.com/api/v2/items?query=term`),
+  Zhihu pages (often a 403), and Google News RSS with that language's `hl`, `gl` and `ceid`
+  (`hl=ru&gl=RU&ceid=RU:ru`).
 - **Any page**: capture.py; arXiv HTML, Wikipedia, blogs and docs read well.
 - **Google News RSS**: `https://news.google.com/rss/search?q=%22term%22+when:7d&hl=en-US&gl=US&ceid=US:en`;
   fresh coverage, dated.
@@ -40,7 +50,8 @@ Where to look and how to reach each place. SKILL is the folder of this file.
 - **arXiv search**: `https://arxiv.org/search/?query=%22term%22&searchtype=abstract&order=-announced_date_first`;
   newest preprints first, with the total count.
 - **arXiv full text**: capture `https://arxiv.org/html/<id>` (best for quotes, math as LaTeX)
-  or `https://arxiv.org/pdf/<id>`. Feeds: `https://rss.arxiv.org/rss/<category>`.
+  or `https://arxiv.org/pdf/<id>` (needs pypdf). When `/html/<id>` is a 404, capture
+  `https://arxiv.org/abs/<id>` for the abstract. Feeds: `https://rss.arxiv.org/rss/<category>`.
 - **OpenAlex**: `https://api.openalex.org/works?search=term&select=id,doi,title,publication_date,cited_by_count`;
   search, citing works (`filter=cites:W…`), counts per year (`group_by=publication_year`).
   Searches are rationed per IP without a key; prefer filters and ids.
@@ -59,20 +70,31 @@ Where to look and how to reach each place. SKILL is the folder of this file.
 - **Repositories**: `gh search repos "term" --sort stars --created ">YYYY-MM-DD"`; new projects
   and how fast they gather stars.
 - **Issues**: `gh search issues "term" --repo owner/name`; what breaks and what users ask for.
+  When a repository cannot be searched, capture
+  `https://api.github.com/search/issues?q=repo:<owner/name>+<term>` with `--kind text`. JetBrains' YouTrack: `https://youtrack.jetbrains.com/api/issues?query=term&fields=idReadable,summary,created`;
+  an empty `[]` is inconclusive.
 - **Commits and releases**: `gh api repos/owner/name/commits?since=<ISO date>`,
-  `gh release list -R owner/name`; who is actually working on it.
+  `gh release list -R owner/name` (it marks Latest and Pre-release); who is actually working on it.
 - **Code search**: `gh search code '"import x"' --language python`; how many projects use a thing.
 - **Package registries**: `https://pypi.org/pypi/<name>/json`,
   `https://api.npmjs.org/downloads/range/last-year/<name>`; releases and downloads over time.
+  Maven Central: `https://repo1.maven.org/maven2/<group/as/path>/<artifact>/maven-metadata.xml`;
+  its `<latest>` and `<release>` include Beta and RC versions, so read the `<versions>` list.
 - **Hugging Face Hub**: `https://huggingface.co/api/models?search=term&sort=downloads`; models and
-  datasets in use.
+  datasets in use. A model's discussions: `https://huggingface.co/api/models/<id>/discussions`
+  (no search filter: capture the list with `--kind text` and filter the titles), one thread at
+  `https://huggingface.co/<id>/discussions/<n>`.
 
 ## Discussions
 
-- **Hacker News**: `https://hn.algolia.com/api/v1/search_by_date?query=term&tags=(story,comment)`;
-  practitioners' first reactions; `numericFilters=created_at_i>UNIX` for a date range.
-- **Reddit**: RSS only, `https://www.reddit.com/search.rss?q=%22term%22&sort=new` and
-  `https://www.reddit.com/r/<sub>/new/.rss`; the JSON API refuses scripts.
+- **Hacker News**: `https://hn.algolia.com/api/v1/search_by_date?query=%22term%22&tags=(story,comment)&typoTolerance=false`;
+  practitioners' first reactions; `numericFilters=created_at_i>UNIX` for a date range. Without the
+  quotes and `typoTolerance=false` it matches look-alike words: read the hits before calling it empty.
+- **Reddit**: RSS only, `https://www.reddit.com/search.rss?q=%22term%22&sort=new`, for a topical
+  subreddit `https://www.reddit.com/r/<sub>/search.rss?q=%22term%22&restrict_sr=on&sort=new`, and
+  `https://www.reddit.com/r/<sub>/new/.rss`, a thread's comments at `<thread url>/.rss`; the
+  JSON API refuses scripts. One quoted phrase per query: OR and loose words return noise. A 429
+  there is blocked, not empty.
 - **Lobsters**: `https://lobste.rs/search?q=term&what=stories&order=newest`, `https://lobste.rs/t/<tag>.json`;
   a smaller, technical crowd.
 - **Bluesky**: `https://api.bsky.app/xrpc/app.bsky.feed.searchPosts?q=term&sort=latest`;
