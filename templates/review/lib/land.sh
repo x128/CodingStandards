@@ -113,29 +113,6 @@ CURRENT_FINGERPRINT="$(tree_fingerprint)"
   refuse 2 "the tree changed after this review ran — review again before landing"
 
 # ---------------------------------------------------------------------------
-# 3. Gates re-run green NOW. Cheap insurance, and it catches an environment
-#    that drifted between review and landing.
-# ---------------------------------------------------------------------------
-
-[ -x "$REVIEW_DIR/gates.sh" ] || \
-  refuse 3 "$REVIEW_DIR/gates.sh is missing or not executable — the gates cannot be confirmed"
-
-"$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.land.json" >/dev/null 2>&1
-GATES_EXIT=$?
-
-# "Could not run the gates" and "the gates are red" are different refusals, and
-# only the second one means go fix the code.
-if [ "$GATES_EXIT" -ge 126 ] || ! jq -e 'type == "object"' "$RUN_DIR/gates.land.json" >/dev/null 2>&1; then
-  refuse 3 "$REVIEW_DIR/gates.sh did not run (exit $GATES_EXIT) — the gates were never confirmed green"
-fi
-
-if [ "$GATES_EXIT" -ne 0 ]; then
-  FAILED_GATES="$(jq -r 'to_entries[] | select(.value.status == "fail") | .key' \
-    "$RUN_DIR/gates.land.json" | tr '\n' ' ')"
-  refuse 3 "gates are red at landing time: ${FAILED_GATES:-unknown}"
-fi
-
-# ---------------------------------------------------------------------------
 # 4 & 5. No outstanding findings, no pending escalations.
 # ---------------------------------------------------------------------------
 
@@ -248,6 +225,45 @@ for protected in $PROTECTED_BRANCHES; do
 done
 
 # ---------------------------------------------------------------------------
+# 3. Gates re-run green NOW. Cheap insurance, and it catches an environment
+#    that drifted between review and landing. Checked after 4 to 8, which only
+#    read files: a landing refused for one of those, again and again, then
+#    never rebuilds and retests.
+# ---------------------------------------------------------------------------
+
+[ -x "$REVIEW_DIR/gates.sh" ] || \
+  refuse 3 "$REVIEW_DIR/gates.sh is missing or not executable — the gates cannot be confirmed"
+
+# A landing whose gates end red or unfinished, or which fails after them, may be
+# retried once on the same run — the simulator is booted again, say — so the
+# answers to its escalations still apply. A second time sends the work back
+# through run.sh: run.sh counts its runs per task and stops at ASK_AFTER_RUNS,
+# and nothing else counts landings, so retrying landing alone could rebuild and
+# retest without end. The attempt is written before the gates start, so a gate
+# run that hangs or is killed counts too, and taken back only once the commit is
+# made or printed.
+LANDING_REDS="$(cat "$RUN_DIR/landing-reds" 2>/dev/null)"
+case "$LANDING_REDS" in ''|*[!0-9]*) LANDING_REDS=0 ;; esac
+[ "$LANDING_REDS" -lt 2 ] || \
+  refuse 3 "the landing of this run failed at or after its gates twice — ask the user, then run run.sh again; another landing of this run would repeat uncounted"
+printf '%s\n' "$((LANDING_REDS + 1))" >"$RUN_DIR/landing-reds"
+
+"$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.land.json" >/dev/null 2>&1
+GATES_EXIT=$?
+
+# "Could not run the gates" and "the gates are red" are different refusals, and
+# only the second one means go fix the code.
+if [ "$GATES_EXIT" -ge 126 ] || ! jq -e 'type == "object"' "$RUN_DIR/gates.land.json" >/dev/null 2>&1; then
+  refuse 3 "$REVIEW_DIR/gates.sh did not run (exit $GATES_EXIT) — the gates were never confirmed green"
+fi
+
+if [ "$GATES_EXIT" -ne 0 ]; then
+  FAILED_GATES="$(jq -r 'to_entries[] | select(.value.status == "fail") | .key' \
+    "$RUN_DIR/gates.land.json" | tr '\n' ' ')"
+  refuse 3 "gates are red at landing time: ${FAILED_GATES:-unknown}"
+fi
+
+# ---------------------------------------------------------------------------
 # 9. Landing is explicitly delegated.
 # ---------------------------------------------------------------------------
 
@@ -295,6 +311,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   printf '  git commit --only -m %q -m %q --' "$MESSAGE" "$COMMIT_BODY"
   printf ' %q' "${IN_SCOPE[@]}"
   printf '\n'
+  printf '%s\n' "$LANDING_REDS" >"$RUN_DIR/landing-reds"
   exit 0
 fi
 
@@ -325,4 +342,5 @@ git commit --only -m "$MESSAGE" -m "$COMMIT_BODY" -- "${IN_SCOPE[@]}" || {
   exit 1
 }
 
+printf '%s\n' "$LANDING_REDS" >"$RUN_DIR/landing-reds"
 echo "landed $TASK_ID on $BRANCH: ${#IN_SCOPE[@]} file(s)"

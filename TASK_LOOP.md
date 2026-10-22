@@ -77,7 +77,7 @@ Three roles. The third one owns the tree.
          │                                      ▼
          │ accepted findings      ┌───────────────────────────┐
          └────────────────────────┤ MAINTAINER                │
-              (max 2 rounds)      │ 1. triage findings        │
+        (until review converges)  │ 1. triage findings        │
                                   │ 2. another round or done? │
                                   │ 3. land, then advance     │
                                   └──────┬──────────────┬─────┘
@@ -121,8 +121,8 @@ inflates its own scores while real quality drops. Different models and
 asymmetric context break that loop.
 
 With a single vendor, enforce the same separation structurally: a fresh session
-per role, the reviewer never sees the executor's reasoning, and a hard iteration
-limit.
+per role, the reviewer never sees the executor's reasoning, and an iteration
+limit (`ASK_AFTER_RUNS`, Job 2).
 
 ---
 
@@ -380,21 +380,48 @@ leak.
 
 ### Job 2 — Another round, or done?
 
-**Hard limit: 2 rounds.** Generator–critic loops stop paying after the first
-couple; later rounds mostly rewrite working code. There is no third round and no
-exception clause: if two rounds did not resolve a finding, the finding was not
-understood, and a third attempt at it is guessing — escalate instead.
+**Rounds go on while review keeps finding less.** Every review reads the whole
+change, so on a large change a later round finds what an earlier one missed; three
+or four rounds are normal. New findings of a later round go to the executor like
+those of the first. A finding goes to the user only when the fix does not
+converge: the same `file:line` accepted in two consecutive rounds, or a round that
+accepts as many findings as the one before it, or more.
 
 ```
-round 1: execute → gates → review → triage → accepted findings? → fix
-round 2: execute → gates → review → triage → accepted findings? → escalate
+round n: execute → gates → review → triage → accepted findings? → fix, round n+1
 ```
 
 - **Done** — gates green, no accepted `blocker`/`major`, no escalations.
-- **Another round** — accepted findings exist and the round budget remains.
-- **Escalate** — budget exhausted, an escalate verdict fired, or the same
-  `file:line` was accepted in two consecutive rounds (the fix is not
-  converging — a third attempt will not help).
+- **Another round** — accepted findings exist, fewer than in the round before.
+  The count is the `accepted (>= threshold)` line of `run.sh`; a run that ended
+  before review — exit 2, 5 or 1 — is not a round.
+- **Escalate** — an escalate verdict fired, the same `file:line` was accepted in
+  two consecutive rounds, or a round accepted as many findings as the one before
+  it, or more: the fix is not converging, and another attempt will not help.
+
+**The same failure twice in a row goes to the user**: gates red for the same
+reason, `run.sh` exit 5 or 1, or the same refusal of `land.sh`. Another attempt
+does not mend what broke outside the code — a simulator that will not boot, a
+review that cannot quote a deleted file. Never a third try alone.
+
+**`run.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`,
+5 by default). It counts every run that got as far as the gates, whatever ended
+it: rounds, red gates, unusable reviews, and the reviews again after `/qa`, an
+answer `fixed` or a landing refusal. Five leaves room for the three or four
+rounds of a large change; a large task that also had a red gate reaches it, and
+the user is asked — that is the point, not a wrong count. Past the limit
+`run.sh` runs nothing and exits 6, and the user decides whether to go on.
+`--past-limit` runs once more and starts the count again — on the user's
+answer, or when the count is wrong (runs of another task under the same id),
+said in the report: it is a warning, not a lock. `land.sh` checks its other
+conditions before the gates, so a landing refused for one of them costs no
+build; a landing that fails at or after its gates — red, killed, or a commit
+that fails — may be retried once on the same run, so the answers to its
+escalations still apply, and a second time goes back through `run.sh`, since
+nothing else counts landings. The two stops back
+each other: the rule above stops early, at the second failure; the count stops
+a session that missed the rule, on every path that runs a review or the
+gates.
 
 ### Job 3 — Land, then advance
 
@@ -736,7 +763,7 @@ Use hooks for invariants, never for logic:
 | Same finding every run | Missing policy rule | Write the rule — or better, encode it as a lint rule in Layer 0 |
 | Landed commits you would have rejected | `ADVANCE=auto` too broad | Revert that category to `ask`; tighten thresholds |
 | Landing refused and nobody knows why | Contract failure not surfaced | `land.sh` names the failing condition — read it, do not bypass it |
-| Maintainer metrics improve, real quality doesn't | Reward hacking in the loop | Re-separate roles, tighten the round limit, strengthen Layer 0 |
+| Maintainer metrics improve, real quality doesn't | Reward hacking in the loop | Re-separate roles, lower `ASK_AFTER_RUNS`, strengthen Layer 0 |
 | Cost per task is high | Broad scope | Narrow the task; diff + touched deps only; cheap model for triage |
 
 ---
@@ -752,7 +779,7 @@ Use hooks for invariants, never for logic:
 - [ ] A finding contradicting a green gate is always rejected
 - [ ] Only `accept` + `severity ≥ major` reaches the executor
 - [ ] Different model per role; fresh session per role
-- [ ] Hard limit of 2 rounds, with an oscillation stop
+- [ ] Rounds go on while each accepts fewer findings; an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly
 - [ ] Missing or malformed pipeline output fails closed, never as "nothing found"
 - [ ] `lib/selftest.sh` passes after any change to `run.sh`, the schemas or the output contract — it is the only run of the validation that does not need a model to answer with findings

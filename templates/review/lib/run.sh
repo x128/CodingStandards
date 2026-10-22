@@ -15,7 +15,7 @@
 #   prompts/, schemas/ — used whenever .review/ has no override.
 #
 # Usage, from your project root:
-#   run.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>]
+#   run.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>] [--past-limit]
 #
 # Without --base, reviews the uncommitted work — exactly what land.sh commits.
 # With --base <ref>, reviews the whole branch since that ref (a final pass).
@@ -26,6 +26,8 @@
 #   3  accepted findings remain — hand them to the executor
 #   4  escalations — a human decides
 #   5  review unusable — every finding failed quote verification; re-run
+#   6  the task has had ASK_AFTER_RUNS runs — nothing ran; the user decides
+#      whether another one is worth it (--past-limit runs it)
 #   1  pipeline error, including any malformed agent output (fails closed)
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
@@ -40,12 +42,14 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 BASE=""
 THRESHOLD_CLI=""
 TASK_FILE=""
+PAST_LIMIT=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base)      require_value "--base" $#; BASE="$2"; shift 2 ;;
-    --threshold) require_value "--threshold" $#; THRESHOLD_CLI="$2"; shift 2 ;;
-    --task-file) require_value "--task-file" $#; TASK_FILE="$2"; shift 2 ;;
+    --base)       require_value "--base" $#; BASE="$2"; shift 2 ;;
+    --threshold)  require_value "--threshold" $#; THRESHOLD_CLI="$2"; shift 2 ;;
+    --task-file)  require_value "--task-file" $#; TASK_FILE="$2"; shift 2 ;;
+    --past-limit) PAST_LIMIT=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -106,6 +110,70 @@ if [ -n "$TASK_FILE" ]; then
        echo "  review would otherwise make landing refuse every time" >&2
        exit 1 ;;
   esac
+fi
+
+# Every repetition of the loop is another run of this script: a new round, a
+# re-run after red gates or an unusable review, a review again after a landing
+# refusal. Nothing else counts them, and none of those paths has a limit of its
+# own, so a session nobody watches could repeat one of them for as long as the
+# account pays. Past ASK_AFTER_RUNS runs of the same task this script runs
+# nothing and says the user decides. A warning, not a lock: --past-limit runs
+# once more and starts the count again from zero, for when the user said go on
+# or the count is wrong. It is accepted only at the limit, so a flag left in the
+# command fails on the next run instead of switching the count off.
+ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
+case "$ASK_AFTER_RUNS" in
+  ''|*[!0-9]*|0*|??????????*)
+    echo "ASK_AFTER_RUNS in $REVIEW_DIR/land.conf must be a whole number from 1 to 999999999, not '$ASK_AFTER_RUNS'" >&2
+    exit 1 ;;
+esac
+
+TASK_ID=""
+if [ -n "$TASK_FILE" ]; then
+  TASK_ID="$(jq -er '.id // empty' "$TASK_FILE" 2>/dev/null)" && [ -n "$TASK_ID" ] || {
+    echo "$TASK_FILE is not JSON or has no .id — runs are counted per task" >&2
+    exit 1
+  }
+fi
+
+# One line per earlier run of this task. Each run records its count number,
+# `epoch`: the highest one among the task's runs, one more for a --past-limit
+# run. The runs counted are the plain ones of the highest epoch, so the count
+# depends neither on the order of the run directories — their names come from
+# the local clock and the process id, and neither sorts by time reliably — nor
+# on old run directories having been deleted.
+task_runs() {
+  local meta
+  for meta in "$REVIEW_DIR"/runs/*/meta.json; do
+    [ -f "$meta" ] || continue
+    jq -c --arg id "$TASK_ID" 'select(.task == $id) | {past_limit, epoch}' "$meta" 2>/dev/null
+  done
+}
+
+EPOCH=null
+if [ -n "$TASK_ID" ]; then
+  TASK_RUNS="$(task_runs)"
+  RUNS_IN_ALL="$(printf '%s' "$TASK_RUNS" | jq -s 'length')"
+  EPOCH="$(printf '%s' "$TASK_RUNS" | jq -s 'map(.epoch // 0) | max // 0')"
+  RUNS_SO_FAR="$(printf '%s' "$TASK_RUNS" | jq -s --argjson epoch "$EPOCH" \
+    'map(select((.epoch // 0) == $epoch and .past_limit != true)) | length')"
+  if [ "$PAST_LIMIT" = true ]; then
+    if [ "$RUNS_SO_FAR" -lt "$ASK_AFTER_RUNS" ]; then
+      echo "--past-limit is only for a task at its limit: $TASK_ID has had $RUNS_SO_FAR of $ASK_AFTER_RUNS runs — run without it" >&2
+      exit 1
+    fi
+    EPOCH=$((EPOCH + 1))
+  elif [ "$RUNS_SO_FAR" -ge "$ASK_AFTER_RUNS" ]; then
+    echo "WAIT FOR THE USER — $TASK_ID has had $RUNS_SO_FAR runs since the count started, $RUNS_IN_ALL in all"
+    echo "   (ASK_AFTER_RUNS=$ASK_AFTER_RUNS); nothing ran."
+    echo "   Ask the user whether to go on. Run again with --past-limit only on their"
+    echo "   answer, or when the count is wrong — runs of another task under the same"
+    echo "   id — and then say so."
+    exit 6
+  fi
+elif [ "$PAST_LIMIT" = true ]; then
+  echo "--past-limit needs --task-file: runs are counted per task" >&2
+  exit 1
 fi
 
 # Created only once the configuration is known good: otherwise every run against
@@ -392,8 +460,12 @@ fi
 REVIEWED_FINGERPRINT="$(tree_fingerprint)"
 jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg fingerprint "$REVIEWED_FINGERPRINT" --arg task "$TASK_FILE" \
+      --arg task_id "$TASK_ID" --argjson past_limit "$PAST_LIMIT" \
+      --argjson epoch "$EPOCH" \
       '{base: $base, threshold: $threshold, tree_fingerprint: $fingerprint,
-        task_file: (if $task == "" then null else $task end)}' >"$RUN_DIR/meta.json"
+        task_file: (if $task == "" then null else $task end),
+        task: (if $task_id == "" then null else $task_id end),
+        past_limit: $past_limit, epoch: $epoch}' >"$RUN_DIR/meta.json"
 
 # ---------------------------------------------------------------------------
 # 2. Layer 0 — gates. Ground truth, and a hard stop.

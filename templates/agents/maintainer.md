@@ -38,8 +38,10 @@ Done when gates are green, no accepted finding is at or above the threshold, and
 nothing is escalated. Otherwise send the accepted findings back to the executor,
 round after round, while each round accepts fewer findings than the one before.
 A finding accepted in two rounds in a row, or a round that accepts as many as the
-one before, is escalated: the fix is not converging and another attempt will not
-help.
+one before or more, is escalated: the fix is not converging and another attempt will not
+help. The same failure twice in a row — gates red for the same reason, `run.sh` exit 5 or
+1 again, the same refusal of `land.sh` — goes to the user as well. `run.sh` exit 6 means
+the task has had `ASK_AFTER_RUNS` runs: the user decides whether to go on.
 
 ## 3. Land, then advance
 

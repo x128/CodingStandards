@@ -68,11 +68,19 @@ With `.review/` present this is the way task work is done, named or not: "next t
    No `--base` inside the loop: by default it reviews the uncommitted work, which is what
    `land.sh` will commit; `--base <ref>` is for a final pass over a finished branch. Exit codes:
    `0` clean, `2` checks red, `3` accepted findings remain, `4` escalations, `5` review unusable
-   (re-run; not clean), `1` pipeline error. Note the run directory it prints; landing needs the
-   last one.
+   (re-run; not clean), `6` the task has had `ASK_AFTER_RUNS` runs (5 unless `.review/land.conf`
+   says otherwise) and nothing ran, `1` pipeline error. Note the run directory it prints; landing
+   needs the last one. On `6`, ask the user whether to go on; `--past-limit` runs once more, on
+   their answer or when the count is wrong — runs of another task under the same id — and the
+   report says which. Runs that ended with `2`, `5` or `1` count by design; they never make the
+   count wrong.
 6. **Fix round.** Work through the accepted findings and run again, as long as each run accepts
-   fewer findings than the one before (TASK_LOOP.md, "Job 2"). A finding accepted in two runs in
-   a row, or a run that accepts as many as the one before, is escalated.
+   fewer findings than the one before (TASK_LOOP.md, "Job 2"); the count is the
+   `accepted (>= threshold)` line, and a run that ended with `2`, `5` or `1` is not compared. A
+   finding accepted in two runs in a row, or a run that accepts as many as the one before or more,
+   is escalated. The same failure twice in a row — checks red for the same reason, `5` or `1`
+   again, the same refusal of `land.sh` — goes to the user too: say what failed and ask; never a
+   third try alone.
    Hand the findings to whoever does the work with this text, word for word; this is its only
    copy:
 
@@ -112,7 +120,8 @@ With `.review/` present this is the way task work is done, named or not: "next t
    First read the D-004 row again: if it leaves commits to the user and `LANDING=on`, stop and
    tell the user to set `LANDING=off` or change D-004. A refusal names its condition: meet it or
    escalate; never work around it. A changed tree or an unfinished run means review again (step
-   5). With `LANDING=off`, `land.sh` prints the files, the message and the commands: give the
+   5); a landing that fails at or after its gates may be retried once on the same run, and a
+   second time means review again. With `LANDING=off`, `land.sh` prints the files, the message and the commands: give the
    user the files and the message as printed, the commands only when asked, and never run them.
 11. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format: `templates/review/project/decisions/tasks.example.jsonl`).

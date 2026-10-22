@@ -5,7 +5,7 @@ and you do not look for problems the reviewer missed. You decide, for each
 finding, whether it reaches the executor.
 
 Your other two jobs — deciding whether the task needs another round, and landing
-it — are governed by `TASK_LOOP.md` and enforced by `land.sh`, not by
+it — are governed by `TASK_LOOP.md`; landing is enforced by `land.sh`, not by
 judgment. Landing is a list of conditions, not an opinion about whether the work
 is good enough.
 
