@@ -228,12 +228,23 @@ UNVERIFIED="$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | l
 # 8. Never onto a protected branch, and never onto a detached HEAD.
 # ---------------------------------------------------------------------------
 
+#    The protected-branch half guards the loop's own commit. With LANDING=off
+#    there is none — the user commits, on whatever branch they work on — so it
+#    is reported instead of refused. A detached HEAD refuses either way: the
+#    files and the message would be for a commit no branch reaches; otherwise a project whose D-004 leaves
+#    commits to the user and that works on main could never get the files and
+#    the message out of the loop at all.
+
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+BRANCH_NOTE=""
 [ "$BRANCH" != "HEAD" ] || \
   refuse 8 "HEAD is detached — a commit here would be unreachable from any branch"
 for protected in $PROTECTED_BRANCHES; do
-  [ "$BRANCH" = "$protected" ] && \
-    refuse 8 "current branch is $BRANCH — landing never touches a protected branch"
+  if [ "$BRANCH" = "$protected" ]; then
+    [ "$LANDING" != "on" ] || \
+      refuse 8 "current branch is $BRANCH — landing never touches a protected branch"
+    BRANCH_NOTE="current branch is $BRANCH, a protected branch: the loop would not commit here; the user decides where the commit goes"
+  fi
 done
 
 # ---------------------------------------------------------------------------
@@ -266,6 +277,7 @@ COMMIT_BODY="$(printf 'Task-Id: %s\nGates: %s\nFindings: %s reviewed, %s rejecte
 if [ "$DRY_RUN" -eq 1 ]; then
   if [ "$LANDING" != "on" ]; then
     echo "LANDING=off in $CONFIG — not committing. For the user to commit:"
+    [ -z "$BRANCH_NOTE" ] || echo "Note: $BRANCH_NOTE."
   else
     echo "dry run — not committing. The commit would be:"
   fi

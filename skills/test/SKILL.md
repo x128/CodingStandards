@@ -19,8 +19,8 @@ standard, and says what is covered and what is not.
    Implementation"). For each public function left to test, cover the normal case, the edge cases
    (empty, boundary values such as 0, 1 and the maximum, invalid input), the failures, the change
    of state where there is one, and concurrent calls where the code is shared between them.
-4. **Run them** on every platform the project builds. A new test fails when the behaviour it
-   checks is broken; check that once by breaking the code on purpose and putting it back.
+4. **Run them** on every platform the project builds, and see each new one fail once
+   (TESTING.md, "Coverage Requirements").
 5. **Report:** first, each test that fails because the code is wrong — the test, and the file and
    line of the code; then the cases covered, the tests written, and what is not covered and why.
    A failing test is never loosened to pass, and the code under test is changed only when the

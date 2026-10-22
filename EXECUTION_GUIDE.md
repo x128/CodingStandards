@@ -74,6 +74,10 @@ files and the message; the user makes it.
 
 Where git is read-only for agents:
 
+These rules are about the project's repository and its submodules. A test script
+that builds a throwaway repository in a temporary folder and deletes it
+(`templates/review/lib/selftest.sh`) writes no git the user owns.
+
 **Never run a git command that changes anything.** Not `add`, `commit`,
 `reset`, `checkout`, `switch`, `restore`, `stash`, `rm`, `mv`, `branch`,
 `merge`, `rebase`, `push`, `pull`, `tag`, or `clean`. Read-only only:
@@ -133,6 +137,9 @@ measures its way out of asking
   the intake questions of PLANNING_GUIDE.md come as one set, books are asked for
   in one list. A long file does not replace
   the questions; it is named by its absolute path for the rest.
+- **Each option says something the others do not, and its label keeps it**: who
+  does what, as a phrase, never one word cut out of it. Two wordings of one
+  meaning are not a choice; take the one the user already used, and do not ask.
 - **A path or a command works where the user is**: absolute, and checked to exist
   before it is sent. To have the user look at a change, give the file, the line,
   and what to look for.

@@ -92,9 +92,16 @@ With `.review/` present this is the way task work is done, named or not: "next t
    run, the finding with its `code_quote`, the answer and the reason (format:
    `templates/review/project/decisions/escalations.example.jsonl`). Landing refuses while an
    escalation is unanswered. An escalation answered the same way again is a rule for `/policy`.
-8. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the
-   test that proves it, or `manual: <what you checked>`. Never claim a check you did not do.
-9. **Land:**
+8. **Check as the user:** run `/qa` on the task once `run.sh` exits `0`, or every escalation of
+   step 7 is answered. What it reports as failing or unproven goes back to whoever does the
+   work, with the text of step 6, and the task is reviewed again (step 5) — once; a second
+   failing `/qa` is escalated as in step 7. A defect the user finds later that `/qa` passed goes
+   to `/qa` as a defect of that skill too. If `/qa` is not among the skills of the session, link
+   it (skills/README.md, "Setup") and tell the user; the step is never skipped silently.
+9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the
+   test that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a
+   check you did not do; what `/qa` left unproven is not verified.
+10. **Land:**
 
    ```bash
    CodingStandards/templates/review/lib/land.sh \
@@ -106,17 +113,17 @@ With `.review/` present this is the way task work is done, named or not: "next t
    escalate; never work around it. A changed tree or an unfinished run means review again (step
    5). With `LANDING=off`, `land.sh` prints the files, the message and the commands: give the
    user the files and the message as printed, the commands only when asked, and never run them.
-10. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
+11. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format: `templates/review/project/decisions/tasks.example.jsonl`).
     An accepted task is provisional; once `CONFIRM_AFTER` (`.review/land.conf`) later tasks in
     the same paths are accepted and committed, add its confirmation line. No predictions and no
     score of quiet tasks: the user decides when a kind of task stops being shown.
-11. **Advance or stop**, as `.review/land.conf` says:
+12. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
       object, and with `LANDING=off`, commit — then what changed, the findings accepted and what
       was done, the findings rejected and why, the results of the build, test, format, lint and
-      architecture checks, the commit, and the findings in `optional.json` (accepted below the
-      threshold and not acted on). Then wait. On acceptance — with `LANDING=off`, once the user
+      architecture checks, what `/qa` checked and found, the commit, and the findings in
+      `optional.json` (accepted below the threshold and not acted on). Then wait. On acceptance — with `LANDING=off`, once the user
       says it is committed — go to step 1.
     - `ADVANCE=auto`, only with `LANDING=on`: go on without waiting, with one line saying which
       task landed and which starts, only when the task's category is in `ADVANCE_CATEGORIES` and
@@ -139,7 +146,7 @@ With `.review/` present this is the way task work is done, named or not: "next t
 ## Allowed Prompts
 - Read the tracker, the diff, source files, `.review/**` and the standards
 - Run `gates.sh`, `run.sh`, `land.sh`, tests and linters
-- Start the `diff-reviewer` and `maintainer` subagents
+- Start the `diff-reviewer` and `maintainer` subagents; run `/qa`
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
   status and proposed tasks in the tracker; in `--init`, the files of setup steps 1 to 7
 - Git: read-only (`status`, `diff`, `log`, `show`)

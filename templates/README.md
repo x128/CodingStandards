@@ -88,6 +88,8 @@ and needs no override.
 | `review/lib/run.sh` | submodule | One review pass: diff → gates → reviewer → quote verification → triage → filtered output |
 | `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold |
 | `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data |
+| `review/lib/selftest.sh` | submodule | `run.sh` and `land.sh` on a throwaway repository with fixed answers; run after changing either, the schemas or the decision rules |
+| `review/lib/export-version.sh` | submodule | One version of the project into a folder of its own, by reading git only — for `/qa` replays and comparisons |
 | `review/lib/prompts/reviewer.md` | submodule | Reviewer contract: quote, evidence, confidence, silence-is-valid |
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
 | `review/lib/schemas/*.json` | submodule | Findings and verdicts schemas — the enforcement mechanism |
@@ -98,6 +100,7 @@ and needs no override.
 | `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |
 | `review/project/CLAUDE.snippet.md` | project | Routing block: makes the loop the default path for task work |
 | `review/project/decisions/` | project | Decision log format (training data) |
+| `review/project/qa-cases.example.md` | project | Defects that got past `/qa`, replayed after every correction of it |
 | `agents/diff-reviewer.md` | project | Reviewer subagent, least-privilege tools |
 | `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh and read-only git |
 

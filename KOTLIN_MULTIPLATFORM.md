@@ -695,6 +695,7 @@ After setup, verify compilation on all active targets:
 |---|---|---|
 | Unit, Integration | `composeApp/src/commonTest/kotlin/...` | kotlin.test; Turbine for flows, added to `libs.versions.toml` with the first test that needs it |
 | iOS code | `composeApp/src/iosTest/kotlin/...` | kotlin.test |
+| Shared code with a JVM-only tool (JDBC driver, files) | `composeApp/src/androidHostTest/kotlin/...` | kotlin.test |
 | Android code on the JVM | `androidApp/src/test/kotlin/...` | kotlin-test-junit |
 | Desktop end-to-end | `composeApp/src/desktopTest/` | `org.jetbrains.compose.ui:ui-test-junit4` |
 | Android end-to-end | `androidApp/src/androidTest/` | `androidx.compose.ui:ui-test-junit4` |

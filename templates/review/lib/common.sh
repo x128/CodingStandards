@@ -52,12 +52,15 @@ require_value() { [ "$2" -ge 2 ] || { echo "$1 needs a value" >&2; exit 1; }; }
 # so every path taken from the command line must be resolved BEFORE that cd —
 # otherwise a relative path given from a subdirectory silently means a different
 # file afterwards, and the mismatch surfaces as a confusing landing refusal
-# rather than as the usage error it is.
+# rather than as the usage error it is. Symbolic links are resolved (`pwd -P`),
+# as `git rev-parse --show-toplevel` resolves them: a project reached through a
+# link — any temporary folder on macOS — would otherwise fail every comparison
+# of a path with the project root.
 abspath() {
   local target="$1" directory
-  directory="$(cd "$(dirname "$target")" 2>/dev/null && pwd)" || return 1
+  directory="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || return 1
   if [ -d "$target" ]; then
-    printf '%s' "$(cd "$target" && pwd)"
+    printf '%s' "$(cd "$target" && pwd -P)"
   else
     printf '%s/%s' "$directory" "$(basename "$target")"
   fi

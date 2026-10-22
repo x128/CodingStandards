@@ -325,13 +325,14 @@ validate_verdicts() {
 
   jq -e --argjson verdicts "$verdict_values" --argjson severities "$severity_values" \
         --argjson rules "$rule_values" --argjson min_reason "$min_reason" '
+    def in_enum($values): . as $value | $values | any(. == $value);
     (.verdicts | type) == "array"
       and (.verdicts | length) > 0
       and all(.verdicts[];
               ((.finding_id? // "") != "")
-              and ($verdicts | index(.verdict? // "")) != null
-              and ($severities | index(.severity? // "")) != null
-              and ($rules | index(.decision_rule? // "")) != null
+              and ((.verdict? // "") | in_enum($verdicts))
+              and ((.severity? // "") | in_enum($severities))
+              and ((.decision_rule? // "") | in_enum($rules))
               and ((.reason? // "") | length) >= $min_reason)
   ' "$verdicts_file" >/dev/null 2>&1 || {
     echo "   maintainer output is malformed. Every verdict needs finding_id, plus:" >&2
@@ -469,6 +470,7 @@ CONFIDENCE_VALUES="$(schema_enum "$FINDINGS_SCHEMA" findings confidence)" || exi
 
 jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VALUES" \
       --argjson confidences "$CONFIDENCE_VALUES" '
+  def in_enum($values): . as $value | $values | any(. == $value);
   (.findings | type) == "array"
     and (([.findings[].id] | length) == ([.findings[].id] | unique | length))
     and all(.findings[];
@@ -476,9 +478,9 @@ jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VA
             and ((.file? // "") != "")
             and ((.line? | type) == "number" and .line == (.line | floor) and .line >= 1)
             and ((.code_quote? // "") != "")
-            and ($categories | index(.category? // "")) != null
-            and ($severities | index(.severity? // "")) != null
-            and ($confidences | index(.confidence? // "")) != null
+            and ((.category? // "") | in_enum($categories))
+            and ((.severity? // "") | in_enum($severities))
+            and ((.confidence? // "") | in_enum($confidences))
             and ((.evidence? // "") != ""))
 ' "$RUN_DIR/findings.raw.json" >/dev/null 2>&1 || {
   echo "   reviewer output does not match the findings schema — see $RUN_DIR/findings.raw.json" >&2

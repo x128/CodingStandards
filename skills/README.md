@@ -10,6 +10,7 @@ skill's own file says how to call it.
 | [code-review](./code-review/SKILL.md) | `/code-review` | Find what is wrong in code; each finding comes with options, and the user chooses |
 | [refactor](./refactor/SKILL.md) | `/refactor` | Bring code to the standards — one target, or the whole project in rounds — and say how the rules worked |
 | [test](./test/SKILL.md) | `/test` | Write or improve tests by TESTING.md |
+| [qa](./qa/SKILL.md) | `/qa` | Accept a finished change as its user meets it — builds, tests, criteria, motion frame by frame, states, numbers — and replay on every defect that got past |
 | [document](./document/SKILL.md) | `/document` | Write a document of a module or of the system in `docs/` |
 | [self-document](./self-document/SKILL.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
 | [theory](./theory/SKILL.md) | `/theory` | Write THEORY.md: where the project's concepts come from |

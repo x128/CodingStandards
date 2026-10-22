@@ -355,6 +355,8 @@ Decision rules, first match wins:
    `confirmed` or `likely` finding at all — a proven security bug is an
    ordinary accept, and escalating it would delay a real fix behind a human.
 7. **Architectural judgment, or gate/finding conflict → escalate.**
+8. **No rule above fires → accept** (`no-rule-fired`): the finding stands on its
+   own evidence. It is not a policy rule matching, and is not logged as one.
 
 `lib/prompts/maintainer.md` is fed to the maintainer by `run.sh` and is
 **normative**; this section explains the rules rather than restating them, and
@@ -431,14 +433,17 @@ whole point of the role — but the authority is deliberately shaped so that
 | 5 | Zero pending escalations | A human owes an answer |
 | 6 | Changed files ⊆ the task's declared scope | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim | The tracker's definition of done, with the claim recorded in the commit |
-| 8 | Branch is neither protected nor detached | Landing never touches trunk, and never makes an unreachable commit |
+| 8 | Branch is not detached, and not protected when `LANDING=on` | Landing never touches trunk, and never makes an unreachable commit; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
 Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`.
 With `LANDING=on` the eight checks are followed by a commit; with `LANDING=off`
 they are followed by the exact `git` commands, printed for the maintainer, who
 gives you the files and the message, and the exit code is 0. Every check runs either way — turning landing off removes the
-commit, never the contract. That is why `off` is the shipped default: you get
-the full pipeline before you delegate anything.
+commit, never the contract. The one exception is the protected branch of
+condition 8: it guards the loop's own commit, so with `LANDING=off` it is printed
+as a note, and a project that commits by hand on `main` still gets the files and
+the message. That is why `off` is the shipped default: you get the full pipeline
+before you delegate anything.
 
 **Condition 7 is the one with no mechanical backing.** It checks that a claim
 was *made*, not that it is true. `.review/` is excluded from the tree
@@ -504,7 +509,21 @@ it.
       "Bash(git -c:*)", "Bash(git commit-tree:*)", "Bash(git symbolic-ref:*)",
       "Bash(git read-tree:*)", "Bash(git update-index:*)", "Bash(git bisect:*)",
       "Bash(git sparse-checkout:*)", "Bash(git clone:*)", "Bash(git init:*)",
-      "Bash(git checkout-index:*)", "Bash(git stripspace:*)"
+      "Bash(git checkout-index:*)", "Bash(git stripspace:*)",
+      "Bash(git --no-pager:*)", "Bash(git --paginate:*)", "Bash(git -p:*)",
+      "Bash(git -P:*)", "Bash(git --bare:*)", "Bash(git --namespace:*)",
+      "Bash(git --no-optional-locks:*)", "Bash(git --exec-path:*)",
+      "Bash(git --literal-pathspecs:*)", "Bash(git remote add:*)",
+      "Bash(git remote set-url:*)", "Bash(git remote remove:*)",
+      "Bash(git remote rename:*)", "Bash(git remote rm:*)",
+      "Bash(git remote update:*)", "Bash(git remote prune:*)",
+      "Bash(git remote set-head:*)", "Bash(git remote set-branches:*)",
+      "Bash(git reflog expire:*)", "Bash(git reflog delete:*)",
+      "Bash(git reflog drop:*)", "Bash(git reflog write:*)", "Bash(git stage:*)",
+      "Bash(git --config-env:*)", "Bash(git --no-replace-objects:*)",
+      "Bash(git --no-lazy-fetch:*)", "Bash(git --no-advice:*)",
+      "Bash(git --glob-pathspecs:*)", "Bash(git --noglob-pathspecs:*)",
+      "Bash(git --icase-pathspecs:*)", "Bash(git --attr-source:*)"
     ],
     "allow": [
       "Bash(CodingStandards/templates/review/lib/land.sh:*)",
@@ -521,6 +540,13 @@ entry. The `./` variant is there because it is the other way people type it; an
 absolute path matches neither and will prompt. That prompt is a nuisance, never
 a hole: the deny list is what carries the guarantee, and an allow entry that
 fails to match only costs a confirmation.
+
+A global option written before the subcommand (`git --no-pager add`) starts
+with no `git <subcommand>` prefix of the list, so each global option git accepts
+before a subcommand has its own line; so do the writing forms of `remote` and
+`reflog`, whose reading forms stay allowed. Reading is therefore written
+without a global option — `git diff`, not `git --no-pager diff`; git opens no
+pager when its output is not a terminal anyway.
 
 Keep this list in step with the prohibitions in
 [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git): a subcommand that
@@ -617,6 +643,8 @@ my-project/
 │       ├── lib/                         # runs from here
 │       │   ├── run.sh                   # one review pass (gates, review, triage)
 │       │   ├── land.sh                  # the only thing that commits
+│       │   ├── selftest.sh              # run.sh and land.sh on a throwaway repository
+│       │   ├── export-version.sh        # one version of the project into a folder of its own
 │       │   ├── triage.py                # you answer findings — terminal or browser
 │       │   ├── prompts/{reviewer,maintainer}.md
 │       │   └── schemas/*.json
@@ -683,7 +711,9 @@ override a prompt or schema by copying just that file. `land.sh` is deliberately
 **not** overridable — it is the one file with write authority.
 
 Prefer contributing improvements back to the submodule; an override is a fork
-you now maintain. Project-specific *content* (rules, examples) belongs in
+you now maintain. An overridden schema is updated together with the submodule's
+prompt that fills it: a decision rule the prompt names and the schema lacks
+fails every run that reaches it (`selftest.sh` checks the shipped pair). Project-specific *content* (rules, examples) belongs in
 `.review/REVIEW_POLICY.md`, which is already in the maintainer's context.
 
 ### Hooks
@@ -725,6 +755,7 @@ Use hooks for invariants, never for logic:
 - [ ] Hard limit of 2 rounds, with an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly
 - [ ] Missing or malformed pipeline output fails closed, never as "nothing found"
+- [ ] `lib/selftest.sh` passes after any change to `run.sh`, the schemas or the output contract — it is the only run of the validation that does not need a model to answer with findings
 - [ ] Agents have no write-git permission; `land.sh` is the only allowed command
 - [ ] `land.sh` never pushes, amends, forces, or switches branches
 - [ ] `LANDING=off` kill switch works and is documented

@@ -15,12 +15,12 @@ precedence. All are binding.
 
 ## 1. Triage the findings
 
-Exactly one verdict per finding, decided by seven rules applied in order, first
+Exactly one verdict per finding, decided by eight rules applied in order, first
 match wins:
 
 `contradicts-green-gate` → `confirmed-by-red-gate` → `policy-rule` →
 `replication` → `out-of-task-scope` → `unproven-possible` →
-`needs-human-judgment`
+`needs-human-judgment` → `no-rule-fired`
 
 **That order is the only part reproduced here.** Each rule's conditions,
 exceptions and worked examples are in `prompts/maintainer.md`, which is

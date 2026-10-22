@@ -30,6 +30,9 @@ Every feature requires tests at all pyramid levels:
 
 Every platform the app runs on must have end-to-end tests covering general user scenarios.
 
+A new test is seen failing once: break the code it covers, run it, put the code back. A test that
+passes with its code broken checks nothing.
+
 See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runners, and platform-specific frameworks.
 
 ---
@@ -46,7 +49,7 @@ See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runne
 
 ## Test Naming
 
-Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason or a source ends with it: `→ result, because reason`.
+Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason or a source ends with it: `→ result because reason`, with no comma — Kotlin/Native refuses one in a backtick name (KOTLIN_MULTIPLATFORM.md).
 
 ### Kotlin (backtick names)
 
@@ -333,7 +336,8 @@ class GetChapterUseCaseTest {
 Test with real database (in-memory SQLite). Verify SQL queries and mapping.
 
 ```kotlin
-// Location: composeApp/src/commonTest/kotlin/.../feature/{name}/data/
+// Location: composeApp/src/androidHostTest/kotlin/.../feature/{name}/data/ — JdbcSqliteDriver
+// runs on the JVM only; a test shared with iOS takes its driver from an expect function instead
 
 class DatabaseVerseRepositoryTest {
     private lateinit var db: BibleDatabase

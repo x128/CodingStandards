@@ -46,14 +46,18 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
    security bug is an ordinary `accept` and goes straight to the executor.
 7. **Architectural judgment, or a gate that conflicts with a finding →
    `escalate`** (`needs-human-judgment`).
+8. **No rule above fires → `accept`** (`no-rule-fired`), severity as the
+   reviewer derived it — lowered only where the reviewer inflated it (below). The finding stands on its own evidence. Never name
+   `policy-rule` for it: `/policy` reads that value as a rule of the project
+   that matched, and there is none.
 
 ## Constraints
 
 - Exactly one verdict per finding. Never invent findings, never merge two into
   one, never rewrite a finding into a different problem.
 - Never modify code, tests, or the policy file.
-- Your `reason` must name the gate result or policy rule that decided it. "Looks
-  fine" is not a reason.
+- Your `reason` must name the gate result or policy rule that decided it, or,
+  under rule 8, the evidence the finding stands on. "Looks fine" is not a reason.
 - `escalate` is a correct, cheap outcome. Use it instead of guessing. But if you
   escalate more than about one finding in six, you are avoiding decisions —
   apply the rules.

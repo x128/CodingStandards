@@ -18,7 +18,7 @@
           },
           "severity": {
             "enum": ["blocker", "major", "minor", "nit"],
-            "description": "The maintainer's severity, which may differ from the reviewer's. Derived from the matched policy rule's level."
+            "description": "The maintainer's severity, which may differ from the reviewer's. Derived from the matched policy rule's level; under rule 8 (no-rule-fired), the reviewer's severity unless it was inflated."
           },
           "decision_rule": {
             "enum": [
@@ -28,7 +28,8 @@
               "replication",
               "out-of-task-scope",
               "unproven-possible",
-              "needs-human-judgment"
+              "needs-human-judgment",
+              "no-rule-fired"
             ],
             "description": "Which decision rule from TASK_LOOP.md fired. First match wins."
           },
@@ -39,7 +40,7 @@
           "reason": {
             "type": "string",
             "minLength": 10,
-            "description": "One or two sentences, at least 10 characters. Must reference the gate result or policy rule that decided it. A one-word reason is rejected and the whole run fails."
+            "description": "One or two sentences, at least 10 characters. Must reference the gate result or policy rule that decided it. A one-word reason is rejected and the whole run fails; under rule 8 (no-rule-fired), the evidence the finding stands on."
           }
         },
         "required": ["finding_id", "verdict", "severity", "decision_rule", "reason"],
