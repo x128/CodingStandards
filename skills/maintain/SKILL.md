@@ -70,8 +70,9 @@ With `.review/` present this is the way task work is done, named or not: "next t
    `0` clean, `2` checks red, `3` accepted findings remain, `4` escalations, `5` review unusable
    (re-run; not clean), `1` pipeline error. Note the run directory it prints; landing needs the
    last one.
-6. **Fix round.** Work through the accepted findings and run again, once. Findings still accepted
-   in that second run are escalated.
+6. **Fix round.** Work through the accepted findings and run again, as long as each run accepts
+   fewer findings than the one before (TASK_LOOP.md, "Job 2"). A finding accepted in two runs in
+   a row, or a run that accepts as many as the one before, is escalated.
    Hand the findings to whoever does the work with this text, word for word; this is its only
    copy:
 

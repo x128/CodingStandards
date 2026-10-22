@@ -35,9 +35,11 @@ result or policy rule that decided it. Output JSON only, no prose.
 ## 2. Another round, or on to landing?
 
 Done when gates are green, no accepted finding is at or above the threshold, and
-nothing is escalated. Otherwise send the accepted findings back to the executor
-once. Findings still accepted after that round are escalated: the fix is not
-converging and another attempt will not help.
+nothing is escalated. Otherwise send the accepted findings back to the executor,
+round after round, while each round accepts fewer findings than the one before.
+A finding accepted in two rounds in a row, or a round that accepts as many as the
+one before, is escalated: the fix is not converging and another attempt will not
+help.
 
 ## 3. Land, then advance
 

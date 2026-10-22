@@ -11,6 +11,7 @@ skill's own file says how to call it.
 | [refactor](./refactor/SKILL.md) | `/refactor` | Bring code to the standards — one target, or the whole project in rounds — and say how the rules worked |
 | [test](./test/SKILL.md) | `/test` | Write or improve tests by TESTING.md |
 | [qa](./qa/SKILL.md) | `/qa` | Accept a finished change as its user meets it — builds, tests, criteria, motion frame by frame, states, numbers — and replay on every defect that got past |
+| [write](./write/SKILL.md) | `/write` | Write a message the reader understands on the first reading: their question, what happened and why, what they decide — without the machinery of the work; styles `precise` (default), `simple`, `explained` |
 | [document](./document/SKILL.md) | `/document` | Write a document of a module or of the system in `docs/` |
 | [self-document](./self-document/SKILL.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
 | [theory](./theory/SKILL.md) | `/theory` | Write THEORY.md: where the project's concepts come from |

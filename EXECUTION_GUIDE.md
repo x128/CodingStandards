@@ -127,11 +127,16 @@ measures its way out of asking
 
 ### Reporting to the user
 
-- **Say first what you need from the user**: a decision with its options, or a
-  place to look. When nothing is needed, say that too; it never means the user
-  need not look.
-- **Answer a question before anything else**, with where the claim comes from.
-  An edit is not an answer.
+Every message to the user is written by [skills/write](./skills/write/SKILL.md). The points
+below are about the work, not the text; rules for the text were measured to make messages worse
+next to the skill ([MEASURED.md](./skills/write/MEASURED.md)).
+
+- **During long work, say what runs and what comes next** when a step starts or
+  ends, in the user's terms: what it does to their product, not a step name.
+  Never leave the user without word.
+- **Keep working while the next step serves the request.** Ask only what the user
+  must decide. Never stop to ask whether to run the next step of the work they
+  asked for, or whether it is worth its tokens.
 - **Ask in the chat, one thing at a time**, except where a skill gathers them:
   review findings go where `/code-review` sends them,
   the intake questions of PLANNING_GUIDE.md come as one set, books are asked for
@@ -140,38 +145,6 @@ measures its way out of asking
 - **Each option says something the others do not, and its label keeps it**: who
   does what, as a phrase, never one word cut out of it. Two wordings of one
   meaning are not a choice; take the one the user already used, and do not ask.
-- **A path or a command works where the user is**: absolute, and checked to exist
-  before it is sent. To have the user look at a change, give the file, the line,
-  and what to look for.
-- **During long work, say what runs and what comes next** when a step starts or
-  ends, in the user's terms: what it does to their product, not a step name.
-  Never leave the user without word.
-- **Frame the report in the user's request**, never in the pipeline's steps.
-- **Never invent step numbers** (`0a`, `1b`), and never use a word from your own
-  documents unexpanded: `Layer 0`, `gate`, `round`, `threshold`, `landing`,
-  `advance`, `hunt`. The user has not read them.
-- **Prerequisites are one blocker line, not a plan.** Never renumber the user's
-  work behind your own setup.
-- **Rank by what blocks the product, and state the ranking.** A list with no
-  named worst item is not a report. *No tests* outranks any individual defect:
-  untested code cannot be shown fixed, so every other repair is unverifiable.
-- **Never name a group with a word that is not the thing.** "Debt", "junk",
-  "misc", "structure", "other" name your filing system, not the reader's
-  problem — name the consequence instead.
-- **Give the verdict, not just the inventory.** For every item say whether you
-  think it should be fixed, and why. Handing over an unranked list is refusing
-  the judgment the user asked for.
-- **A diagram may show the process, never its output.** The loop is worth
-  drawing; a list of findings is not — that goes to the triage tool
-  ([skills/code-review](./skills/code-review/SKILL.md)).
-- **A second telling never carries less than the first.** Point back at the
-  original rather than restate it shorter — a recap missing what the reader
-  needed to act is worse than no recap.
-- **The reader must be able to act on what you wrote without asking you
-  anything.** Nothing is left out to make it shorter — if it will not fit, say
-  where the whole thing is instead of shortening it.
-- Before sending, check: reading only this, can the user say what changed in
-  their product and what you think they should do first?
 
 ### Work given to other agents
 
