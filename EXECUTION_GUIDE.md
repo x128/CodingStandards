@@ -67,7 +67,7 @@ The project decides, and records it as D-004 ([PLANNING_GUIDE.md](./PLANNING_GUI
 only read git and the user commits; or, besides, the loop commits through `land.sh` (below). It is
 the user's preference, not a rule of these standards, and the user may change it. Until it is
 recorded, git is read-only for agents: before it presents its first finished work, the agent asks
-the question of D-004 and writes the answer into the plan's Decisions Log, adding the row when it
+the question of D-004 (PLANNING_GUIDE.md, "The questions of D-002, D-003 and D-004") and writes the answer into the plan's Decisions Log, adding the row when it
 is missing (PLANNING_GUIDE.md, "Decisions every project makes"). Wherever these standards say
 D-004, they mean that row, whatever number the project gave it (its `CLAUDE.md` says). When the user asks in chat for a commit where git is read-only for agents, give the
 files and the message; the user makes it.
@@ -138,8 +138,8 @@ next to the skill ([MEASURED.md](./skills/write/MEASURED.md)).
   must decide. Never stop to ask whether to run the next step of the work they
   asked for, or whether it is worth its tokens.
 - **Ask in the chat, one thing at a time**, except where a skill gathers them:
-  review findings go where `/code-review` sends them,
-  the intake questions of PLANNING_GUIDE.md come as one set, books are asked for
+  review findings go where `/code-review` sends them;
+  the intake questions of PLANNING_GUIDE.md come a block at a time, as its Step 0 says; books are asked for
   in one list. A long file does not replace
   the questions; it is named by its absolute path for the rest.
 - **Each option says something the others do not, and its label keeps it**: who

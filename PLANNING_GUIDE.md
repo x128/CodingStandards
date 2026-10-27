@@ -19,34 +19,42 @@ questions — only ones whose answers materially change the plan.
 ### Always ask:
 
 **Product vision**
+
 1. One sentence: what does the product do?
 2. What's the core insight — why is this approach better than what exists?
 3. Who is the user? (expertise level, context, device)
 4. What is the user's emotional journey? (what should they feel?)
 
-**Architecture & constraints**
+**Platforms & core model**
+
 5. What platforms? (mobile, desktop, web, all)
 6. Online, offline, or hybrid? Any hard constraints?
 7. What's the core data model? (what are the "nouns" of the system?)
 8. What's the primary interaction loop? (what does the user do repeatedly?)
 
 **Scope & philosophy**
+
 9. What is explicitly NOT in MVP? (name 3+ things you're tempted to include)
 10. What's the relationship between the user and AI (if any)?
 11. Are there external stakeholders who interact with the output?
 
 **UX & feel**
+
 12. Should it feel like a game, a tool, a conversation, or something else?
 13. How does the user see progress?
 14. What's the smallest unit of user decision?
 
 **Tech preferences**
+
 15. Any strong tech stack preferences or constraints?
 16. What's the deployment model?
 17. Any AI/ML components? What size/where?
 
-**Working with agents**
-18. May agents write to git? Recorded as D-004; the options are in its row.
+**Architecture, comments, commits** — asked as written in "The questions of D-002, D-003 and D-004"
+
+18. Architecture: D-002.
+19. Comments: D-003.
+20. Commits: D-004.
 
 ### Ask if relevant:
 
@@ -56,7 +64,73 @@ questions — only ones whose answers materially change the plan.
 - Are there regulatory or compliance concerns?
 - Is there a "done" state, or is the product a living process?
 
-**Stop asking when you have enough to write the philosophy section.**
+**Stop asking when you have enough to write the philosophy section.** The questions of
+"Architecture, comments, commits" are asked all the same, on top of the 10–20, except one the user
+has already answered.
+
+### How the questions are asked
+
+**A block at a time, in the order above.** Each group of "Always ask" is one block; a question of
+"Ask if relevant" joins the block of its topic, and a block with nothing left to ask is skipped.
+A question with answers to choose from goes on a card of the question tool (AskUserQuestion;
+without it, a numbered list in the chat), four to a card, and a card holds the questions of one
+block only. An open question, such as what the product does, is asked as text in the chat, and the
+card of its block comes after the user's answer: options made up for an open question would be
+guesses that read as already settled, as Step 4 says of the package name. The decisions every
+project makes are never moved into an earlier block, nor asked next to the package name of
+Step 4. Asked among the first questions about a project, a question about use cases comes from
+nowhere; asked after the product is described, it has something to stand on.
+
+**A card is all the user sees.** While a card is open, the text written before it is out of
+sight, and an app may show one question of the card at a time, without its header or the
+preview of an option. So the first question of each card opens with its topic in a few plain
+words, such as "Now about where the app runs.", and every question says in its own text what it
+asks about. Each question other than those of D-002, D-003 and D-004 is written as
+[skills/write](./skills/write/SKILL.md) says.
+
+### The questions of D-002, D-003 and D-004
+
+Wherever these decisions are asked, they are asked on a card of their own, and the text below is
+copied, not written again: as it is for a user who writes in English, translated sentence by
+sentence for another language. Nothing is added or cut, and no example from the product goes in. A
+translation keeps ViewModel, use case and Arrange / Act / Assert in English. In a project with no
+screens, the screens and ViewModels of the text become the classes that call the use cases, such as
+command handlers.
+
+**D-002**
+
+> Now let's talk a bit about the app's architecture. I will build the app in three layers:
+>
+> ```
+> Presentation: screens with ViewModels  →  Domain: use cases  ←  Data: repositories
+> ```
+>
+> Where there is business logic, there is a use case. Where there is no logic, does the ViewModel
+> call the repository directly, or still go through a use case? This rule is for the whole app.
+
+- *Directly to the repository*: a use case only where there is logic. Fewer classes, but a
+  ViewModel may call both use cases and repositories.
+- *Always through a use case*: even if the use case is one line. A ViewModel calls only use cases,
+  but there are more classes.
+
+**D-003**
+
+> Comments in the code: by default there are none, except markers in tests such as
+> Arrange / Act / Assert. Keep it that way?
+
+- *Yes, no comments (Recommended)*: names and tests say what the code does.
+- *Some are needed*: for example, a license header in every file. I will ask which and where.
+
+When the user picks the second, the kinds and their places are asked as text and written into the row.
+
+**D-004**
+
+> Who makes commits: only you, or the agents too? You can change this at any time.
+
+- *Only I commit*: agents only read git. You look at every change and commit it yourself.
+- *Agents commit too*: an agent commits each task that passes checks and review; you look at it
+  after. Only on your branch, never on main or master, no push. You turn it on yourself, with
+  `LANDING=on` in `.review/land.conf`.
 
 ---
 

@@ -15,9 +15,10 @@ for the commit. The loop calls them and never does their work by hand.
 ### Setup: `--init`, when `.review/` does not exist
 
 1. **Who writes to git.** Read the plan's Decisions Log row "Who writes to git" (D-004, or the
-   number the project's `CLAUDE.md` gives it). With no row, ask with its two options and record
-   the answer — under the number after the highest one in the log if D-004 is taken, and that
-   number in the project's `CLAUDE.md`. With no plan, stop and point to PLANNING_GUIDE.md,
+   number the project's `CLAUDE.md` gives it). With no row, ask its question in the words of
+   PLANNING_GUIDE.md, "The questions of D-002, D-003 and D-004", and record the answer — under the
+   number after the highest one in the log if D-004 is taken, and that number in the project's
+   `CLAUDE.md`. With no plan, stop and point to PLANNING_GUIDE.md,
    Steps 0-4.
 2. **The stack.** Read the build files and the project's `CLAUDE.md`; ask only what they do not
    say. Read the stack's own setup section (KOTLIN_MULTIPLATFORM.md for KMP) before touching any
