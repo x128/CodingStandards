@@ -30,8 +30,10 @@ never offer to.
    still open, where the next session reads it: for a project, as a row of the
    Decisions Log of its plan, "TBD" under Chosen and the task it came up in under
    Rationale; for these standards, into the file the table below names. The rule
-   itself goes into its file once the user agrees with its wording, and Chosen then
-   says the rule and where it went.
+   goes into its file once a small check shows it does what the user asked: agents
+   given the file before and after the change, on the same situation, and the
+   difference is the one asked for. Chosen then says the rule and where it went. The
+   user is asked only before a check that costs much.
 
 2. **Work out *when* it happened — not what it was about.** While installing a
    compiler? While writing the report? While looking for bugs in the code?

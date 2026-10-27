@@ -98,7 +98,7 @@ and needs no override.
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
 | `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |
 | `review/project/decisions/` | project | Decision log format (training data) |
-| `review/project/qa-cases.example.md` | project | Defects that got past `/qa`, replayed after every correction of it |
+| `qa/test-cases.example.md` | project | The format of the project's `qa/test-cases.md`: every case of the product, walked by `/qa` or run by an end-to-end test |
 | `agents/reviewer.md` | project | Reviewer subagent, least-privilege tools |
 | `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh and read-only git |
 

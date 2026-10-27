@@ -17,14 +17,26 @@ check whose tool or device is missing is reported as not checked, never as passe
 
 ### 1. The list of what to check
 
-Write it down before any check runs: what is not on the list is not checked, and the report says
-so.
+`/qa` keeps the project's test cases in `qa/test-cases.md` (format:
+`templates/qa/test-cases.example.md`): each says what the user does and sees, and how it is
+covered — by `/qa` by hand, or by a named end-to-end test. A unit or integration test does not
+take a case off `/qa`; an end-to-end test does. A full regression run (`--full`) takes every case
+of the file, when the user or the plan asks for one; the run of a task takes the cases its change
+can reach. A project without the file starts it with the list of this run.
+
+Write the list of this run down before any check runs: what is not on the list is not checked,
+and the report says so.
 
 1. **The change**: the uncommitted work, or `--base <ref>`; the task and its exit criteria from
    the tracker.
-2. **Every behaviour the user can meet that the change can reach.** Trace from each changed
-   function through its callers to the screens and actions that reach it. For each screen: how
-   the user gets in, what it shows, what it does on each action, how the user gets out.
+2. **What the change can break.** Hold the whole app in view: the plan, `qa/test-cases.md`, the
+   code around the change. Read what the change's author wrote it may affect, and the diff. Judge
+   from the whole app which features the change can reach — through shared code, state, data,
+   navigation and platforms — including what the author did not name, and take their cases. A
+   behaviour the change adds or changes gets its case added or changed in the file. A case covered
+   by an end-to-end test is not walked by hand, except a few chosen anew each run to check the
+   tests themselves; a case that fails by hand while its test passes is reported as a fault of
+   that test or its environment.
 3. **The neighbours**: behaviours that share the changed code but are not the point of the change
    — they are where regressions hide.
 4. **The states of each behaviour**: first launch and later launches; empty, one, many, the
@@ -107,8 +119,9 @@ or unproven when the evidence settles nothing.
 ### 4. Report
 
 As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
-user sees, how to reproduce it and the evidence by path; then what is unproven and why — it does
-not count as passed; then what passed, with its evidence; then what was not checked and why. Never
+user sees, how to reproduce it and the evidence by path; with each, the test that pins it — a unit
+test, a UI test, or "no test catches it, because …"; then what is unproven and why — it does not
+count as passed; then what passed, with its evidence; then what was not checked and why. Never
 "everything works": the report says what was checked.
 
 ### 5. When a defect got past
@@ -116,20 +129,23 @@ not count as passed; then what passed, with its evidence; then what was not chec
 A defect found after this skill passed the change — by the user, by a later check, by a later
 task — is a defect of this skill as well as of the code.
 
-1. **Write the case** in the project's `.review/qa-cases.md` (format:
-   `templates/review/project/qa-cases.example.md`): what the user saw, how to reproduce it, the
-   commit that still has the defect, the commit that fixed it, and the check that should have
-   caught it.
-2. **Find why it passed**: the behaviour or the state was not on the list; no check looked at it;
-   a check looked at the wrong thing (the screen after the transition instead of the frames
-   during it); the challenge accepted weak evidence.
-3. **Correct this file**, `CodingStandards/skills/qa/SKILL.md`: the general instruction that
+1. **The case**: add to `qa/test-cases.md` the case that should have caught it, or sharpen the
+   one that was there, with the commit that still has the defect, the commit that fixed it, and
+   the check that should have caught it.
+2. **Find why it passed**: the case was never written; the change's author left the place out
+   of what it may affect, and `/qa` did not reach it either; the behaviour or the state was not
+   on the list; no check looked at it; a check looked at the
+   wrong thing (the screen after the transition instead of the frames during it); the challenge
+   accepted weak evidence.
+3. **Correct where it went wrong**: this file when a check missed it, a case was never written or
+   `/qa` did not see how far the change reaches; `skills/maintain/SKILL.md`, step 4, when the
+   author's account of what the change may affect left the place out; the general instruction that
    would have caught it, never the single case (MAINTAINER_TRAINING.md). The standards are
    committed by the user, in their own repository.
 4. **Replay**: run the skill on the commit that still has the defect and see the defect reported.
    A correction that was not replayed is a guess.
-5. **Replay the other cases** of `.review/qa-cases.md` too, so that the correction broke none of
-   them.
+5. **Replay the other cases** of `qa/test-cases.md` that got past `/qa` too, so that the
+   correction broke none of them.
 
 ## Allowed Prompts
 - Read code, tests, the plan, the tracker and `.review/**`
@@ -138,7 +154,7 @@ task — is a defect of this skill as well as of the code.
 - Start an agent for each check and for the challenge
 - Take another version of the code out into a folder of its own, and break code only there
 - Write recordings, frames and reports under `.review/runs/` when the project has `.review/`, and
-  otherwise under a temporary directory; write `.review/qa-cases.md`; correct this file after a
+  otherwise under a temporary directory; write `qa/test-cases.md`; correct this file after a
   defect got past
 - The working tree's source and tests: read only — QA reports, the work is done elsewhere
 - Git: read-only (`status`, `diff`, `log`, `show`, `ls-tree`, `cat-file`)
@@ -149,5 +165,6 @@ task — is a defect of this skill as well as of the code.
 /qa                    # the uncommitted change
 /qa --task T-016       # against the exit criteria of a task
 /qa --base main        # the whole branch since main
-/qa --replay           # every case in .review/qa-cases.md
+/qa --full             # every case of qa/test-cases.md: a full regression
+/qa --replay           # every case of qa/test-cases.md that got past /qa
 ```

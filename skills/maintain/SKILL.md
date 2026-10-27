@@ -55,8 +55,13 @@ done directly.
    and decide in the open with the user: extend (the shape is right), refactor first (as its own
    task, landing before this one), or deviate (say why). Never fold a refactor into the task.
 4. **The work**, inside the scope; an agent that does it runs on the role `EXECUTOR` of
-   `.review/agents.conf`. A file outside the scope is a scope change for the user to approve.
-   When copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
+   `.review/agents.conf`. A file outside the scope is a scope change for the user to approve. When
+   copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
+   `qa/test-cases.md` is kept by `/qa`; the work reads it and leaves it as it is. Before it hands
+   over, it writes for `/qa` what the change may affect anywhere in the app: every place that uses
+   what it changed — callers, screens, background work, the other platform — and the shared state,
+   data, navigation, theme and settings it touched; what a user could now see differently there,
+   including what was not meant to change; and what it checked itself and what it did not.
 5. **The review pass:**
 
    ```bash
@@ -102,7 +107,11 @@ done directly.
 8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
    step 7 is answered. What it reports as failing or unproven goes back to whoever does the
    work, with the text of step 6, and the task is reviewed again (step 5) — once; a second
-   failing `/qa` is escalated as in step 7. A defect `/qa` finds that the change did not bring
+   failing `/qa` is escalated as in step 7. Each failure goes back with the test `/qa` named for
+   it, and the fix makes that test pass; the second `/qa` takes from `qa/test-cases.md` only the
+   cases the fix can reach. Once `/qa` passes, whoever does the work decides which of the cases
+   `/qa` added or changed an end-to-end test takes, writes those tests and marks the cases
+   `e2e: <test>` in `qa/test-cases.md`. A defect `/qa` finds that the change did not bring
    is fixed now or written into the task it belongs to as an exit criterion (PLANNING_GUIDE.md,
    "Ongoing Maintenance"). A defect the user finds later that `/qa` passed goes
    to `/qa` as a defect of that skill too. If `/qa` is not among the skills of the session, link

@@ -705,7 +705,7 @@ for f in decisions/findings decisions/tasks decisions/escalations eval/golden; d
   mv ".review/$f.example.jsonl" ".review/$f.jsonl"
 done
 chmod +x .review/gates.sh
-echo '.review/runs/' >> .gitignore
+printf '%s\n' .review/runs/ .review/current-task.json >> .gitignore
 ```
 
 Then, in order:
