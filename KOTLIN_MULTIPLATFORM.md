@@ -23,20 +23,8 @@ Every new project adds this repo as a git submodule (the user does it):
 git submodule add https://github.com/x128/CodingStandards.git CodingStandards
 ```
 
-The project's `CLAUDE.md` then references the standards:
-
-```markdown
-## Standards
-Follow `CodingStandards/CLEAN_CODE.md`
-Follow `CodingStandards/KOTLIN.md`
-Follow `CodingStandards/SWIFT.md`
-Follow `CodingStandards/ARCHITECTURE.md`
-Follow `CodingStandards/TESTING.md`
-Follow `CodingStandards/KOTLIN_MULTIPLATFORM.md`
-Follow `CodingStandards/EXECUTION_GUIDE.md`
-```
-
-`SWIFT.md` only when the project has iOS.
+The project's `CLAUDE.md` points at the standards as PLANNING_GUIDE.md, Step 4,
+shows.
 
 ### Proven Version Set
 

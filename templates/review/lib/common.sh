@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# common.sh — helpers shared by run.sh and land.sh.
+# common.sh — helpers shared by review.sh and land.sh.
 #
 # Runs from the submodule; not overridable. Sourced, never executed.
 
 # Fingerprint of everything the reviewer saw: HEAD, tracked changes, and the
-# content of untracked files. run.sh records it; land.sh recomputes it and
+# content of untracked files. review.sh records it; land.sh recomputes it and
 # refuses when it differs — a review of a tree that has since changed is not a
 # review of what is about to be committed.
 tree_fingerprint() {

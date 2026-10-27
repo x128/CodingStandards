@@ -4,6 +4,12 @@ Reusable coding standards and Claude Code skills for consistent, clean code acro
 
 ## Standards
 
+Every project follows PLANNING_GUIDE, CLEAN_CODE, ARCHITECTURE, TESTING and
+EXECUTION_GUIDE, and the documents of its stack: KOTLIN for Kotlin,
+KOTLIN_MULTIPLATFORM for KMP, SWIFT where it has iOS. A language with no
+document here follows the language-agnostic ones. TASK_LOOP is for a project
+that runs the loop.
+
 | Document | Description |
 |----------|-------------|
 | [PLANNING_GUIDE.md](./PLANNING_GUIDE.md) | **First.** Product planning: intake, implementation plan, task tracker — before any code |
@@ -29,7 +35,7 @@ Copy-and-fill starting points, not documentation:
 |----------|---------|---------|
 | [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing script, `triage.py`, prompts, schemas. Never copied, never edited |
 | [templates/review/project/](./templates/review/project/) | `.review/` | Gates, policy, landing config, decision logs — yours to edit |
-| [templates/agents/](./templates/agents/) | `.claude/agents/` | `diff-reviewer` and `maintainer` subagents |
+| [templates/agents/](./templates/agents/) | `.claude/agents/` | `reviewer` and `maintainer` subagents |
 | [templates/self-improve/](./templates/self-improve/) | — `setup.sh` copies the tools into the work folder | Tools, workflows and an example project for `/self-improve`. Never copied into a project that is measured |
 
 ## Usage
@@ -63,35 +69,31 @@ project up to use those standards.
 1. Follow PLANNING_GUIDE.md Steps 0-3 first: ask me the intake questions, then
    write IMPLEMENTATION_PLAN.md and TASK_TRACKER.md. If I say the plan already
    exists, show me the file.
-2. Write this project's CLAUDE.md, referencing the standards by submodule path:
-   CLEAN_CODE.md, ARCHITECTURE.md, TESTING.md, EXECUTION_GUIDE.md, and the language standard for
-   this stack (KOTLIN.md or SWIFT.md). If there is no standard for this
-   language, say so plainly and use the language-agnostic four. Link the
-   skills as CodingStandards/skills/README.md, "Setup", says.
+2. Write this project's CLAUDE.md as PLANNING_GUIDE.md, Step 4, shows. Link the
+   skills into .claude/skills/ as CodingStandards/skills/README.md, "Setup",
+   says.
 3. Run /maintain --init to set up the review loop: detect the stack, fill in
-   .review/gates.sh, wire permissions, and install the routing block.
+   .review/gates.sh, and wire permissions.
 4. Stop and list the files of the first commit for me to commit: the plan, the
    tracker, CLAUDE.md, .claude/skills/, and the files /maintain --init wrote. No feature code is
    in them.
 
 Report back, starting with what I have to do: the files to commit, and any
 check you could not fill and why. Then the plan and tracker paths, the five
-checks that run on every task with their commands, the risk paths, and
-confirmation that the routing block is in CLAUDE.md. Do not write any feature code yet.
+checks that run on every task with their commands, and the risk paths. Do not
+write any feature code yet.
 ```
 
-Three things in that prompt are load-bearing. **Step 1 comes first and produces
+Two things in that prompt are load-bearing. **Step 1 comes first and produces
 files** — planning that stays in the conversation leaves nothing for the loop or
 a later reviewer to read ([PLANNING_GUIDE.md](./PLANNING_GUIDE.md) Steps 1–2).
-**The routing block** is what makes later requests run the loop instead of
-ad-hoc edits — a setup that skips it leaves a pipeline nobody invokes. **"Do not
-write any feature code yet"** keeps setup from sliding into implementation
-before you have looked at the gates.
+**"Do not write any feature code yet"** keeps setup from sliding into
+implementation before you have looked at the gates.
 
 Landing starts at `LANDING=off` on purpose: the loop runs end to end and prints
 the commit instead of making it. Turn it on in `.review/land.conf` only where
-D-004 of the plan says the loop commits, and once you have watched a few refusals
-behave.
+the plan's row "Who writes to git" says the loop commits, and once you have
+watched a few refusals behave.
 
 ### If the code already exists
 
@@ -111,10 +113,10 @@ does not settle. No code changes yet.
 Do the next task.
 ```
 
-That is the whole trigger — the routing block turns any request to do task work
-into a full loop run (gates → review → triage → fix rounds → landing), not just
-an edit. You do not type `/maintain`, and there is no magic phrase: "next task",
-"do T-014", and "continue" all enter the same path.
+That is the whole trigger — `/maintain`'s description makes any request to do
+task work start a full loop run (gates → review → triage → fix rounds →
+landing), not just an edit. You do not type `/maintain`, and there is no magic
+phrase: "next task", "do T-014", and "continue" all start it.
 
 The loop is the **default**, never an obligation. "Just make this change", "skip
 the review", "I'll write this one myself" are complete instructions — see
@@ -136,9 +138,9 @@ MyApp/
 │   ├── REVIEW_POLICY.md
 │   └── decisions/            # findings, tasks, escalations — the training log
 ├── .claude/
-│   ├── agents/               # diff-reviewer, maintainer
+│   ├── agents/               # reviewer, maintainer
 │   └── settings.json         # write-git deny list
-└── CLAUDE.md                 # standards references + the routing block
+└── CLAUDE.md                 # the product, where the plan is, the standards
 ```
 
 ## What's Covered
@@ -187,7 +189,8 @@ MyApp/
 ### EXECUTION_GUIDE.md
 - Rules that hold by hand, on request, and inside the loop alike
 - One task at a time — never batch
-- Who writes to git is the project's decision (D-004); read-only for agents until it is made
+- Who writes to git is the project's decision (the plan's row "Who writes to git");
+  read-only for agents until it is made
 - The task boundary and the definition of done belong to the user
 - Reporting: the user's terms, ranked by what blocks the product, findings in a file
 

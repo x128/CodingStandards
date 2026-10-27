@@ -42,10 +42,10 @@ so.
 
 ### 2. The checks
 
-Each check is run by its own agent. It gets the list and the standards, never the reasoning of
-whoever made the change, and returns a verdict per item — pass, fail, unproven or not checked —
-with its evidence: a test report, a log, a frame, a measurement, each by path. A pass with no
-evidence is not a pass.
+Each check is run by its own agent, on the model of the role `QA` in `.review/agents.conf`. It
+gets the list and the standards, never the reasoning of whoever made the change, and returns a
+verdict per item — pass, fail, unproven or not checked — with its evidence: a test report, a log,
+a frame, a measurement, each by path. A pass with no evidence is not a pass.
 
 | Check | Fails when |
 |---|---|

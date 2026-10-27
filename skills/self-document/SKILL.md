@@ -21,8 +21,9 @@ goes only when what it says is somewhere better. Documents in `docs/` are the jo
 4. **While doing it:**
    - A comment goes only after what it says is in its new place, where a reader learns it without
      working it out. If nothing can carry it yet, it stays and the report says why.
-   - The test markers stay (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`,
-     `// Then`). A kind of comment the project allows (D-003 of its plan) stays and is kept true.
+   - The test markers stay (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`, `//
+     Then`). A kind of comment the project allows (the row "Comments in the code" of its plan)
+     stays and is kept true.
    - Behaviour does not change: the same results and exceptions for the same calls. A clearer
      exception message, or a new check for a precondition a comment stated, is allowed and
      reported.

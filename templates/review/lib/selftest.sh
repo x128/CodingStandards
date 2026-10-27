@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# selftest.sh — runs run.sh and land.sh end to end on a throwaway repository,
+# selftest.sh — runs review.sh and land.sh end to end on a throwaway repository,
 # with the reviewer and the maintainer replaced by fixed answers, and checks the
 # exit code and the line each case must print. The validation of agent output in
-# run.sh is exactly the code no real run exercises until a model answers with
+# review.sh is exactly the code no real run exercises until a model answers with
 # findings — and it once refused every non-empty answer for two months
-# unnoticed. Run it after any change to run.sh, land.sh, the schemas or the
+# unnoticed. Run it after any change to review.sh, land.sh, the schemas or the
 # decision rules of prompts/maintainer.md.
 #
 # The repository it builds lives in a temporary folder and is deleted at the
@@ -69,7 +69,7 @@ review() {
   printf '%s' "$reviewer_answer" >"$WORK/reviewer.json"
   printf '%s' "$maintainer_answer" >"$WORK/maintainer.json"
   REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-    "$LIB_DIR/run.sh" --task-file .review/task.json >"$WORK/run.log" 2>&1
+    "$LIB_DIR/review.sh" --task-file .review/task.json >"$WORK/run.log" 2>&1
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
 }
 
@@ -106,7 +106,7 @@ counted() {
   printf '{"findings":[]}' >"$WORK/reviewer.json"
   printf '{"verdicts":[]}' >"$WORK/maintainer.json"
   REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-    "$LIB_DIR/run.sh" --task-file ".review/$task_id.json" "$@" >"$WORK/run.log" 2>&1
+    "$LIB_DIR/review.sh" --task-file ".review/$task_id.json" "$@" >"$WORK/run.log" 2>&1
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
 }
 
@@ -131,7 +131,7 @@ counted "the count after --past-limit reaches the limit again" 6 "has had 2 runs
 for task_without_id in '{"title": "no id"}' '{"id": "", "title": "empty id"}'; do
   printf '%s' "$task_without_id" >.review/no-id.json
   REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-    "$LIB_DIR/run.sh" --task-file .review/no-id.json >"$WORK/run.log" 2>&1
+    "$LIB_DIR/review.sh" --task-file .review/no-id.json >"$WORK/run.log" 2>&1
   check "a task file $task_without_id fails closed" 1 "has no .id" $? "$WORK/run.log"
 done
 for limit in none 0 05; do
@@ -140,12 +140,51 @@ for limit in none 0 05; do
 done
 
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+mkdir -p "$WORK/bin"
+cat >"$WORK/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$CLAUDE_ARGS"
+cat >/dev/null
+case "$*" in
+  *Bash*) cat "$CLAUDE_REVIEW" ;;
+  *) cat "$CLAUDE_VERDICTS" ;;
+esac
+EOF
+chmod +x "$WORK/bin/claude"
+printf '%s' "$(finding '"bug"')" >"$WORK/reviewer.json"
+printf '%s' "$(verdict '"reject"' contradicts-green-gate)" >"$WORK/maintainer.json"
+printf '{"id": "T-005", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], "exit_criteria": []}' >.review/T-005.json
+through_claude() {
+  local name="$1" expected_exit="$2" expected_line="$3"
+  : >"$WORK/claude-args"
+  PATH="$WORK/bin:$PATH" CLAUDE_ARGS="$WORK/claude-args" CLAUDE_REVIEW="$WORK/reviewer.json" \
+    CLAUDE_VERDICTS="$WORK/maintainer.json" \
+    "$LIB_DIR/review.sh" --task-file .review/T-005.json >"$WORK/run.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
+}
+through_claude "with no agents.conf every role runs on the model Claude Code is set to" 0 "models: reviewer inherit, maintainer inherit"
+check "an inherited role starts claude with no model" 0 "-p --allowedTools Read --output" 0 "$WORK/claude-args"
+printf 'REVIEWER=opus \t high   # reviews the change\nMAINTAINER=inherit\n' >.review/agents.conf
+through_claude "the model of each role is printed before the run" 0 "models: reviewer opus high, maintainer inherit"
+check "the reviewer starts with the model and effort of its role" 0 "-p --model opus --effort high --allowedTools Read,Grep,Glob,Bash" 0 "$WORK/claude-args"
+check "the run records the command of each role" 0 '"reviewer": "claude -p --model opus --effort high' 0 "$(ls -d .review/runs/* | tail -1)/meta.json"
+counted "a command set by hand is named instead of the model" 0 "models: reviewer REVIEWER_CMD, maintainer MAINTAINER_CMD" T-005
+printf 'REVIEWER=opus fast\n' >.review/agents.conf
+runs_before="$(ls .review/runs | wc -l)"
+counted "an effort outside the list fails closed" 1 "has effort 'fast'" T-005
+if [ "$(ls .review/runs | wc -l)" -eq "$runs_before" ]; then
+  echo "ok    a role that cannot run leaves no run behind"
+else
+  echo "FAIL  a role that cannot run left a run directory behind"
+  FAILURES=$((FAILURES + 1))
+fi
+rm .review/agents.conf
 printf '{"id": "T-004", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], "exit_criteria": [{"text": "answer() returns 42", "verified_by": "manual: read src/answer.kt"}]}' >.review/T-004.json
 runs_listed="$(ls .review/runs)"
 printf '%s' "$(finding '"bug"')" >"$WORK/reviewer.json"
 printf '%s' "$(verdict '"reject"' contradicts-green-gate)" >"$WORK/maintainer.json"
 REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-  "$LIB_DIR/run.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
+  "$LIB_DIR/review.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
 run_of_t004=".review/runs/$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs))"
 cp .review/gates.sh "$WORK/gates.green"
 cat >.review/gates.sh <<'EOF'
@@ -158,12 +197,12 @@ check "red gates at landing refuse by condition 3" 3 "gates are red at landing t
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
 check "landing the same run may be retried once after red gates" 3 "gates are red at landing time" $? "$WORK/land.log"
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
-check "red gates at landing twice send the work back to run.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
+check "red gates at landing twice send the work back to review.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
 
 cp "$WORK/gates.green" .review/gates.sh
 runs_listed="$(ls .review/runs)"
 REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-  "$LIB_DIR/run.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
+  "$LIB_DIR/review.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
 run_of_t004=".review/runs/$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs))"
 printf '#!/usr/bin/env bash\nexit 143\n' >.review/gates.sh
 for attempt in first second; do
@@ -171,7 +210,7 @@ for attempt in first second; do
   check "gates killed at landing refuse the $attempt time" 3 "did not run" $? "$WORK/land.log"
 done
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
-check "gates killed at landing twice send the work back to run.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
+check "gates killed at landing twice send the work back to review.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
 
 cat >.review/gates.sh <<'EOF'
 #!/usr/bin/env bash
@@ -179,7 +218,7 @@ echo '{"build":{"status":"pass","blocking":true,"command":"true","output":""},"l
 EOF
 runs_listed="$(ls .review/runs)"
 REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-  "$LIB_DIR/run.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
+  "$LIB_DIR/review.sh" --task-file .review/T-004.json >"$WORK/run.log" 2>&1
 run_of_t004=".review/runs/$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs))"
 for attempt in first second third; do
   "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
@@ -212,7 +251,7 @@ for attempt in first second; do
   check "a commit that fails after green gates fails the $attempt time" 1 "commit failed" $? "$WORK/land.log"
 done
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
-check "a commit that failed twice sends the work back to run.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
+check "a commit that failed twice sends the work back to review.sh" 3 "failed at or after its gates twice" $? "$WORK/land.log"
 rm .git/hooks/pre-commit
 
 rules_in_prompt="$(grep -oE '\(`[a-z-]+`\)' "$LIB_DIR/prompts/maintainer.md" | tr -d '()`' | sort -u)"

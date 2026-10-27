@@ -99,7 +99,7 @@ phone with "1 — 2, 2 — s":
 With one way forward, the fix is described above and the line is `f. [the act]`. End with what
 was checked and clean and what was not checked. Unanswered findings are named, not let slide.
 
-The run directory that the loop's `run.sh` writes under `.review/` is a different file in a
+The run directory that the loop's `review.sh` writes under `.review/` is a different file in a
 different schema; this skill does not triage it.
 
 ### How a finding is written

@@ -287,10 +287,12 @@ experience — not invented. Revise iteratively as real usage data comes in.
 
 ### Plan Rules
 
-**Decisions every project makes.** D-002, D-003 and D-004 of the sample log are decisions every
-project records, and the standards name them by these numbers. In a log that already uses one of
-these numbers for something else, the decision takes the number after the highest one in the log and keeps its Decision
-text, and the project's `CLAUDE.md` says which number it has (Step 4).
+**Decisions every project makes.** The rows "A request with nothing to check or decide", "Comments
+in the code" and "Who writes to git" of the sample log are decisions every project records. The
+questions of Step 0 name them by their numbers in this sample log; the other standards name them by
+these titles. In a log that already uses one of their numbers
+for something else, the decision takes the number after the highest one in the log and keeps its
+Decision text.
 
 - **Philosophy**: 3–6 named principles, each a non-obvious design choice
 - **Use cases**: short — name, input, output that names every outcome, and
@@ -347,10 +349,8 @@ Omit any relation line that has no entries. Every reference includes ID + title.
 - **Blocks**:
     T-001 Another task title
 
-This task shows the format. Append notes over time:
-
-- 2026-03-01: Discovered X doesn't work with Y. Workaround: Z.
-- 2026-03-05: Resolved. Switched to W per decision D-001.
+This task shows the format. The description says what to do; it is rewritten
+as the task changes.
 
 Measurable exit criteria:
 - ✅ Criterion described as a verifiable fact
@@ -378,7 +378,7 @@ Measurable exit criteria:
 - **Blocks**:
     T-002 Dependent task title
 
-Description paragraph. Grows over time — append dated notes.
+Description: what to do.
 
 Measurable exit criteria:
 - ✅ Specific verifiable fact or number
@@ -547,31 +547,22 @@ Create the project-level artifacts that complete the planning process.
    already established, and it propagates into signing and every import.
 2. **Add `x128/CodingStandards` as a git submodule** — the user does it; agents never write
    to git outside `land.sh`, and `land.sh` only commits a task
-3. **Create `CLAUDE.md`** at the project root, referencing only the
-   CodingStandards documents relevant to this project's stack. Example for
-   a Kotlin/KMP project:
+3. **Create `CLAUDE.md`** at the project root: what the product is, where the
+   plan and the tracker are, and one line pointing at the standards. It is read
+   on every request, so it holds only that:
    ```markdown
    # ProjectName
 
    One-sentence project description from the implementation plan.
 
-   ## Standards
-   Follow `CodingStandards/CLEAN_CODE.md`
-   Follow `CodingStandards/KOTLIN.md`
-   Follow `CodingStandards/ARCHITECTURE.md`
-   Follow `CodingStandards/TESTING.md`
-   Follow `CodingStandards/KOTLIN_MULTIPLATFORM.md`
-   Follow `CodingStandards/EXECUTION_GUIDE.md`
+   Code follows the standards in `CodingStandards/`; `CodingStandards/README.md`
+   says which to read and when. An empty folder means the submodule is not
+   initialised.
 
-   ## Project
-   - Package: `com.example.projectname`
-   - Module: `composeApp` (desktop target)
-   - Decisions the standards name: D-002, D-003, D-004 (or the numbers this log gives them)
+   Plan — `IMPLEMENTATION_PLAN.md`, tasks — `TASK_TRACKER.md`.
    ```
-   Omit documents that don't apply (e.g., `SWIFT.md` for a pure Kotlin
-   project). Add project-specific context (package name, modules,
-   constraints) under `## Project`. Link the skills into `.claude/skills/` as
-   [skills/README.md](./skills/README.md), "Setup", says; `CLAUDE.md` does not list them.
+   Link the skills into `.claude/skills/` as [skills/README.md](./skills/README.md),
+   "Setup", says.
 
 4. **The user commits the plan, the tracker, `CLAUDE.md`, `.claude/skills/`, and the files `/maintain --init` wrote if it ran, before a line of product code
    exists.** They are the first commit.
@@ -603,8 +594,9 @@ with T-001. See `EXECUTION_GUIDE.md` for the task execution workflow.
 ## Ongoing Maintenance
 
 - **New tasks**: next unused ID. Add to both tracker and plan's epic listing.
-- **Cancelled tasks**: `❌ cancelled` with dated comment. Never delete or renumber.
+- **Cancelled tasks**: `❌ cancelled` with the reason. Never delete or renumber.
 - **New decisions**: add to log with TBD or chosen value.
-- **Notes/issues**: append dated bullets to the relevant task.
+- **Bugs**: a bug found is fixed at once by whoever writes the code, or written
+  into the task it belongs to as an exit criterion — what the user should see.
 - **New epics**: add to both files.
 - **Scope changes**: update philosophy. Rare — most changes are task-level.
