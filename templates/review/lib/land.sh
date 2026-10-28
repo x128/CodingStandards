@@ -192,10 +192,11 @@ done <<<"$CHANGED_FILES"
 # 7. Every exit criterion carries an explicit verification claim.
 #    Machine-checkable criteria belong in gates; the rest must at least be
 #    stated, so the claim lands in the commit and can be audited later.
+#    A task may have none: criteria are gathered before a task starts, never
+#    written at its start (PLANNING_GUIDE.md, "Task Rules").
 # ---------------------------------------------------------------------------
 
 CRITERIA_COUNT="$(jq '.exit_criteria | length' "$TASK_FILE")"
-[ "$CRITERIA_COUNT" -gt 0 ] || refuse 7 "task $TASK_ID declares no exit criteria"
 
 UNVERIFIED="$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | length' "$TASK_FILE")"
 [ "$UNVERIFIED" -eq 0 ] || \

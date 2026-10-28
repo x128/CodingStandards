@@ -50,11 +50,16 @@ With `.review/` present this is the way task work is done, named or not: "next t
 "continue", accepting a finished task. A typo fix, a rename, or "skip the review" is done directly.
 
 1. **The task.** The one named, or the next unblocked `💡 to-do`; ask if the tracker is unclear.
-   No tracker is a stop: say so and point to PLANNING_GUIDE.md, Steps 1-2.
+   No tracker is a stop: say so and point to PLANNING_GUIDE.md, Steps 1-2. When no task of its
+   epic has started yet, run `/groom` on the epic first, which can change its tasks, and take the
+   task again from the groomed tracker; if `/groom` is not among the skills of the session, link
+   it (skills/README.md, "Setup") and tell the user.
 2. **Write `.review/current-task.json`** from the tracker entry: `id`, `title`, `category`, `scope`
    (path globs the work may touch), `exit_criteria` (format:
    `templates/review/project/task.example.json`). `land.sh` refuses anything outside the scope.
-   Where the tracker gives no `category` or `scope`, propose them and ask the user.
+   Where the tracker gives no `category` or `scope`, propose them and ask the user. The exit
+   criteria are the ones the task has gathered in the tracker, and none is a valid answer; none is
+   written now (PLANNING_GUIDE.md, "Task Rules").
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
    and decide in the open with the user: extend (the shape is right), refactor first (as its own
    task, landing before this one), or deviate (say why). Never fold a refactor into the task.
@@ -124,21 +129,28 @@ With `.review/` present this is the way task work is done, named or not: "next t
    5); a landing that fails at or after its gates may be retried once on the same run, and a
    second time means review again. With `LANDING=off`, `land.sh` prints the files, the message and the commands: give the
    user the files and the message as printed, the commands only when asked, and never run them.
-11. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
+11. **The tasks ahead.** What this task showed about a later one — what it hands it, what it
+    leaves to it — goes into that task's exit criteria in the tracker, with this task as the
+    source: `(T-014)`. A choice about the product it raised is not written: it is a question for
+    the user, in the report of step 13, together with the questions the next task waits on. When
+    the task changed something the plan rests on — a decision, a use case, the architecture, what
+    a later task was to get — run `/groom --change` before the next task.
+12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format: `templates/review/project/decisions/tasks.example.jsonl`).
     An accepted task is provisional; once `CONFIRM_AFTER` (`.review/land.conf`) later tasks in
     the same paths are accepted and committed, add its confirmation line. No predictions and no
     score of quiet tasks: the user decides when a kind of task stops being shown.
-12. **Advance or stop**, as `.review/land.conf` says:
+13. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
       object, and with `LANDING=off`, commit — then what changed, the findings accepted and what
       was done, the findings rejected and why, the results of the build, test, format, lint and
       architecture checks, what `/qa` checked and found, the commit, and the findings in
-      `optional.json` (accepted below the threshold and not acted on). Then wait. On acceptance — with `LANDING=off`, once the user
+      `optional.json` (accepted below the threshold and not acted on), and the questions of
+      step 11. Then wait. On acceptance — with `LANDING=off`, once the user
       says it is committed — go to step 1.
     - `ADVANCE=auto`, only with `LANDING=on`: go on without waiting, with one line saying which
-      task landed and which starts, only when the task's category is in `ADVANCE_CATEGORIES` and
-      nothing it touched is in `RISK_PATHS`; otherwise as `ask`.
+      task landed and which starts, only when the task's category is in `ADVANCE_CATEGORIES`,
+      nothing it touched is in `RISK_PATHS` and step 11 left no question; otherwise as `ask`.
 
 ### Rules
 
@@ -157,9 +169,10 @@ With `.review/` present this is the way task work is done, named or not: "next t
 ## Allowed Prompts
 - Read the tracker, the diff, source files, `.review/**` and the standards
 - Run `gates.sh`, `run.sh`, `land.sh`, tests and linters
-- Start the `diff-reviewer` and `maintainer` subagents; run `/qa`
+- Start the `diff-reviewer` and `maintainer` subagents; run `/qa` and `/groom`
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
-  status and proposed tasks in the tracker; in `--init`, the files of setup steps 1 to 7
+  status, proposed tasks and the exit criteria of later tasks in the tracker; in `--init`, the
+  files of setup steps 1 to 7
 - Git: read-only (`status`, `diff`, `log`, `show`)
 
 ## Example Usage

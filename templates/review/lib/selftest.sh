@@ -98,6 +98,11 @@ review "a rejected finding leaves the run clean" 0 "rejected          : 1" \
 
 land "landing off on main prints the commit with a note" 0 "Note: current branch is main" off
 land "landing on on main refuses by condition 8" 3 "condition 8" on
+cp .review/task.json "$WORK/task.json"
+printf '{"id": "T-001", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], "exit_criteria": []}' \
+  >.review/task.json
+land "a task with no exit criteria lands" 0 "Exit-Criteria: 0 verified" off
+cp "$WORK/task.json" .review/task.json
 
 counted() {
   local name="$1" expected_exit="$2" expected_line="$3" task_id="$4"; shift 4

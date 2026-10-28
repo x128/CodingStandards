@@ -16,6 +16,7 @@ skill's own file says how to call it.
 | [self-document](./self-document/SKILL.md) | `/self-document` | Move explanations from comments into names, types, checks and tests |
 | [theory](./theory/SKILL.md) | `/theory` | Write THEORY.md: where the project's concepts come from |
 | [maintain](./maintain/SKILL.md) | `/maintain` | Run the task loop on one task at a time, or set it up |
+| [groom](./groom/SKILL.md) | `/groom` | Groom an epic before its work starts, or after a change the plan rests on: its tasks and their exit criteria, with the user |
 | [policy](./policy/SKILL.md) | `/policy` | Turn a disagreement with the task loop into a rule or setting of the project |
 | [self-improve](./self-improve/SKILL.md) | `/self-improve` | Improve these standards by evidence, measuring each change before and after |
 | [reflect](./reflect/SKILL.md) | `/reflect` | Look back at a piece of work: what differed from the expected, its cause, what to change |

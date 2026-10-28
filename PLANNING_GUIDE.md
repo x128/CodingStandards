@@ -243,7 +243,7 @@ System diagram (ASCII), component descriptions, key interfaces.
 ### [Another Epic]
 - [ ] T-003 Task title
 
-### Post-MVP: [Theme]
+### Post-MVP: [What the user can do]
 - [ ] F-001 Feature title
 
 ---
@@ -296,14 +296,14 @@ text, and the project's `CLAUDE.md` says which number it has (Step 4).
 - **Use cases**: short — name, input, output that names every outcome, and
   at most 7 numbered rules, in the words of the subject. Not one per user action
 - **Epics & Tasks**: reference index only — `- [ ] T-NNN Title`, grouped
-  by epic. Post-MVP uses `F-NNN`. No descriptions here.
+  by epic as "Epic Rules" of Step 2 says. Post-MVP uses `F-NNN`. No descriptions here.
 - **Decisions log**: pre-populate TBDs, reference the task where each
   decision will be made
 - **Success metrics**: grounded in real data. If no analytics exist yet,
   replace this section with a task reference
-- **Research**: always include a Research epic. Populate based on what's
-  relevant: domain research, competitor analysis, market research (target
-  audience, pricing, distribution)
+- **Research**: a study that an epic needs is a task of that epic, before the tasks that use it.
+  Research that no epic needs yet, such as competitors, market or pricing, is an epic of its own,
+  `Research`
 - **No week numbers** in epic names
 - **Theoretical foundation** (ML/AI projects): generate THEORY.md via the
   `/theory` skill
@@ -330,8 +330,7 @@ The tracker is the **single source of truth for all work**. Every task
 
 ## Rules
 
-Tasks follow S.M.A.R.T. criteria: Specific, Measurable, Achievable,
-Relevant, Time-bound (to an epic). Task IDs are permanent — never renumber,
+Each epic is one thing the user can do after it. Task IDs are permanent — never renumber,
 never reuse. New tasks get the next unused integer. Status ❌ cancelled
 requires a comment.
 
@@ -353,16 +352,15 @@ This task shows the format. Append notes over time:
 - 2026-03-05: Resolved. Switched to W per decision D-001.
 
 Measurable exit criteria:
-- ✅ Criterion described as a verifiable fact
-- ✅ Another criterion with a number or binary outcome
+- ✅ A fact the user stated, or one the product has no choice about (where it comes from)
 
 ————————————————————————————————————————————————————————————————————
 
 ## Epics
 
-1. **[Epic Name]** — one-line description
-2. **[Epic Name]** — one-line description
-3. **Post-MVP: [Theme]** — one-line description
+1. **[What the user can do]** — how the user sees that it works
+2. **[What the user can do]** — how the user sees that it works
+3. **Post-MVP: [What the user can do]** — how the user sees that it works
 
 ————————————————————————————————————————————————————————————————————
 
@@ -381,8 +379,7 @@ Measurable exit criteria:
 Description paragraph. Grows over time — append dated notes.
 
 Measurable exit criteria:
-- ✅ Specific verifiable fact or number
-- ✅ Another criterion
+- ✅ Specific verifiable fact or number (where it comes from)
 
 ————————————————————————————————————————————————————————————————————
 
@@ -392,25 +389,19 @@ Measurable exit criteria:
 - **Blocked by**:
     T-001 Task title
 
-Description.
-
-Measurable exit criteria:
-- ✅ ...
+Description. No criteria yet: nothing about it is known before the work reaches it.
 
 ————————————————————————————————————————————————————————————————————
 
-## Post-MVP: [Theme]
+## Post-MVP: [What the user can do]
 
 ————————————————————————————————————————————————————————————————————
 
 ### F-001: Future feature title
 - **Status**: 💡 to-do
-- **Epic**: Post-MVP: [Theme]
+- **Epic**: Post-MVP: [What the user can do]
 
 Description (can be shorter for post-MVP).
-
-Measurable exit criteria:
-- ✅ Verifiable fact
 ```
 
 ### Task Format Reference
@@ -429,7 +420,7 @@ Measurable exit criteria:
 Description.
 
 Measurable exit criteria:
-- ✅ Verifiable fact
+- ✅ Verifiable fact (where it comes from)
 ```
 
 ### Task Rules
@@ -447,7 +438,50 @@ Each reference on its own indented line, always ID + title.
 If a task already appears in **Blocks** or **Blocked by**, do not also list it
 in **Shares context with** — the blocking relation implies shared context.
 
-**Exit criteria**: every task needs ≥1 verifiable criterion.
+**Exit criteria say what the user said, or what the product has no choice about.** How the
+product behaves is the user's decision. So a criterion goes into the plan only when the user said
+it, in their own words and not in a part of the plan an agent wrote, or when there is nothing to
+choose: a file format the product must read, a rule of the subject from a book the user named, a
+fact measured on real data, what a task already done hands it. Each says in brackets, in a few
+words, where it comes from, such as "(the user, at intake)". How another app does it is not a
+source: it is a question for the user.
+
+**A criterion is what the user sees, or what the product must match.** How the code is built is
+not one: the architecture is in the plan, and the checks and the review hold it.
+
+**The description, too, says only what is decided.** It says what the task gives the user; a
+detail of how the product behaves that nobody decided is left as a question for the user.
+
+**Most tasks have no criteria in the plan; they gather them as the work comes closer.** Before the
+work reaches a task, its details are not known, and a guess written as a criterion reads as already
+decided. Each task done shows something about the tasks after it: what it hands them, what it
+leaves to them. That goes into their criteria then, with the task it came from as the source, and
+a choice about the product it raises is asked of the user; the task loop (`/maintain`) does both.
+A task taken into work starts with the criteria it has gathered, or with none: criteria written at
+that moment only describe what the work is about to do.
+
+**No criterion for what shows itself**: that the code builds, that the tests pass, that the app
+runs on the phone. The checks show it, or the first task that needs it does, and it is fixed then.
+
+**No number to reach.** A task has the criteria that are known, none included; none is added to
+fill a list.
+
+BAD — guessed before the work reached the task, or shown anyway:
+
+```
+- ✅ A line break never falls inside a word     ← nobody asked; another app does it so
+- ✅ The app starts on the iPhone               ← the first task that needs the phone shows it
+- ✅ All tests pass                             ← the checks show it
+- ✅ The screen is a ViewModel with a State     ← how the code is built
+```
+
+GOOD:
+
+```
+- ✅ Opens every sample file of format version 1.1 (the format's spec)
+- ✅ A recipe saved offline opens offline (the user, at intake)
+- ✅ Shows the recipes in the order the import keeps them (T-004)
+```
 
 **Prototype tasks**: need a criterion for the code they leave behind — deleted,
 or taken over by a named task. There is no prototype mode: code written in a
@@ -463,11 +497,44 @@ instructions (e.g., `KOTLIN_MULTIPLATFORM.md` for KMP projects).
 
 ### Epic Rules
 
-Epics are thematic groups, not phases. Name as noun phrases:
-"Zone Layout Solver" not "Phase 2". No week numbers.
+**An epic is one thing the user can do after it that they could not do before.** It is named by
+that thing, in the user's words, and its line in the list of epics says how the user sees that it
+works. It holds every task that thing needs, whatever the layer: the screen, the data, the
+platform code, the study. One task is an epic too; there is no number to reach.
 
-Post-MVP epics: named `Post-MVP: [Theme]`, tasks prefixed `F-NNN`.
-Same format, descriptions can be shorter.
+BAD — grouped by where the code lives; after any one of them the user can do nothing new:
+
+```
+### Data model          — recipe entity, storage format
+### Storage             — database, sync
+### Screens             — recipe list, recipe screen
+```
+
+GOOD — grouped by what the user gets:
+
+```
+### Save a recipe from a web page      — the share button, reading the page, storing it, the list
+### Cook with the phone on the table   — step by step screen, the screen stays on, timers
+```
+
+**A task that two epics need goes in the first of them**, and does only what that epic needs; the
+later one extends it.
+
+**A task the epic's thing works without belongs to a later epic**: an automatic step where doing
+it by hand works, a second device where one is enough. Each later epic is that one thing more.
+
+**Epics go in the order the user gets them.** The first is the smallest thing the user can try,
+and T-001 is its first task: there is no epic of setup or foundation.
+
+**The user reads the list of epics before the tasks are written**: the names and the lines, in
+order. The list is the part of the plan the user checks; the tasks under it are the agent's.
+
+**An epic is groomed when its work starts** (`/groom`), and again after a change the plan rests
+on: by then the epics before it are done, and its tasks and criteria are corrected by what they
+showed.
+
+Post-MVP epics: named `Post-MVP: [what the user can do]`, tasks prefixed `F-NNN`. Same rules,
+descriptions can be shorter. No week numbers, no phases.
 
 ### Task Decomposition Tips
 
@@ -475,8 +542,6 @@ Same format, descriptions can be shorter.
 - **One request, one task**: a feature the user asked for is not split into look-alike tasks,
   and no task or section is added that nobody asked for. Tasks and sections this guide requires
   count as asked for; a task that comes from a finding is proposed to the user
-- **Write exit criteria first** — if you can't, the task isn't specific enough
-- **>5 exit criteria** → consider splitting
 - **No description beyond title** → might be a sub-bullet, not a task
 - **User testing**: include protocol inline, one task (not subtasks)
 - **Naming/terminology**: create a dedicated task — naming blocks onboarding
@@ -524,7 +589,9 @@ them is still only in the conversation.
 - [ ] Every success metric is measurable
 
 ### Tracker consistency
-- [ ] Every task has: status, epic, ≥1 exit criterion
+- [ ] Every task has: status, epic
+- [ ] After each epic the user can do something new, and no epic needs a task of a later one
+- [ ] Every exit criterion says where it comes from
 - [ ] No empty relation lines
 - [ ] All references: ID + title, multi-line indented
 - [ ] Separators between every task
@@ -607,4 +674,5 @@ with T-001. See `EXECUTION_GUIDE.md` for the task execution workflow.
 - **New decisions**: add to log with TBD or chosen value.
 - **Notes/issues**: append dated bullets to the relevant task.
 - **New epics**: add to both files.
+- **An epic about to start, or a change the plan rests on**: `/groom`.
 - **Scope changes**: update philosophy. Rare — most changes are task-level.
