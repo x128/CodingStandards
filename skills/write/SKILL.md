@@ -29,6 +29,8 @@ reader decides. It leaves out how the work is organised. This skill is that meth
    - The reason is the event that made you act: what was found, what it would have cost. "There
      were still problems" is not a reason.
    - Only what was done is told as done. What you will do is told as a plan.
+   - A rule is told as it is written. A step it does not name is yours: told as your proposal,
+     with its reason.
 6. **Name each thing as the reader meets it**, by what it does for them, in words they use. One
    thing per sentence. A number comes with what it counts. Two numbers that count related things
    come with how they relate, or only the one the reader needs stays.

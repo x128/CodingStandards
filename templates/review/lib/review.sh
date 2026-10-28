@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# run.sh — one review pass: gates → reviewer → maintainer triage.
+# review.sh — one review pass: gates → reviewer → maintainer triage.
 #
 # The loop around this (rounds, landing, advancing) is driven by /maintain.
 # Landing lives in land.sh.
@@ -15,7 +15,7 @@
 #   prompts/, schemas/ — used whenever .review/ has no override.
 #
 # Usage, from your project root:
-#   run.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>] [--past-limit]
+#   review.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>] [--past-limit]
 #
 # Without --base, reviews the uncommitted work — exactly what land.sh commits.
 # With --base <ref>, reviews the whole branch since that ref (a final pass).
@@ -69,7 +69,7 @@ PROJECT_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 
 # Running from inside the CodingStandards checkout resolves PROJECT_ROOT to the
 # standards repo itself, which has no .review/ and no diff worth reviewing.
-if [ -f "$PROJECT_ROOT/TASK_LOOP.md" ] && [ -f "$PROJECT_ROOT/templates/review/lib/run.sh" ]; then
+if [ -f "$PROJECT_ROOT/TASK_LOOP.md" ] && [ -f "$PROJECT_ROOT/templates/review/lib/review.sh" ]; then
   echo "run this from your project root, not from inside the CodingStandards checkout" >&2
   exit 1
 fi
@@ -176,6 +176,43 @@ elif [ "$PAST_LIMIT" = true ]; then
   exit 1
 fi
 
+# Each role runs in its own fresh session, which keeps the maintainer from
+# rubber-stamping the reviewer. The model and effort of each role come from
+# .review/agents.conf, one line per role ("REVIEWER=opus high"); "inherit" leaves
+# the model to Claude Code's own setting. They are printed before anything runs,
+# so the user sees what a run costs before it does. REVIEWER_CMD or
+# MAINTAINER_CMD replaces a role's whole command.
+role_setting() {
+  local role="$1" value model effort
+  value="$(read_conf "$REVIEW_DIR/agents.conf" "$role" inherit | tr '\t' ' ' | tr -s ' ')"
+  model="${value%% *}"
+  effort=""
+  [ "$model" = "$value" ] || effort="${value#* }"
+  case "$model" in
+    ''|*[!A-Za-z0-9._-]*) echo "$role in $REVIEW_DIR/agents.conf names no model: '$value'" >&2; return 1 ;;
+  esac
+  case "$effort" in
+    ''|low|medium|high|xhigh|max) ;;
+    *) echo "$role in $REVIEW_DIR/agents.conf has effort '$effort' — use low, medium, high, xhigh or max" >&2; return 1 ;;
+  esac
+  printf '%s' "$model${effort:+ $effort}"
+}
+
+role_flags() {
+  local model="${1%% *}" effort=""
+  [ "$model" = "$1" ] || effort="${1#* }"
+  [ "$model" = inherit ] || printf -- '--model %s ' "$model"
+  [ -z "$effort" ] || printf -- '--effort %s ' "$effort"
+}
+
+REVIEWER_SETTING="$(role_setting REVIEWER)" || exit 1
+MAINTAINER_SETTING="$(role_setting MAINTAINER)" || exit 1
+REVIEWER_SHOWN="${REVIEWER_CMD:+REVIEWER_CMD}"
+MAINTAINER_SHOWN="${MAINTAINER_CMD:+MAINTAINER_CMD}"
+REVIEWER_CMD="${REVIEWER_CMD:-claude -p $(role_flags "$REVIEWER_SETTING")--allowedTools Read,Grep,Glob,Bash --output-format json}"
+MAINTAINER_CMD="${MAINTAINER_CMD:-claude -p $(role_flags "$MAINTAINER_SETTING")--allowedTools Read --output-format json}"
+echo "── models: reviewer ${REVIEWER_SHOWN:-$REVIEWER_SETTING}, maintainer ${MAINTAINER_SHOWN:-$MAINTAINER_SETTING} ($REVIEW_DIR/agents.conf)"
+
 # Created only once the configuration is known good: otherwise every run against
 # an unconfigured project leaves an empty directory behind.
 # Second precision alone collides when two passes run back to back.
@@ -215,10 +252,6 @@ schema_enum() {
   printf '%s' "$values"
 }
 
-# Different model per role — this is what keeps the maintainer from rubber-stamping
-# the reviewer. Override to point a role at another vendor's CLI.
-REVIEWER_CMD="${REVIEWER_CMD:-claude -p --model sonnet --allowedTools Read,Grep,Glob,Bash --output-format json}"
-MAINTAINER_CMD="${MAINTAINER_CMD:-claude -p --model opus --allowedTools Read --output-format json}"
 
 # The one thing the schemas cannot express: severities are ordered. Adding a
 # severity to a schema without a rank here would make it compare against null,
@@ -229,7 +262,7 @@ RANKS='{"blocker":3,"major":2,"minor":1,"nit":0}'
 SCHEMA_SEVERITIES="$(schema_enum "$(lib_file schemas/review-findings.schema.json)" findings severity)" || exit 1
 if ! printf '%s' "$RANKS" | jq -e --argjson declared "$SCHEMA_SEVERITIES" \
      '(keys | sort) == ($declared | sort)' >/dev/null; then
-  echo "the severity ranks in run.sh and the severities in the findings schema disagree." >&2
+  echo "the severity ranks in review.sh and the severities in the findings schema disagree." >&2
   echo "  ranks:  $(printf '%s' "$RANKS" | jq -rc 'keys | sort | join(", ")')" >&2
   echo "  schema: $(printf '%s' "$SCHEMA_SEVERITIES" | jq -rc 'sort | join(", ")')" >&2
   echo "  an unranked severity compares against null and defeats the threshold." >&2
@@ -462,10 +495,12 @@ jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg fingerprint "$REVIEWED_FINGERPRINT" --arg task "$TASK_FILE" \
       --arg task_id "$TASK_ID" --argjson past_limit "$PAST_LIMIT" \
       --argjson epoch "$EPOCH" \
+      --arg reviewer "$REVIEWER_CMD" --arg maintainer "$MAINTAINER_CMD" \
       '{base: $base, threshold: $threshold, tree_fingerprint: $fingerprint,
         task_file: (if $task == "" then null else $task end),
         task: (if $task_id == "" then null else $task_id end),
-        past_limit: $past_limit, epoch: $epoch}' >"$RUN_DIR/meta.json"
+        past_limit: $past_limit, epoch: $epoch,
+        reviewer: $reviewer, maintainer: $maintainer}' >"$RUN_DIR/meta.json"
 
 # ---------------------------------------------------------------------------
 # 2. Layer 0 — gates. Ground truth, and a hard stop.

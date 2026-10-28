@@ -135,7 +135,7 @@ totalSeconds = days * SECONDS_PER_DAY
 
 ### One Thing per Function
 
-A function does one thing: each step in it is one level of abstraction below its name. A part that can get a name which does not just restate its code becomes a function with that name. A function whose body says no more than its name is put back where it is called; a use case under option (b) of row D-002 stays (ARCHITECTURE.md, "A request with no rules"). Size is not counted in lines, for functions, classes, files or tests.
+A function does one thing: each step in it is one level of abstraction below its name. A part that can get a name which does not just restate its code becomes a function with that name. A function whose body says no more than its name is put back where it is called; a use case under option (b) of the plan's row "A request with nothing to check or decide" stays (ARCHITECTURE.md, "A request with no rules"). Size is not counted in lines, for functions, classes, files or tests.
 
 **CRAP score.** Each function is measured by its CRAP score: complexity² × (1 − coverage)³ + complexity. Complexity is the number of decisions in the function plus one. Coverage is the share of the function that the project's automated tests run, from 0 to 1. The score is 8 or below: a fully tested function may have up to 8 paths, an untested one two. Above 8 the function is split into named parts or covered by tests. A function that reads better whole, such as one `when` over the options of a command line or a flat list of checks in the order of the rules, each returning its refusal, may stay above 8; it is not wrapped in a helper type only to lower the score, and the exception is recorded in the Decisions Log of the implementation plan. (The formula is Savoia's and Evans' crap4j; 8 is the limit at which R. C. Martin's crap4java fails a build. crap4j's own limit of 30 was set for old, untested code.)
 
@@ -667,7 +667,7 @@ Tests follow the same rule, with one fixed exception: every test marks its three
 
 **Where there is no comment, the same holds.** A reason, a warning, a unit, an outside source or a promise that only a test name, the plan or the tracker gives gets a name in the code it explains, as the table shows, and a review reports each one it finds.
 
-**A project may allow a kind of comment.** Row D-003 of the Decisions Log of the implementation plan records the choice: (a) no comments besides the test markers, or (b) the kinds named there, such as a license header that a contract requires or reference documentation of a library that other teams use, and where they go. Only those kinds are written, and only there.
+**A project may allow a kind of comment.** The row "Comments in the code" of the Decisions Log of the implementation plan records the choice: (a) no comments besides the test markers, or (b) the kinds named there, such as a license header that a contract requires or reference documentation of a library that other teams use, and where they go. Only those kinds are written, and only there.
 
 **The lint step checks it.** The project's lint step fails when the source holds a comment other than the test markers and the kinds that the Decisions Log allows (`templates/review/project/gates.sh` has the commands). A directive that a tool reads from a comment, such as `// swiftlint:disable:next`, is not a comment to a reader; it is used only where an annotation cannot do the same.
 

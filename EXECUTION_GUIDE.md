@@ -27,9 +27,8 @@ myself" are complete instructions — follow them and do not re-propose the loop
 What is not optional is honesty about what actually ran; never present a partial
 run as a completed one.
 
-A project that sets up `.review/` without adding the routing block to its
-`CLAUDE.md` gets the worst case: a loop that exists and is never invoked.
-`/maintain --init` installs it.
+`/maintain`'s description is what makes "next task", "do T-014" and
+"continue" start the loop.
 
 ---
 
@@ -47,10 +46,10 @@ The shape of every task:
 5. **The change is committed** — after that decision, never before it
 6. **Repeat** — the next task starts only once this one is settled
 
-Steps 4 and 5 are the only ones the loop changes, and only in *mechanism*:
-there, the user reviews the finished task rather than the raw diff, and, where
-D-004 lets the loop commit, the commit happens through the landing contract
-instead of by hand. Who decides — step 4 — never moves.
+Steps 4 and 5 are the only ones the loop changes, and only in *mechanism*: there, the user reviews
+the finished task rather than the raw diff, and, where the plan's row "Who writes to git" lets the
+loop commit, the commit happens through the landing contract instead of by hand. Who decides — step
+4 — never moves.
 
 ---
 
@@ -63,14 +62,15 @@ seem small or related, each one goes through the full cycle. No exceptions.
 
 ### Who writes to git
 
-The project decides, and records it as D-004 ([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents
-only read git and the user commits; or, besides, the loop commits through `land.sh` (below). It is
-the user's preference, not a rule of these standards, and the user may change it. Until it is
-recorded, git is read-only for agents: before it presents its first finished work, the agent asks
-the question of D-004 (PLANNING_GUIDE.md, "The questions of D-002, D-003 and D-004") and writes the answer into the plan's Decisions Log, adding the row when it
-is missing (PLANNING_GUIDE.md, "Decisions every project makes"). Wherever these standards say
-D-004, they mean that row, whatever number the project gave it (its `CLAUDE.md` says). When the user asks in chat for a commit where git is read-only for agents, give the
-files and the message; the user makes it.
+The project decides, and records it in the plan's row "Who writes to git"
+([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents only read git and the user commits; or, besides,
+the loop commits through `land.sh` (below). It is the user's preference, not a rule of these
+standards, and the user may change it. Until it is recorded, git is read-only for agents: before it
+presents its first finished work, the agent asks the question of that row (PLANNING_GUIDE.md, "The
+questions of D-002, D-003 and D-004") and writes the answer into the plan's Decisions Log, adding
+the row when it is missing (PLANNING_GUIDE.md, "Decisions every project makes"). When the user asks
+in chat for a commit where git is read-only for agents, give the files and the message; the user
+makes it.
 
 Where git is read-only for agents:
 
@@ -99,25 +99,24 @@ Print a git command only when they ask for one.
 
 ### The loop's landing: `land.sh`
 
-Where D-004 says so, the loop commits — that is the point of the maintainer
-role. It does so through exactly one script, `land.sh`, which the user enabled
-deliberately and can revoke with one line in `.review/land.conf`. That script
-refuses unless eight conditions hold, stages *and commits* only the task's
-declared files, and has no code path for push, amend, force, or branch switching
-([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
+Where the plan's row "Who writes to git" says so, the loop commits — that is the point of the
+maintainer role. It does so through exactly one script, `land.sh`, which the user enabled
+deliberately and can revoke with one line in `.review/land.conf`. That script refuses unless eight
+conditions hold, stages *and commits* only the task's declared files, and has no code path for push,
+amend, force, or branch switching ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
 
 Everything about the loop's landing is what makes it different from an agent running
 `git commit`: it is delegated in advance, narrow in what it can do, revocable,
 and auditable in the commit trailers. **Nothing generalizes from it.** In a chat
-session, and everywhere outside the loop, git is what D-004 says, and read-only
+session, and everywhere outside the loop, git is what that row says, and read-only
 where it says nothing — including "just staging" and "just tidying up".
 
 ### The task boundary belongs to the user
 
-By hand or on request, the user reviews the diff, and it is committed as D-004 says. Through the loop,
-the user reviews **the finished task** — what changed, what the review found,
-what was rejected and why — and the maintainer commits it where D-004 lets the
-loop commit; otherwise the user does.
+By hand or on request, the user reviews the diff, and it is committed as the plan's row "Who writes
+to git" says. Through the loop, the user reviews **the finished task** — what changed, what the
+review found, what was rejected and why — and the maintainer commits it where that row lets the loop
+commit; otherwise the user does.
 
 The unit of review differs; the authority does not. The user, never the agent,
 decides that a task is genuinely done and that work may continue. The maintainer
@@ -149,9 +148,14 @@ next to the skill ([MEASURED.md](./skills/write/MEASURED.md)).
 ### Work given to other agents
 
 Their assignment names the task and the standards they follow — these documents,
-the project's `CLAUDE.md`, its `.review/` — and adds no rule of its own. A rule
+the project's plan, its `.review/` — and adds no rule of its own. A rule
 they need that the standards lack goes to the user first. The one exception is a
 measurement of these standards, whose skill lists the rules its assignments add.
+
+Each agent runs on the model and effort of its role in `.review/agents.conf`
+(TASK_LOOP.md, "Models"), passed when it starts. Before agents start, the user
+reads in one line how many, on which model, and roughly how many tokens they will
+take; after they finish, how many they took.
 
 ### No moving on without confirmation
 

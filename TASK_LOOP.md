@@ -27,7 +27,8 @@ runs them in a fixed order with roles that cannot mark their own work, and it
 adds two things that do not otherwise exist:
 
 - a **landing contract** — the conditions under which a commit may happen
-  without you (`land.sh`), where D-004 of the plan lets the loop commit
+  without you (`land.sh`), where the plan's row "Who writes to git" lets the
+  loop commit
 - an **advance decision** — whether the loop waits for you after a finished
   task, or goes on with one line saying what it finished (`land.conf`)
 
@@ -36,9 +37,10 @@ plumbing that makes them safe enough to use.
 
 **What it does not change.** The execution rules hold inside the loop exactly as
 they do outside it: one task at a time, exit criteria are the definition of
-done, and *you* decide a task is genuinely finished. Where D-004 of the plan lets
-the loop commit, it moves **one** action — the mechanical act of committing —
-behind a contract you enable and can revoke. It never moves the judgment.
+done, and *you* decide a task is genuinely finished. Where the plan's row "Who
+writes to git" lets the loop commit, it moves **one** action — the mechanical
+act of committing — behind a contract you enable and can revoke. It never moves
+the judgment.
 
 Remove the loop and nothing is lost except the automation: the rules, the review,
 and the gates are all still there, and you run them yourself.
@@ -93,12 +95,13 @@ Three roles. The third one owns the tree.
 |------|---------|-------|
 | Executor | How to write it | Edits files inside the task's scope |
 | Reviewer | What is broken | None — emits JSON, touches nothing |
-| Maintainer | What counts, whether another round is needed, what lands | Commits through one narrow script where D-004 lets the loop commit; otherwise none |
+| Maintainer | What counts, whether another round is needed, what lands | Commits through one narrow script where the plan's row "Who writes to git" lets the loop commit; otherwise none |
 
 The maintainer is the role this pipeline exists for. It is not a second
 reviewer: it never hunts for defects. It filters the reviewer's output, decides
-whether another round is needed, lands the task where D-004 lets the loop
-commit, and moves to the next one once the task is accepted and committed.
+whether another round is needed, lands the task where the plan's row "Who writes
+to git" lets the loop commit, and moves to the next one once the task is
+accepted and committed.
 
 ### Where the reliability comes from
 
@@ -115,14 +118,15 @@ Not from the maintainer being smart. From three things underneath it:
 
 ### Role separation
 
-Use a **different model for the reviewer than for the executor**, and a
-different one again for the maintainer. One model judging its own output
-inflates its own scores while real quality drops. Different models and
-asymmetric context break that loop.
+**Each role works in its own fresh session.** The reviewer never sees the
+executor's reasoning, and the maintainer sees the findings and the gates, not
+the reviewer's reasoning. A session that judges work it argued for in its own
+context approves too much.
 
-With a single vendor, enforce the same separation structurally: a fresh session
-per role, the reviewer never sees the executor's reasoning, and an iteration
-limit (`ASK_AFTER_RUNS`, Job 2).
+**Models.** `.review/agents.conf` names the model and effort of each role:
+executor, reviewer, maintainer, `/qa` and helper. `review.sh` and every skill that
+starts agents take the role's model from it and say it before they start; a role
+set to `inherit` runs on the model Claude Code is set to.
 
 ---
 
@@ -180,13 +184,13 @@ that never fires at all. So is a test command on a project that has no tests:
       minutes). Scope `test` to affected modules if the full suite is slow, and
       run the full suite in CI.
 - [ ] One definition, three call sites: local, hook, CI.
-- [ ] Tool choices recorded in the project's `CLAUDE.md`.
+- [ ] Tool choices recorded in the plan's Decisions Log.
 
 **Gates run before the reviewer and again at landing.** A red build means the
 reviewer never runs — send the executor back with the compiler output.
 
 **Gates must not modify the tree.** Use check modes (`--check`, `lint`), not
-formatters that rewrite files. `run.sh` compares the fingerprint immediately
+formatters that rewrite files. `review.sh` compares the fingerprint immediately
 after the gates and stops there, naming the gate as the cause; landing re-checks
 it again before committing. A mutating gate cannot slip through, and it is
 reported as what it is rather than as the reviewer having written to the tree.
@@ -358,7 +362,7 @@ Decision rules, first match wins:
 8. **No rule above fires → accept** (`no-rule-fired`): the finding stands on its
    own evidence. It is not a policy rule matching, and is not logged as one.
 
-`lib/prompts/maintainer.md` is fed to the maintainer by `run.sh` and is
+`lib/prompts/maintainer.md` is fed to the maintainer by `review.sh` and is
 **normative**; this section explains the rules rather than restating them, and
 `agents/maintainer.md` carries only their names and order.
 
@@ -371,7 +375,7 @@ verdicts said another.
 
 Only `accept` at or above the threshold reaches the executor. The threshold has
 one source — `THRESHOLD` in `.review/land.conf`, overridable per run by
-`run.sh --threshold`. The value actually used is recorded in the run, and
+`review.sh --threshold`. The value actually used is recorded in the run, and
 `land.sh` reads it from there, so landing can never apply a different bar than
 the review did.
 Accepted `minor`/`nit` go to an optional list. This threshold is the most
@@ -393,31 +397,31 @@ round n: execute → gates → review → triage → accepted findings? → fix,
 
 - **Done** — gates green, no accepted `blocker`/`major`, no escalations.
 - **Another round** — accepted findings exist, fewer than in the round before.
-  The count is the `accepted (>= threshold)` line of `run.sh`; a run that ended
+  The count is the `accepted (>= threshold)` line of `review.sh`; a run that ended
   before review — exit 2, 5 or 1 — is not a round.
 - **Escalate** — an escalate verdict fired, the same `file:line` was accepted in
   two consecutive rounds, or a round accepted as many findings as the one before
   it, or more: the fix is not converging, and another attempt will not help.
 
 **The same failure twice in a row goes to the user**: gates red for the same
-reason, `run.sh` exit 5 or 1, or the same refusal of `land.sh`. Another attempt
+reason, `review.sh` exit 5 or 1, or the same refusal of `land.sh`. Another attempt
 does not mend what broke outside the code — a simulator that will not boot, a
 review that cannot quote a deleted file. Never a third try alone.
 
-**`run.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`,
+**`review.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`,
 5 by default). It counts every run that got as far as the gates, whatever ended
 it: rounds, red gates, unusable reviews, and the reviews again after `/qa`, an
 answer `fixed` or a landing refusal. Five leaves room for the three or four
 rounds of a large change; a large task that also had a red gate reaches it, and
 the user is asked — that is the point, not a wrong count. Past the limit
-`run.sh` runs nothing and exits 6, and the user decides whether to go on.
+`review.sh` runs nothing and exits 6, and the user decides whether to go on.
 `--past-limit` runs once more and starts the count again — on the user's
 answer, or when the count is wrong (runs of another task under the same id),
 said in the report: it is a warning, not a lock. `land.sh` checks its other
 conditions before the gates, so a landing refused for one of them costs no
 build; a landing that fails at or after its gates — red, killed, or a commit
 that fails — may be retried once on the same run, so the answers to its
-escalations still apply, and a second time goes back through `run.sh`, since
+escalations still apply, and a second time goes back through `review.sh`, since
 nothing else counts landings. The two stops back
 each other: the rule above stops early, at the second failure; the count stops
 a session that missed the rule, on every path that runs a review or the
@@ -442,9 +446,10 @@ refuses and says which condition failed.
 
 ## Landing
 
-Where D-004 of the plan lets the loop commit, the maintainer commits. This is the
-whole point of the role — but the authority is deliberately shaped so that
-"commit" means one specific, checkable thing. Where D-004 leaves commits to you,
+Where the plan's row "Who writes to git" lets the loop commit, the maintainer
+commits. This is the whole point of the role — but the authority is deliberately
+shaped so that "commit" means one specific, checkable thing. Where that row
+leaves commits to you,
 `LANDING` stays `off`, and the maintainer shows the files and the message.
 
 ### The contract
@@ -505,7 +510,7 @@ fails. Trunk, history, and the remote are never touched by an agent.
 Agents get **no write-git permission by policy**. `.claude/settings.json` denies
 the mutating `git` subcommands and their flag forms, and pre-approves one
 command so it does not prompt: `land.sh`. That allow entry is a convenience, not
-the boundary — `run.sh`, `gates.sh`, tests and linters are ordinary `Bash` calls
+the boundary — `review.sh`, `gates.sh`, tests and linters are ordinary `Bash` calls
 under the project's normal permission settings. What makes `land.sh` special is
 that it is the only one that can write to git at all.
 
@@ -586,8 +591,8 @@ committing.
 ### Interactive work is different
 
 This delegation is scoped to the pipeline. Outside it — in an ordinary chat
-session — git is what the project decided as D-004, and read-only for agents
-where it decided nothing. See
+session — git is what the project decided in the plan's row "Who writes to
+git", and read-only for agents where it decided nothing. See
 [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git). The difference is
 not the tool, it is that landing is a contract you defined, enabled, and can
 revoke, and the pipeline reaches it only through the eight conditions above.
@@ -656,10 +661,11 @@ So the pipeline splits by ownership:
 
 | Part | Lives in | Edited | Why there |
 |------|----------|--------|-----------|
-| `run.sh`, `land.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` in particular must not be widened by a project |
+| `review.sh`, `land.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` in particular must not be widened by a project |
 | `gates.sh` | project — `.review/` | Always | Encodes the stack — the one language-specific file |
 | `REVIEW_POLICY.md` | project — `.review/` | Constantly | Your taste, this codebase |
 | `land.conf` | project — `.review/` | Rarely | Landing and advancing switches |
+| `agents.conf` | project — `.review/` | Rarely | The model and effort of each role |
 | `decisions/`, `eval/` | project — `.review/` | Constantly | Your decisions, your golden set |
 | Subagents | project — `.claude/agents/` | Rarely | Claude Code only discovers them there |
 
@@ -668,9 +674,9 @@ my-project/
 ├── CodingStandards/                     # submodule — the project does not edit it
 │   └── templates/review/
 │       ├── lib/                         # runs from here
-│       │   ├── run.sh                   # one review pass (gates, review, triage)
+│       │   ├── review.sh                # one review pass (gates, review, triage)
 │       │   ├── land.sh                  # the only thing that commits
-│       │   ├── selftest.sh              # run.sh and land.sh on a throwaway repository
+│       │   ├── selftest.sh              # review.sh and land.sh on a throwaway repository
 │       │   ├── export-version.sh        # one version of the project into a folder of its own
 │       │   ├── triage.py                # you answer findings — terminal or browser
 │       │   ├── prompts/{reviewer,maintainer}.md
@@ -679,12 +685,13 @@ my-project/
 ├── .review/                             # yours, versioned in this repo
 │   ├── gates.sh                         # ← the only file you must fill in
 │   ├── land.conf                        # ← LANDING / ADVANCE switches
+│   ├── agents.conf                      # ← the model of each role
 │   ├── REVIEW_POLICY.md                 # ← grows with every disagreement
 │   ├── current-task.json                # the task in flight — scope, exit criteria
 │   ├── decisions/{findings,tasks,escalations}.jsonl
 │   ├── eval/golden.jsonl                # your verdicts, for /policy --eval
 │   └── runs/                            # per-run artifacts — gitignored
-└── .claude/agents/{diff-reviewer,maintainer}.md
+└── .claude/agents/{reviewer,maintainer}.md
 ```
 
 ### Install
@@ -698,7 +705,7 @@ for f in decisions/findings decisions/tasks decisions/escalations eval/golden; d
   mv ".review/$f.example.jsonl" ".review/$f.jsonl"
 done
 chmod +x .review/gates.sh
-echo '.review/runs/' >> .gitignore
+printf '%s\n' .review/runs/ .review/current-task.json >> .gitignore
 ```
 
 Then, in order:
@@ -706,34 +713,29 @@ Then, in order:
 1. **Fill in `.review/gates.sh`** — the five slots. See
    [Wiring a new language](#wiring-a-new-language).
 2. **Add the permissions block above** to `.claude/settings.json`.
-3. **Paste `.review/CLAUDE.snippet.md` into the project's `CLAUDE.md`.** This
-   is the step that is easy to skip and expensive to skip: without it, "do the
-   next task" is a request to edit files and the pipeline sits there unused. A
-   project that installs everything else and omits this has a loop nobody
-   invokes.
-4. **Run a task.** `/maintain` writes `.review/current-task.json` itself, from
+3. **Run a task.** `/maintain` writes `.review/current-task.json` itself, from
    the tracker entry. For a manual pass, start from the template:
    `cp .review/task.example.json .review/current-task.json` and fill in `id`,
    `scope`, and `exit_criteria`.
 
 ```bash
-# the loop is driven by the /maintain skill, which calls run.sh and land.sh
+# the loop is driven by the /maintain skill, which calls review.sh and land.sh
 /maintain --task T-001
 ```
 
-`/maintain --init` does the first three, including detecting the stack and writing the
-gate commands.
+`/maintain --init` does the first two, including detecting the stack and writing
+the gate commands.
 
-The block sets a **default**, not a rule for the user: any change can be made
+The loop is a **default**, not a rule for the user: any change can be made
 outside the pipeline, on request, without justification
 ([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work)
-states this in full, and `skills/maintain/SKILL.md` and the snippet repeat it to the
+states this in full, and `skills/maintain/SKILL.md` repeats it to the
 agents that need to hear it — the one duplication in this repo that is on
 purpose).
 
 ### Overriding a shared file
 
-`run.sh` prefers `.review/<path>` over the submodule's copy, so a project can
+`review.sh` prefers `.review/<path>` over the submodule's copy, so a project can
 override a prompt or schema by copying just that file. `land.sh` is deliberately
 **not** overridable — it is the one file with write authority.
 
@@ -759,7 +761,7 @@ Use hooks for invariants, never for logic:
 |---------|-------|-----|
 | Diffs balloon after review | Threshold too low; nits reaching the executor | Accept `major`+ only |
 | Reviewer invents bugs in correct code | Bug-prior pattern matching | Enforce quote + counterexample; reject `possible` without evidence |
-| Maintainer agrees with everything | Same model/context as the reviewer | Different model per role; fresh session |
+| Maintainer agrees with everything | Shares the reviewer's context | Fresh session per role; the maintainer gets findings and gates, not the reviewer's reasoning |
 | Same finding every run | Missing policy rule | Write the rule — or better, encode it as a lint rule in Layer 0 |
 | Landed commits you would have rejected | `ADVANCE=auto` too broad | Revert that category to `ask`; tighten thresholds |
 | Landing refused and nobody knows why | Contract failure not surfaced | `land.sh` names the failing condition — read it, do not bypass it |
@@ -778,11 +780,13 @@ Use hooks for invariants, never for logic:
 - [ ] `severity` derived from rule level, never asked of the model
 - [ ] A finding contradicting a green gate is always rejected
 - [ ] Only `accept` + `severity ≥ major` reaches the executor
-- [ ] Different model per role; fresh session per role
+- [ ] Fresh session per role
 - [ ] Rounds go on while each accepts fewer findings; an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly
 - [ ] Missing or malformed pipeline output fails closed, never as "nothing found"
-- [ ] `lib/selftest.sh` passes after any change to `run.sh`, the schemas or the output contract — it is the only run of the validation that does not need a model to answer with findings
+- [ ] `lib/selftest.sh` passes after any change to `review.sh`, the schemas or
+  the output contract — it is the only run of the validation that does not need
+  a model to answer with findings
 - [ ] Agents have no write-git permission; `land.sh` is the only allowed command
 - [ ] `land.sh` never pushes, amends, forces, or switches branches
 - [ ] `LANDING=off` kill switch works and is documented

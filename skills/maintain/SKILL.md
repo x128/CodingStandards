@@ -7,19 +7,17 @@ description: 'Run the task loop on one task at a time — work, checks, review, 
 Runs the task loop of TASK_LOOP.md on one task at a time — the work, the checks, the review, the
 fixes, the landing — and shows the finished task to the user; or sets the loop up in a project
 that has none. It needs the project's plan and tracker. The steps that need judgment live here;
-the fixed ones are scripts: `gates.sh` for the checks, `run.sh` for review and triage, `land.sh`
+the fixed ones are scripts: `gates.sh` for the checks, `review.sh` for review and triage, `land.sh`
 for the commit. The loop calls them and never does their work by hand.
 
 ## Instructions
 
 ### Setup: `--init`, when `.review/` does not exist
 
-1. **Who writes to git.** Read the plan's Decisions Log row "Who writes to git" (D-004, or the
-   number the project's `CLAUDE.md` gives it). With no row, ask its question in the words of
-   PLANNING_GUIDE.md, "The questions of D-002, D-003 and D-004", and record the answer — under the
-   number after the highest one in the log if D-004 is taken, and that number in the project's
-   `CLAUDE.md`. With no plan, stop and point to PLANNING_GUIDE.md,
-   Steps 0-4.
+1. **Who writes to git.** Read the plan's Decisions Log row "Who writes to git". With no row, ask
+   its question in the words of PLANNING_GUIDE.md, "The questions of D-002, D-003 and D-004", and
+   record the answer as a new row titled "Who writes to git". With no plan, stop and point to
+   PLANNING_GUIDE.md, Steps 0-4.
 2. **The stack.** Read the build files and the project's `CLAUDE.md`; ask only what they do not
    say. Read the stack's own setup section (KOTLIN_MULTIPLATFORM.md for KMP) before touching any
    toolchain. When a check does not run, look for a setup step this project skipped — in the
@@ -35,19 +33,17 @@ for the commit. The loop calls them and never does their work by hand.
 5. **Permissions and hooks:** the write-git deny list and the one `land.sh` allow entry in
    `.claude/settings.json` (TASK_LOOP.md, "Landing"); format and lint on `PostToolUse`, build and
    test on `Stop`.
-6. **`.review/land.conf`:** `LANDING=off` and `ADVANCE=ask`. Where D-004 lets the loop commit,
-   the user turns landing on after watching some refusals; otherwise it stays off. Fill
-   `RISK_PATHS` with the project's sensitive folders.
-7. **The routing:** copy `.review/CLAUDE.snippet.md` into the project's `CLAUDE.md`, fill in its
-   table of checks, and delete the snippet. Without it the loop never runs by itself. Check that
-   `CLAUDE.md` now has the trigger list.
-8. **Report**, starting with what the user has to do — commit the new files, fill what only they
-   can — then each check with its command, the risk paths, and that the routing is in place.
+6. **`.review/land.conf`:** `LANDING=off` and `ADVANCE=ask`. Where the row "Who writes to git"
+   lets the loop commit, the user turns landing on after watching some refusals; otherwise it
+   stays off. Fill `RISK_PATHS` with the project's sensitive folders.
+7. **Report**, starting with what the user has to do — commit the new files, fill what only they
+   can — then each check with its command, and the risk paths.
 
 ### The loop: `--task T-014`, no argument, or any request to do task work
 
 With `.review/` present this is the way task work is done, named or not: "next task", "do T-014",
-"continue", accepting a finished task. A typo fix, a rename, or "skip the review" is done directly.
+"continue", accepting a finished task. A question, a typo fix, a rename, or "skip the review" is
+done directly.
 
 1. **The task.** The one named, or the next unblocked `💡 to-do`; ask if the tracker is unclear.
    No tracker is a stop: say so and point to PLANNING_GUIDE.md, Steps 1-2. When no task of its
@@ -63,12 +59,18 @@ With `.review/` present this is the way task work is done, named or not: "next t
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
    and decide in the open with the user: extend (the shape is right), refactor first (as its own
    task, landing before this one), or deviate (say why). Never fold a refactor into the task.
-4. **The work**, inside the scope. A file outside it is a scope change for the user to approve.
-   When copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
+4. **The work**, inside the scope; an agent that does it runs on the role `EXECUTOR` of
+   `.review/agents.conf`. A file outside the scope is a scope change for the user to approve. When
+   copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
+   `qa/test-cases.md` is kept by `/qa`; the work reads it and leaves it as it is. Before it hands
+   over, it writes for `/qa` what the change may affect anywhere in the app: every place that uses
+   what it changed — callers, screens, background work, the other platform — and the shared state,
+   data, navigation, theme and settings it touched; what a user could now see differently there,
+   including what was not meant to change; and what it checked itself and what it did not.
 5. **The review pass:**
 
    ```bash
-   CodingStandards/templates/review/lib/run.sh --task-file .review/current-task.json
+   CodingStandards/templates/review/lib/review.sh --task-file .review/current-task.json
    ```
 
    No `--base` inside the loop: by default it reviews the uncommitted work, which is what
@@ -107,10 +109,16 @@ With `.review/` present this is the way task work is done, named or not: "next t
    run, the finding with its `code_quote`, the answer and the reason (format:
    `templates/review/project/decisions/escalations.example.jsonl`). Landing refuses while an
    escalation is unanswered. An escalation answered the same way again is a rule for `/policy`.
-8. **Check as the user:** run `/qa` on the task once `run.sh` exits `0`, or every escalation of
+8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
    step 7 is answered. What it reports as failing or unproven goes back to whoever does the
    work, with the text of step 6, and the task is reviewed again (step 5) — once; a second
-   failing `/qa` is escalated as in step 7. A defect the user finds later that `/qa` passed goes
+   failing `/qa` is escalated as in step 7. Each failure goes back with the test `/qa` named for
+   it, and the fix makes that test pass; the second `/qa` takes from `qa/test-cases.md` only the
+   cases the fix can reach. Once `/qa` passes, whoever does the work decides which of the cases
+   `/qa` added or changed an end-to-end test takes, writes those tests and marks the cases
+   `e2e: <test>` in `qa/test-cases.md`. A defect `/qa` finds that the change did not bring
+   is fixed now or written into the task it belongs to as an exit criterion (PLANNING_GUIDE.md,
+   "Ongoing Maintenance"). A defect the user finds later that `/qa` passed goes
    to `/qa` as a defect of that skill too. If `/qa` is not among the skills of the session, link
    it (skills/README.md, "Setup") and tell the user; the step is never skipped silently.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the
@@ -123,12 +131,13 @@ With `.review/` present this is the way task work is done, named or not: "next t
      --task-file .review/current-task.json --run .review/runs/<latest>
    ```
 
-   First read the D-004 row again: if it leaves commits to the user and `LANDING=on`, stop and
-   tell the user to set `LANDING=off` or change D-004. A refusal names its condition: meet it or
-   escalate; never work around it. A changed tree or an unfinished run means review again (step
-   5); a landing that fails at or after its gates may be retried once on the same run, and a
-   second time means review again. With `LANDING=off`, `land.sh` prints the files, the message and the commands: give the
-   user the files and the message as printed, the commands only when asked, and never run them.
+   First read the row "Who writes to git" again: if it leaves commits to the user and
+   `LANDING=on`, stop and tell the user to set `LANDING=off` or change that row. A refusal names
+   its condition: meet it or escalate; never work around it. A changed tree or an unfinished run
+   means review again (step 5); a landing that fails at or after its gates may be retried once on
+   the same run, and a second time means review again. With `LANDING=off`, `land.sh` prints the
+   files, the message and the commands: give the user the files and the message as printed, the
+   commands only when asked, and never run them.
 11. **The tasks ahead.** What this task showed about a later one — what it hands it, what it
     leaves to it — goes into that task's exit criteria in the tracker, with this task as the
     source: `(T-014)`. A choice about the product it raised is not written: it is a question for
@@ -159,20 +168,21 @@ With `.review/` present this is the way task work is done, named or not: "next t
 - A partial run is never shown as a loop run; say which steps were skipped.
 - `--dry-run` runs every step with `land.sh --dry-run`, to show the files and the message that
   would land.
-- Only `land.sh` writes to git, and only where D-004 allows; nothing else here does
+- Only `land.sh` writes to git, and only where the plan's row "Who writes to git" allows;
+  nothing else here does
   (EXECUTION_GUIDE.md, "Who writes to git").
 - Only accepted findings reach whoever does the work.
-- Reviewer and maintainer are different models, in separate sessions.
+- Reviewer and maintainer each work in a fresh session (TASK_LOOP.md, "Role separation").
 - An objection of the user at a task boundary goes to `/policy`.
 - When in doubt about advancing, ask.
 
 ## Allowed Prompts
 - Read the tracker, the diff, source files, `.review/**` and the standards
-- Run `gates.sh`, `run.sh`, `land.sh`, tests and linters
-- Start the `diff-reviewer` and `maintainer` subagents; run `/qa` and `/groom`
+- Run `gates.sh`, `review.sh`, `land.sh`, tests and linters
+- Start the `reviewer` and `maintainer` subagents; run `/qa` and `/groom`
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
   status, proposed tasks and the exit criteria of later tasks in the tracker; in `--init`, the
-  files of setup steps 1 to 7
+  files of setup steps 1 to 6
 - Git: read-only (`status`, `diff`, `log`, `show`)
 
 ## Example Usage

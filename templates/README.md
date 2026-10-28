@@ -10,13 +10,14 @@ So the review pipeline is split by ownership:
 templates/
 ├── review/
 │   ├── lib/        RUNS FROM THE SUBMODULE — never copy, never edit
-│   │   ├── run.sh          one review pass
+│   │   ├── review.sh       one review pass
 │   │   ├── land.sh         the only thing that commits
 │   │   ├── triage.py       the user answers findings — terminal or browser
 │   │   ├── prompts/{reviewer,maintainer}.md
 │   │   └── schemas/*.json
 │   └── project/    COPY ONCE into <host>/.review/ — yours to edit forever
 │       ├── gates.sh
+│       ├── agents.conf
 │       ├── REVIEW_POLICY.md
 │       └── decisions/
 └── agents/         COPY into <host>/.claude/agents/ — Claude Code only looks there
@@ -44,32 +45,29 @@ What that gets you, and what still needs your judgment:
    `R-001` (perf needs a measurement) is worth keeping; `R-002`–`R-004` are
    shape examples. Do not restate the built-in decision rules as policy — the
    file explains why.
-4. **Check the agent CLI flags** in `lib/run.sh` against your installed
-   versions. Model choice per role is set via `REVIEWER_CMD` / `MAINTAINER_CMD`
-   environment variables — no edit needed.
+4. **Check the agent CLI flags** in `lib/review.sh` against your installed
+   versions. The model and effort of each role are in `.review/agents.conf`
+   ([TASK_LOOP.md](../TASK_LOOP.md), "Models").
 5. **Deny write-git in `.claude/settings.json`.** The reviewer subagent holds
    `Bash` so it can verify claims, and `Bash` reaches `git commit`. Deny every
    mutating git command and pre-approve the one script that is allowed to write
    — `land.sh`. The block is in [TASK_LOOP.md](../TASK_LOOP.md#landing).
-6. **Paste `.review/CLAUDE.snippet.md` into the project's `CLAUDE.md`.**
-   Everything above is inert without it: it is what makes "do the next task"
-   run the loop instead of editing files ad hoc.
 
 Run it from the project root. `/maintain` writes the task file itself; for a
 manual pass, start from the template:
 
 ```bash
 cp .review/task.example.json .review/current-task.json   # then fill in id, scope, exit_criteria
-CodingStandards/templates/review/lib/run.sh --task-file .review/current-task.json
+CodingStandards/templates/review/lib/review.sh --task-file .review/current-task.json
 ```
 
 Requires `jq` >= 1.6 and `git`. The task file must live under `.review/` —
-`run.sh` refuses otherwise, because that is the only directory outside the tree
+`review.sh` refuses otherwise, because that is the only directory outside the tree
 fingerprint.
 
 ## Overriding a shared file
 
-`run.sh` prefers `.review/<path>` over its own copy. To customize one prompt:
+`review.sh` prefers `.review/<path>` over its own copy. To customize one prompt:
 
 ```bash
 mkdir -p .review/prompts
@@ -85,10 +83,10 @@ and needs no override.
 
 | File | Owner | Purpose |
 |------|-------|---------|
-| `review/lib/run.sh` | submodule | One review pass: diff → gates → reviewer → quote verification → triage → filtered output |
+| `review/lib/review.sh` | submodule | One review pass: diff → gates → reviewer → quote verification → triage → filtered output |
 | `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold |
 | `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data |
-| `review/lib/selftest.sh` | submodule | `run.sh` and `land.sh` on a throwaway repository with fixed answers; run after changing either, the schemas or the decision rules |
+| `review/lib/selftest.sh` | submodule | `review.sh` and `land.sh` on a throwaway repository with fixed answers; run after changing either, the schemas or the decision rules |
 | `review/lib/export-version.sh` | submodule | One version of the project into a folder of its own, by reading git only — for `/qa` replays and comparisons |
 | `review/lib/prompts/reviewer.md` | submodule | Reviewer contract: quote, evidence, confidence, silence-is-valid |
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
@@ -96,12 +94,12 @@ and needs no override.
 | `review/project/gates.sh` | project | Layer 0 — the five deterministic gates, per stack |
 | `review/project/REVIEW_POLICY.md` | project | The maintainer's rubric; grows with every disagreement |
 | `review/project/land.conf` | project | Landing and advancing switches |
+| `review/project/agents.conf` | project | The model and effort of each role the loop starts |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
 | `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |
-| `review/project/CLAUDE.snippet.md` | project | Routing block: makes the loop the default path for task work |
 | `review/project/decisions/` | project | Decision log format (training data) |
-| `review/project/qa-cases.example.md` | project | Defects that got past `/qa`, replayed after every correction of it |
-| `agents/diff-reviewer.md` | project | Reviewer subagent, least-privilege tools |
+| `qa/test-cases.example.md` | project | The format of the project's `qa/test-cases.md`: every case of the product, walked by `/qa` or run by an end-to-end test |
+| `agents/reviewer.md` | project | Reviewer subagent, least-privilege tools |
 | `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh and read-only git |
 
 ## Self-improve

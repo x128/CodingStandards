@@ -98,7 +98,7 @@ THRESHOLD="$(jq -r '.threshold // "major"' "$RUN_DIR/meta.json")"
 # The run must belong to THIS task: the maintainer triaged against one task's
 # scope, and landing checks another's. `.review/` is outside the fingerprint, so
 # nothing else would catch a swapped task file.
-# Both sides are absolute: run.sh resolves the path before recording it, and
+# Both sides are absolute: review.sh resolves the path before recording it, and
 # this script resolves its own argument the same way.
 REVIEWED_TASK="$(jq -r '.task_file // ""' "$RUN_DIR/meta.json")"
 [ -n "$REVIEWED_TASK" ] || \
@@ -209,9 +209,10 @@ UNVERIFIED="$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | l
 #    The protected-branch half guards the loop's own commit. With LANDING=off
 #    there is none — the user commits, on whatever branch they work on — so it
 #    is reported instead of refused. A detached HEAD refuses either way: the
-#    files and the message would be for a commit no branch reaches; otherwise a project whose D-004 leaves
-#    commits to the user and that works on main could never get the files and
-#    the message out of the loop at all.
+#    files and the message would be for a commit no branch reaches; otherwise a
+#    project whose plan's row "Who writes to git" leaves commits to the user and
+#    that works on main could never get the files and the message out of the
+#    loop at all.
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 BRANCH_NOTE=""
@@ -238,7 +239,7 @@ done
 # A landing whose gates end red or unfinished, or which fails after them, may be
 # retried once on the same run — the simulator is booted again, say — so the
 # answers to its escalations still apply. A second time sends the work back
-# through run.sh: run.sh counts its runs per task and stops at ASK_AFTER_RUNS,
+# through review.sh: review.sh counts its runs per task and stops at ASK_AFTER_RUNS,
 # and nothing else counts landings, so retrying landing alone could rebuild and
 # retest without end. The attempt is written before the gates start, so a gate
 # run that hangs or is killed counts too, and taken back only once the commit is
@@ -246,7 +247,7 @@ done
 LANDING_REDS="$(cat "$RUN_DIR/landing-reds" 2>/dev/null)"
 case "$LANDING_REDS" in ''|*[!0-9]*) LANDING_REDS=0 ;; esac
 [ "$LANDING_REDS" -lt 2 ] || \
-  refuse 3 "the landing of this run failed at or after its gates twice — ask the user, then run run.sh again; another landing of this run would repeat uncounted"
+  refuse 3 "the landing of this run failed at or after its gates twice — ask the user, then run review.sh again; another landing of this run would repeat uncounted"
 printf '%s\n' "$((LANDING_REDS + 1))" >"$RUN_DIR/landing-reds"
 
 "$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.land.json" >/dev/null 2>&1

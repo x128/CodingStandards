@@ -128,7 +128,8 @@ doThing()
 ## A Whole Project, in Rounds
 
 A round is one list of the places where the code departs from the standards, worked through by
-fresh agents.
+fresh agents. The list and the checks run on the role `REVIEWER` of `.review/agents.conf`, the
+work on `EXECUTOR`.
 
 1. **Before starting**, ask one question at a time and wait for each answer: what must not change
    besides the behaviour ("only the behaviour", "the behaviour and the public types that the
