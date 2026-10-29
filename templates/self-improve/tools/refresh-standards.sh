@@ -7,7 +7,7 @@ WORK="$(cd "$1" && pwd)"; STANDARDS="$2"; PROJECT="$3"
 COPY="$PROJECT/CodingStandards"
 rm -rf "${COPY:?}"; mkdir -p "$COPY"
 rsync -a --exclude .git --exclude templates/self-improve --exclude skills/self-improve "$STANDARDS/" "$COPY/"
-for index in README.md CLAUDE.md MAINTAINER_TRAINING.md skills/README.md $(cd "$COPY" && ls skills/*/SKILL.md); do
+for index in $(cd "$COPY" && grep -rl -e 'self-improve' --include='*.md' .); do
   grep -v -e 'self-improve' "$COPY/$index" > "$COPY/$index.kept" && mv "$COPY/$index.kept" "$COPY/$index"
 done
 sed '/^## Self-improve$/,$d' "$COPY/templates/README.md" > "$COPY/templates/README.md.kept" && mv "$COPY/templates/README.md.kept" "$COPY/templates/README.md"
