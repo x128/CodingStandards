@@ -536,6 +536,8 @@ it.
       "Bash(git cherry-pick:*)", "Bash(git worktree:*)", "Bash(git apply:*)",
       "Bash(git am:*)", "Bash(git update-ref:*)", "Bash(git config:*)",
       "Bash(git submodule:*)", "Bash(git notes:*)", "Bash(git gc:*)",
+      "Bash(git prune:*)", "Bash(git repack:*)", "Bash(git pack-refs:*)",
+      "Bash(git maintenance:*)", "Bash(git fast-import:*)",
       "Bash(git filter-branch:*)", "Bash(git replace:*)",
       "Bash(git -C:*)", "Bash(git --git-dir:*)", "Bash(git --work-tree:*)",
       "Bash(git -c:*)", "Bash(git commit-tree:*)", "Bash(git symbolic-ref:*)",
