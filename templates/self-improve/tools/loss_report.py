@@ -1,6 +1,7 @@
 import collections, json, os, re, sys
 
-USAGE = ('usage: loss_report.py <result json of the loss workflow> <judge mapping file> <folder that holds the projects after the change, one folder per project name>\n'
+USAGE = ('usage: loss_report.py <result json of the loss workflow> <judge mapping file> '
+         '<folder that holds the projects after the change, one folder per project name>\n'
          'judge mapping lines look like: larch (p2): A=before B=after')
 LOSS_VERDICTS = {'lost', 'partly'}
 
@@ -38,7 +39,9 @@ def final_verdict(item, verified):
 
 
 def loss_per_project(chains, projects_after):
-    per_project = collections.defaultdict(lambda: {'checker': collections.Counter(), 'final': collections.Counter(), 'places': collections.Counter(), 'lost': [], 'refuted finds': [], 'parts not checked': 0})
+    per_project = collections.defaultdict(lambda: {
+        'checker': collections.Counter(), 'final': collections.Counter(),
+        'places': collections.Counter(), 'lost': [], 'refuted finds': [], 'parts not checked': 0})
     for chain in chains:
         if not chain: continue
         summary = per_project[chain['project']]
@@ -52,11 +55,14 @@ def loss_per_project(chains, projects_after):
             for place in item['where']: summary['places'][where_the_quote_is(root, place)] += 1
             check = verified.get(item['id'])
             verdict = final_verdict(item, check)
-            if check is not None and item['verdict'] not in LOSS_VERDICTS and verdict in LOSS_VERDICTS:
-                summary['refuted finds'].append((item['id'], item['verdict'], check['missing'] or check['reason']))
+            if (check is not None and item['verdict'] not in LOSS_VERDICTS
+                    and verdict in LOSS_VERDICTS):
+                summary['refuted finds'].append(
+                    (item['id'], item['verdict'], check['missing'] or check['reason']))
             summary['final'][verdict] += 1
             if verdict in LOSS_VERDICTS:
-                summary['lost'].append((item['id'], verdict, item['information'], (check or item)['missing']))
+                summary['lost'].append(
+                    (item['id'], verdict, item['information'], (check or item)['missing']))
     return per_project
 
 
@@ -69,9 +75,12 @@ def print_judges(judges, mapping):
         named = lambda x: sides.get(x, x)
         before_letter = 'A' if sides.get('A') == 'before' else 'B'
         after_letter = 'B' if before_letter == 'A' else 'A'
-        print(f"{j['project']} ({j['judge']}, {j['first']} first): prefers {named(r['prefer'])} ({r['confidence']}); "
-              f"readability {named(r['readability'])}, one place {named(r['one_place'])}, tests {named(r['tests'])}; "
-              f"only in before: {len(r['knowledge_only_in_' + before_letter])}, only in after: {len(r['knowledge_only_in_' + after_letter])}")
+        print(f"{j['project']} ({j['judge']}, {j['first']} first): "
+              f"prefers {named(r['prefer'])} ({r['confidence']}); "
+              f"readability {named(r['readability'])}, one place {named(r['one_place'])}, "
+              f"tests {named(r['tests'])}; "
+              f"only in before: {len(r['knowledge_only_in_' + before_letter])}, "
+              f"only in after: {len(r['knowledge_only_in_' + after_letter])}")
         for reason in r['reasons']: print('     -', reason[:220])
 
 
@@ -81,7 +90,8 @@ def main():
     for project, s in sorted(loss_per_project(result.get('loss', []), sys.argv[3]).items()):
         print('=' * 80)
         print(project, '| checker:', dict(s['checker']))
-        print('   after verification:', dict(s['final']), '| parts not checked:', s['parts not checked'])
+        print('   after verification:', dict(s['final']),
+              '| parts not checked:', s['parts not checked'])
         print('   cited places:', dict(s['places']))
         print('   finds the verifier refuted:', len(s['refuted finds']))
         for r in s['refuted finds']: print('     ', r[0], r[1], '->', r[2][:200])

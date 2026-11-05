@@ -12,15 +12,15 @@ templates/
 │   ├── lib/        RUNS FROM THE SUBMODULE — never copy, never edit
 │   │   ├── review.sh       one review pass
 │   │   ├── land.sh         the only thing that commits
+│   │   ├── publish.sh      the only thing that pushes, opens or merges a pull request
 │   │   ├── triage.py       the user answers findings — terminal or browser
 │   │   ├── prompts/{reviewer,maintainer}.md
 │   │   └── schemas/*.json
 │   └── project/    COPY ONCE into <host>/.review/ — yours to edit forever
 │       ├── gates.sh
-│       ├── agents.conf
 │       ├── REVIEW_POLICY.md
 │       └── decisions/
-└── agents/         COPY into <host>/.claude/agents/ — Claude Code only looks there
+└── agents/         COPY into <host>/.claude/ — the roles, and agents.conf with their models
 ```
 
 The rule: **shared and identical everywhere → `lib/`. Project-specific → copied
@@ -29,29 +29,27 @@ out.** Improvements to `lib/` reach every project with
 
 ## Install
 
-Run `/maintain --init`, or follow
-[TASK_LOOP.md § Install](../TASK_LOOP.md#install) — the commands live there and
-only there, so the two lists cannot drift apart or miss the same step twice.
+Run `/maintain --init`, or follow [TASK_LOOP.md § Install](../TASK_LOOP.md#install) — the commands
+live there and only there, so the two lists cannot drift apart or miss the same step twice.
 
 What that gets you, and what still needs your judgment:
 
-1. **Fill in `.review/gates.sh`** — the five slots (`build`, `test`, `format`,
-   `lint`, `arch`). The only file that knows what language the project is
-   written in. Per-stack commands:
+1. **Fill in `.review/gates.sh`** — the five slots (`build`, `test`, `format`, `lint`, `arch`). The
+   only file that knows what language the project is written in. Per-stack commands:
    [TASK_LOOP.md](../TASK_LOOP.md#wiring-a-new-language).
-2. **Run `.review/gates.sh`** until every slot reports honestly. Do not leave
-   `TODO` stubs — a gate that cannot run is worse than no gate.
-3. **Replace the example rules in `.review/REVIEW_POLICY.md`** with your own.
-   `R-001` (perf needs a measurement) is worth keeping; `R-002`–`R-004` are
-   shape examples. Do not restate the built-in decision rules as policy — the
-   file explains why.
-4. **Check the agent CLI flags** in `lib/review.sh` against your installed
-   versions. The model and effort of each role are in `.review/agents.conf`
-   ([TASK_LOOP.md](../TASK_LOOP.md), "Models").
-5. **Deny write-git in `.claude/settings.json`.** The reviewer subagent holds
-   `Bash` so it can verify claims, and `Bash` reaches `git commit`. Deny every
-   mutating git command and pre-approve the one script that is allowed to write
-   — `land.sh`. The block is in [TASK_LOOP.md](../TASK_LOOP.md#landing).
+2. **Run `.review/gates.sh`** until every slot reports honestly. Do not leave `TODO` stubs — a gate
+   that cannot run is worse than no gate.
+3. **Replace the example rules in `.review/REVIEW_POLICY.md`** with your own. `R-001` (perf needs a
+   measurement) is worth keeping; `R-002`–`R-004` are shape examples. Do not restate the built-in
+   decision rules as policy — the file explains why.
+4. **Check the agent CLI flags** in `lib/review.sh` against your installed versions. The model and
+   effort of each role are in `.claude/agents.conf` ([TASK_LOOP.md](../TASK_LOOP.md), "Models").
+5. **Deny write-git in `.claude/settings.json`.** The reviewer subagent holds `Bash` so it can
+   verify claims, and `Bash` reaches `git commit`. Deny every mutating `git` and `gh` command and
+   pre-approve the two scripts that are allowed to write — `land.sh` and `publish.sh`. The block is
+   in [TASK_LOOP.md](../TASK_LOOP.md#landing).
+6. **Set `LANDING` in `.review/land.conf`** from the requirement "Who writes to git": (a) `off`,
+   (b) `push`, (c) `pr`, (d) `merge`. `/maintain --init` does this and the two above.
 
 Run it from the project root. `/maintain` writes the task file itself; for a
 manual pass, start from the template:
@@ -61,9 +59,9 @@ cp .review/task.example.json .review/current-task.json   # then fill in id, scop
 CodingStandards/templates/review/lib/review.sh --task-file .review/current-task.json
 ```
 
-Requires `jq` >= 1.6 and `git`. The task file must live under `.review/` —
-`review.sh` refuses otherwise, because that is the only directory outside the tree
-fingerprint.
+Requires `jq` >= 1.6 and `git` >= 2.23, and `gh` at `LANDING=pr` and `merge`. The task file must
+live under `.review/` — `review.sh` refuses otherwise, because that is the only directory outside
+the tree fingerprint.
 
 ## Overriding a shared file
 
@@ -84,9 +82,10 @@ and needs no override.
 | File | Owner | Purpose |
 |------|-------|---------|
 | `review/lib/review.sh` | submodule | One review pass: diff → gates → reviewer → quote verification → triage → filtered output |
-| `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold |
-| `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data |
-| `review/lib/selftest.sh` | submodule | `review.sh` and `land.sh` on a throwaway repository with fixed answers; run after changing either, the schemas or the decision rules |
+| `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold, and calls `publish.sh` at `LANDING=push`, `pr` and `merge` |
+| `review/lib/publish.sh` | submodule | The only thing that pushes, opens or merges a pull request; publishes only what landings made, never a protected branch |
+| `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data, branch, remote and base branch |
+| `review/lib/selftest.sh` | submodule | `review.sh`, `land.sh` and `publish.sh` on throwaway repositories with fixed answers; run after changing any of them, the schemas or the decision rules |
 | `review/lib/export-version.sh` | submodule | One version of the project into a folder of its own, by reading git only — for `/qa` replays and comparisons |
 | `review/lib/prompts/reviewer.md` | submodule | Reviewer contract: quote, evidence, confidence, silence-is-valid |
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
@@ -94,18 +93,18 @@ and needs no override.
 | `review/project/gates.sh` | project | Layer 0 — the five deterministic gates, per stack |
 | `review/project/REVIEW_POLICY.md` | project | The maintainer's rubric; grows with every disagreement |
 | `review/project/land.conf` | project | Landing and advancing switches |
-| `review/project/agents.conf` | project | The model and effort of each role the loop starts |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
 | `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |
 | `review/project/decisions/` | project | Decision log format (training data) |
 | `qa/test-cases.example.md` | project | The format of the project's `qa/test-cases.md`: every case of the product, walked by `/qa` or run by an end-to-end test |
+| `agents/agents.conf` | project | The model and effort of each role |
 | `agents/reviewer.md` | project | Reviewer subagent, least-privilege tools |
-| `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh and read-only git |
+| `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh, publish.sh and read-only git and gh |
 
 ## Self-improve
 
-`self-improve/` holds the tools of `/self-improve`. `tools/setup.sh` copies them into the work folder,
-and the projects that are measured run that copy:
+`self-improve/` holds the tools of `/self-improve`. `tools/setup.sh` copies them into the work
+folder, and the projects that are measured run that copy:
 
 ```
 self-improve/
@@ -116,6 +115,5 @@ self-improve/
 ```
 
 It is never copied into a project that is being measured, because it holds the hidden scenarios.
-`tools/make-project.sh` leaves it and `skills/self-improve/` out of the copy of
-the standards that a project gets, together with this section and every other line that names
-them.
+`tools/make-project.sh` leaves it and `skills/self-improve/` out of the copy of the standards that a
+project gets, together with this section and every other line that names them.

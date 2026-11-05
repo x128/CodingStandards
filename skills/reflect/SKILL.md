@@ -1,5 +1,8 @@
 ---
-description: 'Look back at a piece of work: where the result differs from the expected, which line of a standard, skill or assignment caused it, and what to change. Use after a refactoring, a review, a change of the standards, or a correction of the user.'
+description: >-
+  Look back at a piece of work: where the result differs from the expected, which line of a
+  standard, skill or assignment caused it, and what to change. Use after a refactoring, a review, a
+  change of the standards, or a correction of the user.
 ---
 
 # Reflect Skill
@@ -11,16 +14,16 @@ that did not do the work: the one who did it judges it too kindly.
 
 ## Instructions
 
-1. **The facts.** What was expected: the task, or the human's request in their words. What
-   happened: the results, each number with where it comes from, and the diff. Every correction of
-   the human during the work, in their words.
+1. **The facts.** What was expected: the task, or the human's request in their words. What happened:
+   the results, each number with where it comes from, and the diff. Every correction of the human
+   during the work, in their words.
 2. **The answers**, in plain short sentences:
    - Where does the result differ from what was expected?
    - What caused it? Quote the line of a standard, a skill or an assignment that the agents
      followed. "The agents did X" is what happened, not the cause.
    - Was a reason, a unit, a warning or a convention lost? Where did it go?
-   - Did anything go against a decision of the human — in the plan's Decisions Log, or in the
-     file of decisions that the caller names?
+   - Did anything go against a decision of the human — in the requirements, or in the file of
+     decisions that the caller names?
    - Which correction of the human would the text have made unnecessary, and which file should
      say it ([MAINTAINER_TRAINING.md](../../MAINTAINER_TRAINING.md))?
    - What worked and should stay?

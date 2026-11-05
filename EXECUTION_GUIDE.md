@@ -1,25 +1,24 @@
 # Task Execution Guide
 
-> The rules for getting a task from to-do to committed.
-> See `PLANNING_GUIDE.md` for how to create the plan and tracker.
+> The rules for getting a task from to-do to committed. See `PLANNING_GUIDE.md` for how to create
+> the requirements, the plan and the tracker.
 
-**These rules do not depend on who does the work.** They hold when the user
-writes the code by hand, when Claude writes it on request, and when the
-automated loop in `TASK_LOOP.md` runs it. That loop is a machine built *on* these
-rules — it mechanizes them and adds a way to delegate one action (the commit).
-It is not an alternative set of rules, and this document does not describe it.
+**These rules do not depend on who does the work.** They hold when the user writes the code by hand,
+when Claude writes it on request, and when the automated loop in `TASK_LOOP.md` runs it. That loop
+is a machine built *on* these rules — it mechanizes them and adds a way to delegate the commit and,
+as far as the project decided, what follows it. It is not an alternative set of rules, and this
+document does not describe it.
 
 ---
 
 ## Who runs the work
 
-- **By hand** — the user writes the code. Nothing here constrains that; the
-  rules describe what makes a task finished, not who types.
-- **On request** — Claude implements, presents, the user reviews; the change is
-  committed as the project decided (see "Who writes to git").
-- **Through the loop** — where a project has `.review/`, this is the default
-  path for task work, with or without the skill name being typed. See
-  `TASK_LOOP.md`.
+- **By hand** — the user writes the code. Nothing here constrains that; the rules describe what
+  makes a task finished, not who types.
+- **On request** — Claude implements, presents, the user reviews and commits (see "Who writes to
+  git").
+- **Through the loop** — where a project has `.review/`, this is the default path for task work,
+  with or without the skill name being typed. See `TASK_LOOP.md`.
 
 Default means default: any change can be made outside the loop on request,
 without a reason. "Just make this change", "skip the review", "I'll write it
@@ -46,10 +45,12 @@ The shape of every task:
 5. **The change is committed** — after that decision, never before it
 6. **Repeat** — the next task starts only once this one is settled
 
-Steps 4 and 5 are the only ones the loop changes, and only in *mechanism*: there, the user reviews
-the finished task rather than the raw diff, and, where the plan's row "Who writes to git" lets the
-loop commit, the commit happens through the landing contract instead of by hand. Who decides — step
-4 — never moves.
+Steps 4 and 5 are the only ones the loop changes: there, the user reviews the finished task rather
+than the raw diff, and, where the requirement "Who writes to git" lets the loop commit, the commit
+happens through the landing contract instead of by hand, and before the user looks; at its last
+answer, so does the merge into main. That order is what the user chose there. Who decides that the
+task is finished — step 4 — never moves: an objection to a task already in main is a new task on top
+of it, or a revert the user makes.
 
 ---
 
@@ -62,26 +63,28 @@ seem small or related, each one goes through the full cycle. No exceptions.
 
 ### Who writes to git
 
-The project decides, and records it in the plan's row "Who writes to git"
-([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents only read git and the user commits; or, besides,
-the loop commits through `land.sh` (below). It is the user's preference, not a rule of these
-standards, and the user may change it. Until it is recorded, git is read-only for agents: before it
-presents its first finished work, the agent asks the question of that row (PLANNING_GUIDE.md, "The
-questions of D-002, D-003 and D-004") and writes the answer into the plan's Decisions Log, adding
-the row when it is missing (PLANNING_GUIDE.md, "Decisions every project makes"). When the user asks
-in chat for a commit where git is read-only for agents, give the files and the message; the user
-makes it.
+The project decides, and records it in the requirement "Who writes to git"
+([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents only read git and the user commits; or the loop
+takes a finished task further, through `land.sh` and `publish.sh` (below): it commits and pushes a
+branch, it also opens a pull request, or it also merges that pull request. Those answers are about
+the loop, in a project that has it. Everywhere else, and at every answer, git is read-only for
+agents. It is the user's preference, not a rule of these standards, and the user may change it.
+Before it presents its first finished work, the agent asks that question (PLANNING_GUIDE.md, "Three
+questions of every project") if it is not answered, and writes the answer into the requirements.
+When the user asks in chat for a commit, give the files and the message; the user makes it.
 
-Where git is read-only for agents:
+Outside `land.sh` and `publish.sh`, and `/research`'s own `land.sh` for its folder where the user
+answered that it commits, git is read-only for agents:
 
 These rules are about the project's repository and its submodules. A test script
 that builds a throwaway repository in a temporary folder and deletes it
 (`templates/review/lib/selftest.sh`) writes no git the user owns.
 
-**Never run a git command that changes anything.** Not `add`, `commit`,
-`reset`, `checkout`, `switch`, `restore`, `stash`, `rm`, `mv`, `branch`,
-`merge`, `rebase`, `push`, `pull`, `tag`, or `clean`. Read-only only:
-`status`, `diff`, `log`, `show`, `blame`.
+**Never run a git command that changes anything.** Not `add`, `commit`, `reset`, `checkout`,
+`switch`, `restore`, `stash`, `rm`, `mv`, `branch`, `merge`, `rebase`, `push`, `pull`, `tag`, or
+`clean`. Read-only only: `status`, `diff`, `log`, `show`, `blame`, and `remote` to list the remotes.
+The same goes for `gh`: never `gh pr create`, `merge`, `close` or `edit`, `gh api`, or `gh repo`;
+`gh pr view`, `gh pr checks` and `gh auth status` only read.
 
 This includes tidying up. A messy `git status` after moving files is the
 user's to read, not yours to clean. Staging is part of how the user reviews
@@ -97,31 +100,33 @@ Say what changed instead — which files, and what is in each — and stop there
 They commit in their own tool, where staging is visible before it happens.
 Print a git command only when they ask for one.
 
-### The loop's landing: `land.sh`
+### The loop's landing: `land.sh` and `publish.sh`
 
-Where the plan's row "Who writes to git" says so, the loop commits — that is the point of the
-maintainer role. It does so through exactly one script, `land.sh`, which the user enabled
-deliberately and can revoke with one line in `.review/land.conf`. That script refuses unless eight
-conditions hold, stages *and commits* only the task's declared files, and has no code path for push,
-amend, force, or branch switching ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
+Where the requirement "Who writes to git" says so, the loop commits — that is the point of the
+maintainer role — and, as far as it says, pushes, opens a pull request and merges it. It does so
+through exactly two scripts. The answer is the permission: `/maintain --init` writes it to
+`.review/land.conf`, and one line there revokes it. `land.sh` refuses unless eight conditions hold,
+stages *and commits* only the task's declared files and the files the loop keeps as it goes (the
+tracker, the test cases), and has no code path for push, amend or force; the only branch it may
+create or move to is `task/<id>`. `publish.sh` has no code path for commit, amend or force, and
+publishes only what landings made. The loop reaches main only through a pull request, never a direct
+commit ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
 
-Everything about the loop's landing is what makes it different from an agent running
-`git commit`: it is delegated in advance, narrow in what it can do, revocable,
-and auditable in the commit trailers. **Nothing generalizes from it.** In a chat
-session, and everywhere outside the loop, git is what that row says, and read-only
-where it says nothing — including "just staging" and "just tidying up".
+Everything about the loop's landing is what makes it different from an agent running `git commit`:
+it is delegated in advance, narrow in what it can do, revocable, and auditable in the commit
+trailers. **Nothing generalizes from it.** In a chat session, and everywhere outside the loop, git
+is read-only for agents whatever the requirement says — including "just staging" and "just tidying
+up".
 
 ### The task boundary belongs to the user
 
-By hand or on request, the user reviews the diff, and it is committed as the plan's row "Who writes
-to git" says. Through the loop, the user reviews **the finished task** — what changed, what the
-review found, what was rejected and why — and the maintainer commits it where that row lets the loop
-commit; otherwise the user does.
+By hand or on request, the user reviews the diff and commits it. Through the loop, the user reviews
+**the finished task** — what changed, what the review found, what was rejected and why — and the
+maintainer commits it where the requirement lets the loop commit; otherwise the user does.
 
-The unit of review differs; the authority does not. The user, never the agent,
-decides that a task is genuinely done and that work may continue. The maintainer
-may only stop asking for a category of task when the user has said so — nothing
-measures its way out of asking
+The unit of review differs; the authority does not. The user, never the agent, decides that a task
+is genuinely done and that work may continue. The maintainer may only stop asking for a category of
+task when the user has said so — nothing measures its way out of asking
 ([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md)).
 
 ### Reporting to the user
@@ -130,32 +135,30 @@ Every message to the user is written by [skills/write](./skills/write/SKILL.md).
 below are about the work, not the text; rules for the text were measured to make messages worse
 next to the skill ([MEASURED.md](./skills/write/MEASURED.md)).
 
-- **During long work, say what runs and what comes next** when a step starts or
-  ends, in the user's terms: what it does to their product, not a step name.
-  Never leave the user without word.
-- **Keep working while the next step serves the request.** Ask only what the user
-  must decide. Never stop to ask whether to run the next step of the work they
-  asked for, or whether it is worth its tokens.
-- **Ask in the chat, one thing at a time**, except where a skill gathers them:
-  review findings go where `/code-review` sends them;
-  the intake questions of PLANNING_GUIDE.md come a block at a time, as its Step 0 says; books are asked for
-  in one list. A long file does not replace
-  the questions; it is named by its absolute path for the rest.
-- **Each option says something the others do not, and its label keeps it**: who
-  does what, as a phrase, never one word cut out of it. Two wordings of one
-  meaning are not a choice; take the one the user already used, and do not ask.
+- **During long work, say what runs and what comes next** when a step starts or ends, in the user's
+  terms: what it does to their product, not a step name. Never leave the user without word.
+- **Keep working while the next step serves the request.** Ask only what the user must decide. Never
+  stop to ask whether to run the next step of the work they asked for, or whether it is worth its
+  tokens.
+- **Ask in the chat, one thing at a time**, except where a guide or skill gathers them: the planning
+  questions come a block at a time (PLANNING_GUIDE.md, Step 0); review findings go where
+  `/code-review` sends them; books are asked for in one list. A long file does not replace the
+  questions; it is named by its absolute path for the rest.
+- **Each option says something the others do not, and its label keeps it**: who does what, as a
+  phrase, never one word cut out of it. Two wordings of one meaning are not a choice; take the one
+  the user already used, and do not ask.
 
 ### Work given to other agents
 
-Their assignment names the task and the standards they follow — these documents,
-the project's plan, its `.review/` — and adds no rule of its own. A rule
-they need that the standards lack goes to the user first. The one exception is a
-measurement of these standards, whose skill lists the rules its assignments add.
+Their assignment names the task and the standards they follow — these documents, the project's
+requirements and plan, its `.review/` — and adds no rule of its own. A rule they need that the
+standards lack goes to the user first. The one exception is a measurement of these standards, whose
+skill lists the rules its assignments add.
 
-Each agent runs on the model and effort of its role in `.review/agents.conf`
-(TASK_LOOP.md, "Models"), passed when it starts. Before agents start, the user
-reads in one line how many, on which model, and roughly how many tokens they will
-take; after they finish, how many they took.
+In a project with the task loop, each agent runs on the model and effort of its role in
+`.claude/agents.conf` (TASK_LOOP.md, "Models"), passed when it starts. Before agents start, the user
+reads in one line how many, on which model, and roughly how many tokens they will take; after they
+finish, how many they took.
 
 ### No moving on without confirmation
 

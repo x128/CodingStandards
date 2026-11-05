@@ -1,5 +1,7 @@
 ---
-description: 'Check that a change lost no information: for every removed line, find where its meaning is now. Use after a change removes comments or text.'
+description: >-
+  Check that a change lost no information: for every removed line, find where its meaning is now.
+  Use after a change removes comments or text.
 ---
 
 # Loss Check Skill
@@ -23,8 +25,8 @@ dropped.
    - repeated the code;
    - in the code: a name, a type, a constant or a check says it;
    - in a test: its name or what it asserts says it;
-   - in a document: the plan, the tracker, a standard, or the commit message or the report that
-     gives it;
+   - in a document: the requirements, the plan, the tracker, a standard, or the commit message or
+     the report that gives it;
    - no longer needed: what it described is gone, and nothing needs the information;
    - partly: say which part is missing;
    - lost.

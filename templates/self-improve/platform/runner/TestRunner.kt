@@ -31,7 +31,9 @@ fun main(arguments: Array<String>) {
             val name = watch.current ?: continue
             if ((System.nanoTime() - watch.startedAt) / 1_000_000_000 >= LIMIT_SECONDS) {
                 System.out.println("\nTEST HANGS (more than $LIMIT_SECONDS s): $name")
-                System.out.println("A test must end: cancel what it started (for a ViewModel, call clear()).")
+                System.out.println(
+                    "A test must end: cancel what it started (for a ViewModel, call clear())."
+                )
                 System.out.flush()
                 Runtime.getRuntime().halt(3)
             }

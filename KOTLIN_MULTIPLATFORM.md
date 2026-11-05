@@ -434,8 +434,7 @@ use is `public`.
 
 ### Gradle Wrapper
 
-Copy `gradlew`, `gradlew.bat`, and `gradle/wrapper/` from an existing
-project. No global `gradle` is installed — bootstrap from an existing wrapper.
+Copy `gradlew`, `gradlew.bat`, and `gradle/wrapper/` from an existing project.
 
 To move to another Gradle version, let the wrapper regenerate itself:
 `./gradlew wrapper --gradle-version 9.8.2 --distribution-type bin`. Editing only
@@ -501,7 +500,10 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         configurationForConnecting connectingSceneSession: UISceneSession,
         options: UIScene.ConnectionOptions
     ) -> UISceneConfiguration {
-        UISceneConfiguration(name: "Default Configuration", sessionRole: connectingSceneSession.role)
+        UISceneConfiguration(
+            name: "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
     }
 }
 ```

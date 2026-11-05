@@ -1,6 +1,7 @@
 import collections, json, sys
 
-USAGE = 'usage: trace_summary.py <result json of a trace or loss run> [arm]  (counts where the meaning of each traced comment is: main code, tests or documents)'
+USAGE = ('usage: trace_summary.py <result json of a trace or loss run> [arm]  '
+         '(counts where the meaning of each traced comment is: main code, tests or documents)')
 
 
 def place_kind(path):
@@ -13,8 +14,10 @@ def final(item, check):
     verdict, where = item['verdict'], item['where']
     if check is None: return verdict, where
     if check['verdict'] == 'information is in the new version':
-        return ('found by verifier' if verdict in ('lost', 'partly') else verdict), (check['where'] if verdict in ('lost', 'partly') else where)
-    if check['verdict'] == 'information is partly in the new version': return 'partly', check['where'] or where
+        return (('found by verifier' if verdict in ('lost', 'partly') else verdict),
+                (check['where'] if verdict in ('lost', 'partly') else where))
+    if check['verdict'] == 'information is partly in the new version':
+        return 'partly', check['where'] or where
     if check['verdict'] == 'information is no longer needed': return 'no longer needed', where
     return 'lost', where
 
@@ -32,7 +35,9 @@ def main():
     out = json.load(open(sys.argv[1]))
     result = out.get('result', out)
     result = json.loads(result) if isinstance(result, str) else result
-    chains = [r for r in result.get('results', result.get('loss', [])) if r and r.get('kind', 'loss') == 'loss' and (len(sys.argv) == 2 or r.get('arm') == sys.argv[2])]
+    chains = [r for r in result.get('results', result.get('loss', []))
+              if r and r.get('kind', 'loss') == 'loss'
+              and (len(sys.argv) == 2 or r.get('arm') == sys.argv[2])]
     counts = collections.Counter()
     per_id = {}
     for chain in chains:
@@ -42,7 +47,8 @@ def main():
             place = best_place(*final(item, checks.get(item['id'])))
             counts[place] += 1
             per_id[f"{chain['project']}:{item['id']}"] = place
-    print(json.dumps({'counts': dict(counts), 'total': sum(v for k, v in counts.items() if k != 'part not checked')}))
+    print(json.dumps({'counts': dict(counts),
+                      'total': sum(v for k, v in counts.items() if k != 'part not checked')}))
     json.dump(per_id, open(sys.argv[1] + '.places.json', 'w'))
 
 

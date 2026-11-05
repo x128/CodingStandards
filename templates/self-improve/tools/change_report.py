@@ -1,6 +1,7 @@
 import filecmp, os, re, subprocess, sys
 
-USAGE = 'usage: change_report.py <project before the change> <project after the change> [folder of acceptance tests ...]'
+USAGE = ('usage: change_report.py <project before the change> <project after the change> '
+         '[folder of acceptance tests ...]')
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -27,7 +28,8 @@ def changed_files(before, after, part):
     for folder, _, files in os.walk(root_before):
         for name in files:
             relative = os.path.relpath(os.path.join(folder, name), root_before)
-            if name.endswith('.kt') and not os.path.exists(os.path.join(root_after, relative)): changed.append(('removed', relative))
+            if name.endswith('.kt') and not os.path.exists(os.path.join(root_after, relative)):
+                changed.append(('removed', relative))
     return sorted(changed, key=lambda c: c[1])
 
 
@@ -35,7 +37,8 @@ def last_line_of(command):
     if command[0] == 'sh' and not os.path.exists(command[1]):
         return [f'no {os.path.basename(command[1])}'], ''
     out = subprocess.run(command, capture_output=True, text=True).stdout
-    lines = [l for l in out.split('\n') if re.match(r'(OK|Tests run|FAILED|BUILD|LINT|COMMENTS|CRAP)', l)]
+    lines = [l for l in out.split('\n')
+             if re.match(r'(OK|Tests run|FAILED|BUILD|LINT|COMMENTS|CRAP)', l)]
     return lines, out
 
 
@@ -58,8 +61,10 @@ def main():
     lint, _ = last_line_of(['sh', os.path.join(after, 'lint.sh')])
     print('   lint:', ' | '.join(lint[-3:]) if lint else 'no result')
     for acceptance in sys.argv[3:]:
-        result, output = last_line_of(['sh', os.path.join(TOOLS, 'run-extra.sh'), after, acceptance])
-        print(f'   acceptance {os.path.basename(acceptance)}:', result[-1] if result else 'no result')
+        result, output = last_line_of(
+            ['sh', os.path.join(TOOLS, 'run-extra.sh'), after, acceptance])
+        print(f'   acceptance {os.path.basename(acceptance)}:',
+              result[-1] if result else 'no result')
         for name in failing_tests(output): print('      failing:', name[:150])
 
 

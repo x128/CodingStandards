@@ -1,5 +1,8 @@
 ---
-description: Find what is wrong in code — inconsistencies, potential problems, complications, replication — and give each finding options for the user to choose from. Use when asked to review code, a file or the working diff.
+description: >-
+  Find what is wrong in code — inconsistencies, potential problems, complications, replication — and
+  give each finding options for the user to choose from. Use when asked to review code, a file or
+  the working diff.
 ---
 
 # Code Review Skill
@@ -36,9 +39,9 @@ told what to hunt for, so it always runs the same four hunts. The task loop has 
    `CLAUDE.md` that lists features not built yet states intent, not a false claim.
 2. **Read the surroundings** — the module's other functions, its conventions, how similar cases
    are handled — before judging.
-3. **Run the four hunts**, then check against CLEAN_CODE.md and the language standard for what
-   the hunts missed, including a reason, warning, unit, source or promise that only a test name
-   or the plan gives (CLEAN_CODE.md, "Comments"). With `--strict`, include minor style issues;
+3. **Run the four hunts**, then check against CLEAN_CODE.md and the language standard for what the
+   hunts missed, including a reason, warning, unit, source or promise that only a test name or the
+   requirements give (CLEAN_CODE.md, "Comments"). With `--strict`, include minor style issues;
    with `--hunt`, run only that hunt.
 4. **Prove or mark each finding**: a concrete case where it goes wrong (input and wrong output, a
    sequence of calls), or the plain word that it is unproven.
@@ -107,12 +110,9 @@ different schema; this skill does not triage it.
 - Short plain sentences: first what the user sees, then why. No metaphors and no chains of
   subordinate clauses: a finding nobody reads is worth nothing.
 - Each thing is called by its name in the code: `Dispatchers.Default`, `println`,
-  `PdfRenderer.close()`, `sampleDir()`, `contentPadding`. An invented generalization — «вычислительный
-  пул», «журнал», «шасси», «замер», «инструментальный тест», «расхождение в данных» — is unknown to
-  the reader, and the finding is not read at all. A word that is in neither the code nor the tasks does not appear,
-  unless the same sentence explains it.
+  `PdfRenderer.close()`, `sampleDir()`, `contentPadding`.
 - A number comes with where it is from. "The cache holds 96 MB" is the question "why 96?", not a
-  fact. "96 MB is the reader's share of the 500 MB peak in §13 of the plan, which it shares with
+  fact. "96 MB is the reader's share of the 500 MB peak in the requirements, which it shares with
   the browser" is a fact.
 - The options include the move the user would make themselves. For a document under a password,
   the first obvious move is to ask for the password. A list without that move is wrong, however
@@ -134,7 +134,11 @@ Options follow EXECUTION_GUIDE.md, "Reporting to the user", and:
   what it costs.
 
 BAD: `{"do": "Note in T-002, decide there"}`
-GOOD: `{"do": "Do not fix now; add to T-002 — to its description, that the launch screen takes the app's theme; to its exit criteria, that a cold start in dark mode shows no white flash", "why": "T-002 rewrites the launch and touches the same files, so it is done there at no extra cost; left out, the flash is found again later."}`
+
+GOOD: `{"do": "Do not fix now; add to T-002 — to its description, that the launch screen takes the
+app's theme; to its exit criteria, that a cold start in dark mode shows no white flash", "why":
+"T-002 rewrites the launch and touches the same files, so it is done there at no extra cost; left
+out, the flash is found again later."}`
 
 ### After the user answers
 
@@ -163,8 +167,8 @@ writes to git", says. In the loop, `land.sh` writes it.
 - Read the target, its module, the standards, and other call sites
 - Run tests or a snippet to prove a finding
 - Write the findings file where `triage.py --where` says, and launch `triage.py`
-- Edit project files (source, the tracker, the plan's Decisions Log) only to carry out the option
-  the user chose
+- Edit project files (source, the tracker, the requirements) only to carry out the option the user
+  chose
 
 ## Example Usage
 

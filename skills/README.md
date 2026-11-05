@@ -30,7 +30,8 @@ every session. Link each skill there from the project root; the links are relati
 in every clone where the submodule is initialised:
 
 ```bash
-mkdir -p .claude/skills && for s in CodingStandards/skills/*/; do ln -sfn "../../${s%/}" ".claude/skills/$(basename "$s")"; done
+mkdir -p .claude/skills && for s in CodingStandards/skills/*/; do \
+  ln -sfn "../../${s%/}" ".claude/skills/$(basename "$s")"; done
 ```
 
 Commit `.claude/skills/` with the project. A skill added to the standards later needs the same

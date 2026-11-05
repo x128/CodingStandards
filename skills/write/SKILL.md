@@ -1,5 +1,9 @@
 ---
-description: 'Write a message a person understands on the first reading: their question first, then what happened, why, what came of it and what they decide, in their words, without the machinery of the work. Use for every report, answer or question to the user, and for anything else written for a person to read.'
+description: >-
+  Write a message a person understands on the first reading: their question first, then what
+  happened, why, what came of it and what they decide, in their words, without the machinery of the
+  work. Use for every report, answer or question to the user, and for anything else written for a
+  person to read.
 ---
 
 # Write Skill

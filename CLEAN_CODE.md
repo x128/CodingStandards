@@ -135,9 +135,22 @@ totalSeconds = days * SECONDS_PER_DAY
 
 ### One Thing per Function
 
-A function does one thing: each step in it is one level of abstraction below its name. A part that can get a name which does not just restate its code becomes a function with that name. A function whose body says no more than its name is put back where it is called; a use case under option (b) of the plan's row "A request with nothing to check or decide" stays (ARCHITECTURE.md, "A request with no rules"). Size is not counted in lines, for functions, classes, files or tests.
+A function does one thing: each step in it is one level of abstraction below its name. A part that
+can get a name which does not just restate its code becomes a function with that name. A function
+whose body says no more than its name is put back where it is called; a use case under the second
+answer to "A request with nothing to check or decide" stays (ARCHITECTURE.md, "A request with no
+rules"). Size is not counted in lines, for functions, classes, files or tests.
 
-**CRAP score.** Each function is measured by its CRAP score: complexity² × (1 − coverage)³ + complexity. Complexity is the number of decisions in the function plus one. Coverage is the share of the function that the project's automated tests run, from 0 to 1. The score is 8 or below: a fully tested function may have up to 8 paths, an untested one two. Above 8 the function is split into named parts or covered by tests. A function that reads better whole, such as one `when` over the options of a command line or a flat list of checks in the order of the rules, each returning its refusal, may stay above 8; it is not wrapped in a helper type only to lower the score, and the exception is recorded in the Decisions Log of the implementation plan. (The formula is Savoia's and Evans' crap4j; 8 is the limit at which R. C. Martin's crap4java fails a build. crap4j's own limit of 30 was set for old, untested code.)
+**CRAP score.** Each function is measured by its CRAP score: complexity² × (1 − coverage)³ +
+complexity. Complexity is the number of decisions in the function plus one. Coverage is the share of
+the function that the project's automated tests run, from 0 to 1. The score is 8 or below: a fully
+tested function may have up to 8 paths, an untested one two. Above 8 the function is split into
+named parts or covered by tests. A function that reads better whole, such as one `when` over the
+options of a command line or a flat list of checks in the order of the rules, each returning its
+refusal, may stay above 8; it is not wrapped in a helper type only to lower the score, and the
+exception is recorded in the requirements. (The formula is Savoia's and Evans' crap4j; 8 is the
+limit at which R. C. Martin's crap4java fails a build. crap4j's own limit of 30 was set for old,
+untested code.)
 
 ```
 // BAD: Function doing multiple things
@@ -231,7 +244,8 @@ addAndReturnCount(item) {
     return list.size()
 }
 
-// GOOD: Separate commands from queries: add() is a command that changes state, count() is a query that returns data
+// GOOD: Separate commands from queries:
+// add() is a command that changes state, count() is a query that returns data
 add(item) {
     list.add(item)
 }
@@ -439,7 +453,8 @@ class AreaCalculator {
 Subtypes must be substitutable for their base types.
 
 ```
-// BAD: Square violates Rectangle contract: its setWidth() and setHeight() change both sides, which breaks expectations
+// BAD: Square violates Rectangle contract:
+// its setWidth() and setHeight() change both sides, which breaks expectations
 class Rectangle {
     setWidth(w) { width = w }
     setHeight(h) { height = h }
@@ -523,7 +538,8 @@ class Robot implements Workable {
 Depend on abstractions, not concretions.
 
 ```
-// BAD: High-level depends on low-level: OrderService creates its concrete database and mailer itself
+// BAD: High-level depends on low-level:
+// OrderService creates its concrete database and mailer itself
 class OrderService {
     constructor() {
         this.database = new MySQLDatabase()
@@ -619,7 +635,8 @@ reverse(str) {
 ### YAGNI (You Aren't Gonna Need It)
 
 ```
-// BAD: Building for imaginary future: a cache "we might need", a load balancer "for scale", plugins "for extensibility"
+// BAD: Building for imaginary future:
+// a cache "we might need", a load balancer "for scale", plugins "for extensibility"
 class UserService {
     constructor() {
         this.cache = new DistributedCache()
@@ -653,7 +670,7 @@ Code has no comments. What you want to write in a comment becomes code that says
 | what a function is for | a better name for the function |
 | what a value means, or its unit | a name, a named constant or a type |
 | what must be true here | a type that allows nothing else, or a check that fails: `require`, `check`, an assertion |
-| why the obvious way is not used, or a warning | a name at that place in the code that says it, such as `deleteTripRowFirst()`, and a test whose name gives the whole reason and that fails when the code is changed the obvious way |
+| why the obvious way is not used, or a warning | a name at that place in the code that says it, and a test whose name gives the whole reason and that fails when the code is changed the obvious way |
 | which outside specification, law or algorithm the code follows | the name of the function, and of its test |
 | which rule of the project's requirements the code follows | the name of its test; the name in the code says the rule in words |
 | what a function promises: what it does with a row that is missing, what it never throws | the name of the function, such as `deleteIfPresent`, a type for each outcome, and a test |
@@ -661,15 +678,33 @@ Code has no comments. What you want to write in a comment becomes code that says
 | who changed what, what was tried | the commit message |
 | old code that might come back | the commit message that deletes it, saying what it did; the history keeps the code |
 
-Tests follow the same rule, with one fixed exception: every test marks its three parts with `// Arrange`, `// Act`, `// Assert` or with `// Given`, `// When`, `// Then`, in capitals or in lower case. A project keeps to one set. Everything else a test has to say goes into its name, its helpers and its assertions.
+Tests follow the same rule, with one fixed exception: every test marks its parts with
+`// Arrange`, `// Act`, `// Assert` or with `// Given`, `// When`, `// Then`, in capitals or in
+lower case. A project keeps to one set. Everything else a test has to say goes into its name, its
+helpers and its assertions.
 
-**A comment is never just deleted.** What an existing comment says first moves where the table says. A reason, a warning, a unit, an outside source or a promise goes into the code where its reader looks — a name, a type, a check — and a test pins it; a test, a plan or a tracker alone is not where the reader of the code looks. The number of a rule of the project's requirements goes into the test name. Only work still to do goes to the tracker, and only history to the commit message. Only then does the comment go. If nothing in the table carries it, the comment stays until something does. Information is not lost.
+**A comment is never just deleted.** What an existing comment says first moves where the table says.
+A reason, a warning, a unit, an outside source or a promise goes into the code where its reader
+looks — a name, a type, a check — and a test pins it; a test, a plan or a tracker alone is not where
+the reader of the code looks. Only work still to do goes to the tracker, and only history to the
+commit message. Only then does the comment go. If nothing in the table carries it, the comment stays
+until something does. Information is not lost.
 
-**Where there is no comment, the same holds.** A reason, a warning, a unit, an outside source or a promise that only a test name, the plan or the tracker gives gets a name in the code it explains, as the table shows, and a review reports each one it finds.
+**Where there is no comment, the same holds.** A reason, a warning, a unit, an outside source or a
+promise that only a test name, the requirements or the tracker gives gets a name in the code it
+explains, as the table shows.
 
-**A project may allow a kind of comment.** The row "Comments in the code" of the Decisions Log of the implementation plan records the choice: (a) no comments besides the test markers, or (b) the kinds named there, such as a license header that a contract requires or reference documentation of a library that other teams use, and where they go. Only those kinds are written, and only there.
+**A project may allow comments.** The requirement "Comments in the code" records the choice: (a)
+code without comments, or (b) comments the writer writes and updates where it sees fit. Under (a), a
+kind a project needs, such as reference documentation of a library that other teams use, is added to
+it when it comes up, with where it goes; only those kinds are written, and only there.
 
-**The lint step checks it.** The project's lint step fails when the source holds a comment other than the test markers and the kinds that the Decisions Log allows (`templates/review/project/gates.sh` has the commands). A directive that a tool reads from a comment, such as `// swiftlint:disable:next`, is not a comment to a reader; it is used only where an annotation cannot do the same.
+**The lint step checks it.** Under (a), the project's lint step fails when the source holds a
+comment other than the test markers and the kinds that the requirements allow
+(`templates/review/project/gates.sh` has the commands). A license header that the project's license
+requires is not a comment to a reader, and neither is a directive that a tool reads from a comment,
+such as `// swiftlint:disable:next`; a directive is used only where an annotation cannot do the
+same.
 
 ```
 // BAD: comments repeat what the code says
@@ -701,7 +736,8 @@ if (fileSystem.sizeOf(file.path) > 5000000) {
 }
 // size = file.size
 
-// GOOD: names say what the code does and where it leaves the obvious way; each reason is a test that fails if the code goes the obvious way
+// GOOD: names say what the code does and where it leaves the obvious way;
+// each reason is a test that fails if the code goes the obvious way
 IOS_BACKGROUND_TASK_LIMIT_SECONDS = 30
 MAX_UPLOAD_BYTES = 5000000
 
@@ -713,8 +749,13 @@ isTooBigToUpload(file) {
     return fileSystem.sizeOf(file.path) > MAX_UPLOAD_BYTES
 }
 
-test("a background task ends within the 30 s that iOS gives it; after that iOS terminates the app") { ... }
-test("a file over 2 GB is too big to upload, although the library gives its size as 0 (library issue #412)") { ... }
+test(
+    "a background task ends within the 30 s that iOS gives it; after that iOS terminates the app"
+) { ... }
+test(
+    "a file over 2 GB is too big to upload, " +
+    "although the library gives its size as 0 (library issue #412)"
+) { ... }
 
 // BAD: the comments describe the condition, and give the business rule and its source
 // Check if user is admin
@@ -766,7 +807,8 @@ test("the Content-Range header is written as RFC 9110, section 14.4 defines it")
 ### Fail Fast
 
 ```
-// BAD: Continue with bad state: missing data is "fixed" with defaults and the function goes on with questionable data
+// BAD: Continue with bad state:
+// missing data is "fixed" with defaults and the function goes on with questionable data
 processOrder(order) {
     if (order == null) {
         order = new Order()
@@ -777,7 +819,8 @@ processOrder(order) {
     ...
 }
 
-// GOOD: A bug is thrown at once; an outcome the requirements name is returned; after the checks the function can trust the order
+// GOOD: A bug is thrown at once; an outcome the requirements name is returned;
+// after the checks the function can trust the order
 processOrder(order): ProcessOrderResult {
     if (order == null) throw InvalidArgumentError("Order required")
     if (order.items == null) throw InvalidStateError("Order has no items")
@@ -789,10 +832,13 @@ processOrder(order): ProcessOrderResult {
 
 ### Use Specific Exceptions
 
-This is for the code that touches the storage, network or platform. It catches the library's own exception types, never everything, and throws an exception type that the application declares, with the original as the cause.
+This is for the code that touches the storage, network or platform. It catches the library's own
+exception types, never everything, and throws an exception type that the application declares, with
+the original as the cause.
 
 ```
-// BAD: Catches everything and throws a generic exception without the cause, so nobody can tell what went wrong
+// BAD: Catches everything and throws a generic exception without the cause,
+// so nobody can tell what went wrong
 save(user) {
     try {
         database.insert(user)
@@ -845,11 +891,20 @@ loadConfig() {
 
 A function reports a failure according to its kind.
 
-- A bug: a broken precondition or invariant. It is thrown as an exception. No code catches it in order to continue. Only the top-level handler catches it, to log it and stop the operation.
-- An outcome that the requirements name, such as "book not found" or "no connection". It is returned as a case of the function's result type. The signature names it and the caller must handle it.
-- Any other failure of storage, network or the platform. The code that touches the storage, network or platform throws it as an exception type that the application declares, with the library's exception kept as the cause. It wraps only the library's own failure types, never everything. Each side writes its catch once: the code that touches a library catches through one function, and the code that starts operations catches through one function. One place catches it: the code that started the operation. It tells the user and abandons or retries the operation. Code in between does not catch it in order to continue; it may clean up and rethrow.
+- A bug: a broken precondition or invariant. It is thrown as an exception. No code catches it in
+  order to continue. Only the top-level handler catches it, to log it and stop the operation.
+- An outcome that the requirements name, such as "book not found" or "no connection". It is returned
+  as a case of the function's result type. The signature names it and the caller must handle it.
+- Any other failure of storage, network or the platform. The code that touches the storage, network
+  or platform throws it as an exception type that the application declares, with the library's
+  exception kept as the cause. It wraps only the library's own failure types, never everything. Each
+  side writes its catch once: the code that touches a library catches through one function, and the
+  code that starts operations catches through one function. One place catches it: the code that
+  started the operation. It tells the user and abandons or retries the operation. Code in between
+  does not catch it in order to continue; it may clean up and rethrow.
 
-Cancellation is not a failure. It is passed on as it is: never wrapped, never shown to the user as an error.
+Cancellation is not a failure. It is passed on as it is: never wrapped, never shown to the user as
+an error.
 
 ```
 // BAD: An outcome the requirements name is thrown
@@ -859,7 +914,9 @@ getUser(id) {
     return user
 }
 
-// GOOD: The outcome is a case of the function's result type; the code that started the operation handles every case and is the one place that catches StorageException
+// GOOD: The outcome is a case of the function's result type;
+// the code that started the operation handles every case
+// and is the one place that catches StorageException
 getUser(id): GetUserResult {
     user = userRepository.find(id)
     if (user == null) return GetUserResult.UserNotFound(id)
@@ -971,7 +1028,6 @@ test_user_creation() {
 
 // GOOD: Separate tests for separate behaviors
 test_createUser_setsNameFromInput() {
-    // Arrange
     // Act
     user = createUser(name: "Alice")
 
@@ -980,7 +1036,6 @@ test_createUser_setsNameFromInput() {
 }
 
 test_createUser_logsToAuditTrail() {
-    // Arrange
     // Act
     createUser(data)
 
@@ -989,7 +1044,6 @@ test_createUser_logsToAuditTrail() {
 }
 
 test_createUser_sendsWelcomeEmail() {
-    // Arrange
     // Act
     createUser(data)
 
@@ -1034,12 +1088,15 @@ test_update_changesUserName() {
 ## Code Smells
 
 ### Long Function
-**Smell:** Does more than one thing: parts of it could get names of their own, or its CRAP score is above 8 without a recorded exception
-**Fix:** Extract the parts as functions named after what they do, or cover the function with tests; a function that reads better whole keeps its form and its exception is recorded ("One Thing per Function")
+**Smell:** Does more than one thing: parts of it could get names of their own, or its CRAP score is
+above 8 without a recorded exception **Fix:** Extract the parts as functions named after what they
+do, or cover the function with tests; a function that reads better whole keeps its form and its
+exception is recorded ("One Thing per Function")
 
 ### Large Class
-**Smell:** More than one responsibility: more than one reason to change, a vague name such as `Manager` or `Processor`, fields that only some of its functions use
-**Fix:** Split into focused classes. Never split by line count
+**Smell:** More than one responsibility: more than one reason to change, a vague name such as
+`Manager` or `Processor`, fields that only some of its functions use **Fix:** Split into focused
+classes. Never split by line count
 
 ### Long Parameter List
 **Smell:** More than 3 parameters
@@ -1111,7 +1168,8 @@ test_update_changesUserName() {
 ### Error Handling
 - [ ] A bug is thrown at once and not caught in order to continue
 - [ ] An outcome the requirements name is returned as a case of the result type, not thrown
-- [ ] Storage, network and platform code catches the library's own exception types and throws an exception type the application declares, with the cause
+- [ ] Storage, network and platform code catches the library's own exception types and throws an
+      exception type the application declares, with the cause
 - [ ] Only the code that started the operation catches that exception
 - [ ] No swallowed exceptions
 - [ ] Cancellation is passed on, never wrapped

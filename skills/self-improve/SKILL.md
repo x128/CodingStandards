@@ -1,14 +1,17 @@
 ---
-description: Change the coding standards and their skills by evidence, measuring each change before and after. Use when a standard or a skill needs to change.
+description: >-
+  Change the coding standards and their skills by evidence, measuring each change before and after.
+  Use when a standard or a skill needs to change.
 ---
 
 # Self-Improve Skill
 
 Improves these standards by evidence. Agents build and refactor projects under the standards;
-measurements show what a rule makes them do; every change of a rule is measured before and after. The human sets the direction, corrects, and confirms the cost. It
-needs a direction — from the human, or from what a refactoring or a review found about the rules —
-and a work folder outside every repository; it gives back the changed standards with the evidence
-for each change. Its tools are in `templates/self-improve/`.
+measurements show what a rule makes them do; every change of a rule is measured before and after.
+The human sets the direction, corrects, and confirms the cost. It needs a direction — from the
+human, or from what a refactoring or a review found about the rules — and a work folder outside
+every repository; it gives back the changed standards with the evidence for each change. Its tools
+are in `templates/self-improve/`.
 
 ## Instructions
 
@@ -33,17 +36,17 @@ better and the number that will show it, what must not get worse and its number,
 means the change failed.
 
 - **The human decides** a new rule, a removed rule, anything against a decision of theirs, and
-  anything they would want to see first.
-  Put it in two or three plain sentences with the evidence and the cost, so they can say "go",
-  "not now" or "go this other way". Propose the wording yourself; the human corrects.
+  anything they would want to see first. Put it in two or three plain sentences with the evidence
+  and the cost, so they can say "go", "not now" or "go this other way". Propose the wording
+  yourself; the human corrects.
 - **You decide** a change that follows from the evidence and from what the human already decided:
   make it, and bring back the numbers before and after. A default you chose where the standards
   needed one answer you may change on evidence; a rule the human decided goes in once it passes
   the edit gates, and a measurement does not revert it.
 - **Fix obvious defects without asking**: an example that does not compile, two files that say
-  different things, a broken link. Of two files that disagree, the one that agrees with the
-  human's decisions is right; if neither does, it is a question of direction. Such a fix passes
-  edit gates 1 to 3; gate 4 only when the meaning of a rule changes.
+  different things, a broken link. Of two files that disagree, the one that agrees with the human's
+  decisions is right; if neither does, it is a question of direction. Such a fix passes edit gates 1
+  to 3; gate 4 only when the meaning of a rule changes.
 
 ### 3. The cost
 
@@ -70,12 +73,12 @@ versions names `diff -ru`. Before any project sees the change:
 3. **One meaning:** a fresh agent reads every file that names the changed thing and lists what
    contradicts it.
 4. **Readers:** three fresh agents, given nothing but the changed text, apply it to five to ten
-   concrete cases; if they answer differently, the text is not clear yet. The final text is
-   checked as it will be committed.
+   concrete cases; if they answer differently, the text is not clear yet. The final text is checked
+   as it will be committed.
 5. **A changed skill is run**, on a small project made for it, and a second agent compares what it
    did with what its name and its text say.
-6. **The loop's scripts:** after a change to `review.sh`, `land.sh`, the schemas or the decision
-   rules, `templates/review/lib/selftest.sh` passes.
+6. **The loop's scripts:** after a change to `review.sh`, `land.sh`, `publish.sh`, the schemas or
+   the decision rules, `templates/review/lib/selftest.sh` passes.
 
 ### 5. Measure before and after
 
@@ -105,31 +108,32 @@ written outside the project folders. Scripts remove folders with `rm -rf "${DIR:
 
 **The arms:** the standards before the change (A) against after it (B), from the same start and
 with the same number of rounds.
-- Build: a planner, then fresh engineers, one epic per sitting (`workflows/build.js`); two
-  projects per arm when the difference is expected to be small.
-- Refactor: a reviewer lists where the code departs from the standards, fresh engineers work
-  through the list (`workflows/refactor.js`), round after round; quality must hold or improve from
-  round to round. Before measuring, check that the
-  reviewer's list cites a changed line; if none does, the change was not tested: say so and stop.
+- Build: a planner, then fresh engineers, one epic per sitting (`workflows/build.js`); two projects
+  per arm when the difference is expected to be small.
+- Refactor: a reviewer lists where the code departs from the standards, fresh engineers work through
+  the list (`workflows/refactor.js`), round after round; quality must hold or improve from round to
+  round. Before measuring, check that the reviewer's list cites a changed line; if none does, the
+  change was not tested: say so and stop.
 - The assignments add only these rules of the measurement:
   - every one: work only in the project folder, ignore notes of other projects, no network, no
-    git, nobody can be asked, `REQUIREMENTS.md` is not edited;
+    git, nobody can be asked, in `REQUIREMENTS.md` only what the standards ask to record;
   - a build: 6 to 9 epics of comparable size, one per sitting, the build and the lint pass after
-    each; a plan that turns out wrong is corrected with a note in its Decisions Log;
+    each; a plan that turns out wrong is corrected;
   - a refactoring: it keeps the behaviour, the entry points of screens and background jobs, the
-    public functions of the ViewModels with their state and event types, and what the tests
-    check; the build passes after every item and the lint at the end; what would wait for the
-    human is an item, or is marked "not done", with its reason, except a decision of the plan
-    the change alters or one the standards ask to record (into the Decisions Log) and work still
-    to do (a task in the tracker and the plan); what a removed comment said that belongs in a
-    commit message goes into the item; an item no rule asks for, or that made the code worse, is
-    undone; a test removed or loosened is named; where an item's way breaks the rule it cites,
-    the rule wins; notes on the standards go under their own heading; a sitting stops before an
-    item too large for what is left of it;
-  - a change of `CHANGES.md`: only the code, its tests and the Decisions Log.
+    public functions of the ViewModels with their state and event types, and what the tests check;
+    the build passes after every item and the lint at the end; what would wait for the human is an
+    item, or is marked "not done", with its reason, except a decision of the requirements the change
+    alters or one the standards ask to record (into the requirements) and work still to do (a task
+    in the tracker and the plan); what a removed comment said that belongs in a commit message goes
+    into the item; an item no rule asks for, or that made the code worse, is undone; a test removed
+    or loosened is named; where an item's way breaks the rule it cites, the rule wins; notes on the
+    standards go under their own heading; a sitting stops before an item too large for what is left
+    of it;
+  - a change of `CHANGES.md`: only the code, its tests and the decisions recorded in the
+    requirements.
 - A run cut off is not resumed when its branches ran in parallel: read where each project stopped
-  from its `TASK_TRACKER.md`, or its `REFACTORING.md` in a refactoring, and start a new run of only the unfinished parts (`skipPlan`, `skipReview`,
-  `firstSitting` in the workflows).
+  from its `TASK_TRACKER.md`, or its `REFACTORING.md` in a refactoring, and start a new run of only
+  the unfinished parts (`skipPlan`, `skipReview`, `firstSitting` in the workflows).
 
 **The measures** (`workflows/measure.js`, `workflows/loss.js`, scripts in `tools/`):
 - behaviour: testers write the hidden scenarios as tests through the screens; rerun them yourself
@@ -194,8 +198,10 @@ reading it.
 ## Allowed Prompts
 - Read the standards and the work folder
 - Change the standards and the work folder
-- Run agents and workflows after saying their cost; above 1 million tokens, only after the human's yes
-- Run compilers, builds, tests and measuring scripts in the work folder; compare folders with `diff -ru`
+- Run agents and workflows after saying their cost; above 1 million tokens, only after the human's
+  yes
+- Run compilers, builds, tests and measuring scripts in the work folder; compare folders with
+  `diff -ru`
 - Never touch the human's projects; never download without naming the file, its source and its
   size, and asking; ask also before the first run of a tool that downloads on its own, and when
   the size cannot be known, say so

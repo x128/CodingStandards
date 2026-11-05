@@ -1006,7 +1006,8 @@ const KW = "fun|val|var|class|object|interface|import|package|return|if|else|whe
   + "lateinit|companion|init|by|is|in|as|null|true|false|this|super|try|catch|finally|throw|"
   + "typealias|operator|inline|expect|actual|func|let|struct|extension|protocol|guard|self|"
   + "def|from|not|and|or|async|await|static|final|new|void|int|String";
-const RX = new RegExp('("(?:[^"\\\\\\n]|\\\\.)*"|//[^\\n]*|#[^\\n]*|/\\\\*[\\\\s\\\\S]*?\\\\*/)|\\\\b(' + KW + ')\\\\b', 'g');
+const RX = new RegExp('("(?:[^"\\\\\\n]|\\\\.)*"|//[^\\n]*|#[^\\n]*|/\\\\*[\\\\s\\\\S]*?\\\\*/)|\
+\\\\b(' + KW + ')\\\\b', 'g');
 // code lands in a <td>, where quotes are harmless — and keeping them literal is
 // what lets the string rule below still match.
 const escCode = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));

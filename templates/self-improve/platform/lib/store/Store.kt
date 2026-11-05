@@ -64,7 +64,8 @@ class Table internal constructor(private val file: File, private val broken: Boo
         if (broken) throw StoreException("Cannot write ${file.name}")
         try {
             val directory = file.absoluteFile.parentFile
-            if (!directory.isDirectory && !directory.mkdirs()) throw IOException("Cannot create $directory")
+            if (!directory.isDirectory && !directory.mkdirs())
+                throw IOException("Cannot create $directory")
             val temporary = File(directory, file.name + ".tmp")
             temporary.writeText(rows.joinToString("") { format(it) + "\n" }, Charsets.UTF_8)
             Files.move(temporary.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
@@ -74,7 +75,9 @@ class Table internal constructor(private val file: File, private val broken: Boo
     }
 
     private fun format(row: Row): String =
-        (listOf(encode(row.id)) + row.fields.map { (key, value) -> encode(key) + "=" + encode(value) }).joinToString("\t")
+        (listOf(encode(row.id)) + row.fields.map { (key, value) ->
+            encode(key) + "=" + encode(value)
+        }).joinToString("\t")
 
     private fun parse(line: String): Row {
         val parts = line.split("\t")

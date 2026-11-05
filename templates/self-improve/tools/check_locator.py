@@ -1,6 +1,7 @@
 import collections, json, os, sys
 
-USAGE = 'usage: check_locator.py <project root> <locator answer as json> [locator answer for the same project before the change]'
+USAGE = ('usage: check_locator.py <project root> <locator answer as json> '
+         '[locator answer for the same project before the change]')
 
 
 def where_the_quote_is(source_root, file, line, quote):
@@ -22,12 +23,16 @@ def main():
     source_root = os.path.join(sys.argv[1], 'src/main/kotlin')
     after = answer_of(sys.argv[2])
     before = answer_of(sys.argv[3]) if len(sys.argv) == 4 else None
-    quotes = collections.Counter(where_the_quote_is(source_root, r['file'], r['line'], r['quote']) for r in after['rules'] if r['found'] != 'no')
+    quotes = collections.Counter(where_the_quote_is(source_root, r['file'], r['line'], r['quote'])
+                                 for r in after['rules'] if r['found'] != 'no')
     print('quotes of the rules:', dict(quotes))
-    copies = collections.Counter(where_the_quote_is(source_root, c['file'], c['line'], c['quote']) for r in after['rules'] for c in r['also_decided_in'])
+    copies = collections.Counter(where_the_quote_is(source_root, c['file'], c['line'], c['quote'])
+                                 for r in after['rules'] for c in r['also_decided_in'])
     print('quotes of the copies:', dict(copies))
-    failure_places = after['failures']['library_exception_first_caught'] + after['failures']['general_message_produced_in']
-    failures = collections.Counter(where_the_quote_is(source_root, f['file'], f['line'], f['quote']) for f in failure_places)
+    failure_places = (after['failures']['library_exception_first_caught']
+                      + after['failures']['general_message_produced_in'])
+    failures = collections.Counter(where_the_quote_is(source_root, f['file'], f['line'], f['quote'])
+                                   for f in failure_places)
     print('quotes of the failures:', dict(failures))
     print('found:', dict(collections.Counter(r['found'] for r in after['rules'])))
     print('kind:', dict(collections.Counter(r['kind'] for r in after['rules'])))
@@ -37,10 +42,14 @@ def main():
         copies_before = len(earlier['also_decided_in']) if earlier else None
         if rule['also_decided_in'] or rule['found'] != 'yes' or copies_before:
             change = f'{copies_before} -> ' if earlier else ''
-            print(f"   {rule['id'][:3]} {rule['found']} {rule['kind']} copies {change}{len(rule['also_decided_in'])} | {rule['note'][:180]}")
+            print(f"   {rule['id'][:3]} {rule['found']} {rule['kind']} "
+                  f"copies {change}{len(rule['also_decided_in'])} | {rule['note'][:180]}")
     units = after['units']
-    print('use cases:', len(units), '| body is one call:', sum(1 for u in units if u['one_call']), '| decide something:', sum(1 for u in units if u['has_rule']))
-    print('library exceptions first caught in:', sorted({p['file'].split('/')[-1] for p in after['failures']['library_exception_first_caught']}))
+    print('use cases:', len(units), '| body is one call:', sum(1 for u in units if u['one_call']),
+          '| decide something:', sum(1 for u in units if u['has_rule']))
+    print('library exceptions first caught in:',
+          sorted({p['file'].split('/')[-1]
+                  for p in after['failures']['library_exception_first_caught']}))
 
 
 main()

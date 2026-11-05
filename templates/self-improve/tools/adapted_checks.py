@@ -1,8 +1,12 @@
 import difflib, os, re, sys
 
-USAGE = 'usage: adapted_checks.py <acceptance tests as written> <the same tests after adapting them>  (lines that assert, expect a value or send an event must stay the same; every other changed line is printed)'
+USAGE = ('usage: adapted_checks.py <acceptance tests as written> '
+         '<the same tests after adapting them>  '
+         '(lines that assert, expect a value or send an event must stay the same; '
+         'every other changed line is printed)')
 
-CHECK = re.compile(r'\b(assert\w*|expect\w*|fail|check\w*|onEvent|send|\.on[A-Z]\w*)\s*[({<]|\bshouldBe\b|@Test')
+CHECK = re.compile(r'\b(assert\w*|expect\w*|fail|check\w*|onEvent|send|\.on[A-Z]\w*)\s*[({<]'
+                   r'|\bshouldBe\b|@Test')
 
 
 def lines(root):

@@ -310,7 +310,8 @@ val newState = state.copy(
 ### Dependency Injection
 
 ```kotlin
-// BAD: Creating dependencies internally; a test cannot replace them, and the database is a singleton
+// BAD: Creating dependencies internally;
+// a test cannot replace them, and the database is a singleton
 class VideoRepository {
     private val api = VideoApi()
     private val cache = DiskCache()
@@ -381,7 +382,8 @@ fun getVideoDuration(video: Video?): Int {
     return video!!.duration!!
 }
 
-// BAD: Assuming non-null after check in different scope; another thread can set cachedVideo to null in between, and then `!!` crashes
+// BAD: Assuming non-null after check in different scope;
+// another thread can set cachedVideo to null in between, and then `!!` crashes
 var cachedVideo: Video? = null
 
 fun processVideo() {
@@ -445,9 +447,17 @@ fun getTracks(): List<Track> {
 
 ### Return Named Outcomes, Not `Result`
 
-An outcome that the requirements name is returned, not thrown. When the requirements name more than one outcome, the use case returns its own sealed type with one case per outcome. When they name one, it returns the value itself. `kotlin.Result` is not used for outcomes, and a feature has no shared error type. A refusal that a rule of an entity gives is declared with that rule, and each use case carries it in one case (ARCHITECTURE.md, "Use Cases"). A repository answers "there is none" with `null`; the use case turns it into its own named outcome.
+An outcome that the requirements name is returned, not thrown. When the requirements name more than
+one outcome, the use case returns its own sealed type with one case per outcome. When they name one,
+it returns the value itself. `kotlin.Result` is not used for outcomes, and a feature has no shared
+error type. A refusal that a rule of an entity gives is declared with that rule, and each use case
+carries it in one case (ARCHITECTURE.md, "Use Cases"). A repository answers "there is none" with
+`null`; the use case turns it into its own named outcome.
 
-A failure that the requirements do not name (disk, database, network) is thrown as a `StorageException`. The use case does not catch it. The ViewModel that starts the use case catches it and shows a general error; all ViewModels do this through one function, so the `catch` is written once.
+A failure that the requirements do not name (disk, database, network) is thrown as a
+`StorageException`. The use case does not catch it. The ViewModel that starts the use case catches
+it and shows a general error; all ViewModels do this through one function, so the `catch` is written
+once.
 
 ```kotlin
 // BAD: Exceptions for expected failures
@@ -458,7 +468,8 @@ fun loadVideo(id: String): Video {
     return video
 }
 
-// BAD: The caller has no idea what to catch, so it also catches Exception for whatever else could happen
+// BAD: The caller has no idea what to catch,
+// so it also catches Exception for whatever else could happen
 fun caller() {
     try {
         val video = loadVideo(id)
@@ -497,7 +508,11 @@ class GetChapterUseCase(
     private val bookRepository: BookRepository,
     private val verseRepository: VerseRepository
 ) {
-    suspend operator fun invoke(bookId: Int, chapter: Int, language: Language): Result<List<Verse>> {
+    suspend operator fun invoke(
+        bookId: Int,
+        chapter: Int,
+        language: Language
+    ): Result<List<Verse>> {
         val book = bookRepository.getBookById(bookId)
             ?: return Result.failure(ReaderError.BookNotFound(bookId))
         if (!book.hasChapter(chapter)) return Result.failure(ReaderError.ChapterOutOfRange(chapter))
@@ -554,10 +569,18 @@ class ReaderViewModel(private val getChapter: GetChapterUseCase) : ViewModel() {
 
 ### Don't Catch Generic Exceptions
 
-Code that calls a storage, network or platform library catches only the exception types of that library, and only through one function, `storageCall`: never `Exception` or `Throwable`, and never `CancellationException`. It throws `StorageException`, a type that the domain layer declares, with the original as the cause. `runCatching` is not used in `suspend` functions: it catches `CancellationException` too. Programming errors such as `NullPointerException` or `IndexOutOfBoundsException` are not caught: they are bugs, and they crash. When common code of a multiplatform project cannot name the library's exception type, `storageCall` is an `expect` function with an `actual` on each platform (ARCHITECTURE.md, "Named Outcomes and Other Failures").
+Code that calls a storage, network or platform library catches only the exception types of that
+library, and only through one function, `storageCall`: never `Exception` or `Throwable`, and never
+`CancellationException`. It throws `StorageException`, a type that the domain layer declares, with
+the original as the cause. `runCatching` is not used in `suspend` functions: it catches
+`CancellationException` too. Programming errors such as `NullPointerException` or
+`IndexOutOfBoundsException` are not caught: they are bugs, and they crash. When common code of a
+multiplatform project cannot name the library's exception type, `storageCall` is an `expect`
+function with an `actual` on each platform (ARCHITECTURE.md, "Named Outcomes and Other Failures").
 
 ```kotlin
-// BAD: Catching everything, bugs and CancellationException too; a database failure reads as "no book"
+// BAD: Catching everything, bugs and CancellationException too;
+// a database failure reads as "no book"
 class DatabaseBookRepository(private val bookQueries: BookQueries) : BookRepository {
     override suspend fun getBookById(bookId: Int): Book? = try {
         bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain()
@@ -572,7 +595,8 @@ class DatabaseBookRepository(private val bookQueries: BookQueries) : BookReposit
         runCatching { bookQueries.selectById(bookId).executeAsOneOrNull()?.toDomain() }.getOrNull()
 }
 
-// GOOD: One function catches the library's own exception type and throws StorageException with it as the cause
+// GOOD: One function catches the library's own exception type
+// and throws StorageException with it as the cause
 inline fun <T> storageCall(message: String, call: () -> T): T = try {
     call()
 } catch (e: SQLiteException) {
@@ -695,14 +719,18 @@ fun saveProject(project: Project) {
     }
 }
 
-// GOOD: Structured concurrency with proper scope: launchCatchingStorage (Error Handling) launches in viewModelScope; videos and images load in parallel
+// GOOD: Structured concurrency with proper scope:
+// launchCatchingStorage (Error Handling) launches in viewModelScope;
+// videos and images load in parallel
 class MediaViewModel(
     private val loadVideosUseCase: LoadVideosUseCase,
     private val loadImagesUseCase: LoadImagesUseCase
 ) : ViewModel() {
 
     fun loadAllMedia() {
-        viewModelScope.launchCatchingStorage(onStorageFailure = { _state.update { it.copy(error = UiError.General) } }) {
+        viewModelScope.launchCatchingStorage(
+            onStorageFailure = { _state.update { it.copy(error = UiError.General) } }
+        ) {
             coroutineScope {
                 val videosDeferred = async { loadVideosUseCase() }
                 val imagesDeferred = async { loadImagesUseCase() }
@@ -766,7 +794,8 @@ fun observeFrames(): Flow<Frame> = flow {
 viewModelScope.launch { flow1.collect { handleFlow1(it) } }
 viewModelScope.launch { flow2.collect { handleFlow2(it) } }
 
-// GOOD: Conflate for UI, buffer for processing; conflate drops intermediate frames if the consumer is slow
+// GOOD: Conflate for UI, buffer for processing;
+// conflate drops intermediate frames if the consumer is slow
 fun observeFrames(): Flow<Frame> = flow {
     while (currentCoroutineContext().isActive) {
         emit(captureFrame())
@@ -873,7 +902,12 @@ fun processIds(items: List<Item>): Set<String> {
 
 ## Comments & Documentation
 
-The rule is the "Comments" section of [CLEAN_CODE.md](CLEAN_CODE.md#comments): no comments and no KDoc, except the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`, `// Then`) and the kinds that the Decisions Log of the implementation plan allows. An existing comment is never just deleted: a reason, a warning, a unit, an outside source or a promise first moves into a name, a type or a check in the code, pinned by a test, and the number of a rule of the project's requirements into the test name; work to do goes to the tracker, history to the commit message. This section shows the Kotlin forms.
+The rule is the "Comments" section of [CLEAN_CODE.md](CLEAN_CODE.md#comments), as the requirement
+"Comments in the code" answers it. Where the answer is code without comments: no comments and no
+KDoc, except the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`,
+`// Then`). An existing comment is never just deleted: a reason, a warning, a unit, an outside
+source or a promise first moves into a name, a type or a check in the code, pinned by a test; work
+to do goes to the tracker, history to the commit message. This section shows the Kotlin forms.
 
 ### A Name, a Type or a Check Instead of a Comment
 
@@ -915,7 +949,8 @@ if (duration > MAX_EXPORT_DURATION) {
     duration = MAX_EXPORT_DURATION
 }
 
-// BAD: the KDoc states a precondition, an option set, a completion promise and a failure, and nothing checks them
+// BAD: the KDoc states a precondition, an option set, a completion promise and a failure,
+// and nothing checks them
 interface ProjectExporter {
     /**
      * Exports a project to a video file.
@@ -929,7 +964,10 @@ interface ProjectExporter {
     fun export(project: Project, options: ExportOptions): Flow<ExportProgress>
 }
 
-// GOOD: the purpose and the limit are names, the options and the precondition are types; completing and throwing StorageException are what every flow of the project does (ARCHITECTURE.md), pinned by tests that fail when one is broken, and the test of the limit gives its reason
+// GOOD: the purpose and the limit are names, the options and the precondition are types;
+// completing and throwing StorageException are what every flow of the project does
+// (ARCHITECTURE.md), pinned by tests that fail when one is broken,
+// and the test of the limit gives its reason
 val LONGEST_VIDEO_AVFOUNDATION_EXPORTS = 4.hours
 
 duration = duration.coerceAtMost(LONGEST_VIDEO_AVFOUNDATION_EXPORTS)
@@ -947,14 +985,14 @@ interface ProjectExporter {
 }
 
 @Test
-fun `export truncates a video longer than 4 hours to 4 hours because iOS AVFoundation crashes on longer videos`() = runTest {
-    // Arrange
-    // Act
-    exporter.exportToVideoFile(projectLasting(4.hours + 1.seconds), options).toList()
+fun `export truncates a video to 4 hours because iOS AVFoundation crashes on longer videos`() =
+    runTest {
+        // Act
+        exporter.exportToVideoFile(projectLasting(4.hours + 1.seconds), options).toList()
 
-    // Assert
-    assertEquals(LONGEST_VIDEO_AVFOUNDATION_EXPORTS, videoDuration(options.outputPath))
-}
+        // Assert
+        assertEquals(LONGEST_VIDEO_AVFOUNDATION_EXPORTS, videoDuration(options.outputPath))
+    }
 
 @Test
 fun `a project without a video track cannot be exported`() {
@@ -970,7 +1008,6 @@ fun `a project without a video track cannot be exported`() {
 
 @Test
 fun `export flow completes after the video file is written`() = runTest {
-    // Arrange
     // Act
     val progress = exporter.exportToVideoFile(projectLasting(1.minutes), options).toList()
 
@@ -981,7 +1018,6 @@ fun `export flow completes after the video file is written`() = runTest {
 
 @Test
 fun `export throws StorageException when the disk runs out of space`() = runTest {
-    // Arrange
     // Act
     val failure = assertFails { exporter.exportToVideoFile(projectLasting(1.minutes), fullDiskOptions).toList() }
 
@@ -1082,7 +1118,8 @@ fun `load returns null when file does not exist`() {
 ### Test Independence
 
 ```kotlin
-// BAD: Tests depend on each other or shared mutable state; `test process` depends on `test load` running first
+// BAD: Tests depend on each other or shared mutable state;
+// `test process` depends on `test load` running first
 class VideoTests {
     companion object {
         var sharedVideo: Video? = null
@@ -1112,7 +1149,6 @@ class VideoTests {
 
     @Test
     fun `load returns valid video`() {
-        // Arrange
         // Act
         val video = loader.load("test.mp4")
 
@@ -1161,10 +1197,13 @@ Before committing code, verify:
 ### Safety
 - [ ] No `!!` operators
 - [ ] No mutable public properties
-- [ ] Named outcomes are returned: the use case's own sealed type, or the value itself when there is one outcome; no `kotlin.Result` for outcomes
+- [ ] Named outcomes are returned: the use case's own sealed type, or the value itself when there is
+      one outcome; no `kotlin.Result` for outcomes
 - [ ] No generic exception catching: never `Exception` or `Throwable`
-- [ ] A repository implementation catches only its library's exception types, never `Exception`, `Throwable` or `CancellationException`, and throws `StorageException`
-- [ ] Only the ViewModel that starts the use case catches `StorageException`; no `runCatching` in `suspend` functions
+- [ ] A repository implementation catches only its library's exception types, never `Exception`,
+      `Throwable` or `CancellationException`, and throws `StorageException`
+- [ ] Only the ViewModel that starts the use case catches `StorageException`; no `runCatching` in
+      `suspend` functions
 
 ### Async
 - [ ] Uses structured concurrency

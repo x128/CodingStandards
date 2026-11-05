@@ -1,18 +1,20 @@
 ---
-description: Write THEORY.md — which scientific fields the concepts of a project come from, and how its stages map to known operations. Use when asked for the theory behind a project, or while planning one.
+description: >-
+  Write THEORY.md — which scientific fields the concepts of a project come from, and how its stages
+  map to known operations. Use when asked for the theory behind a project, or while planning one.
 ---
 
 # Theory Skill
 
-Writes THEORY.md for a project: which scientific fields its domain concepts come from, and how
-each stage of the project is an instance of a known operation. A theoretical term explains a
-concept; it never renames it — code, tasks and the plan keep the project's one name.
+Writes THEORY.md for a project: which scientific fields its domain concepts come from, and how each
+stage of the project is an instance of a known operation. A theoretical term explains a concept; it
+never renames it — code, tasks, the requirements and the plan keep the project's one name.
 
 ## Instructions
 
-1. **The concepts.** From what there is — intake answers, the plan, the code, documents — list the
-   domain concepts, loops, data structures and operations. With a path, only that part. A new
-   project has no code yet: take the terms of the plan.
+1. **The concepts.** From what there is — intake answers, the requirements, the code, documents —
+   list the domain concepts, loops, data structures and operations. With a path, only that part. A
+   new project has no code yet: take the terms of the requirements.
 2. **The fields.** Find every field that applies, not just one, for example:
 
    | Field | When the project has |
@@ -42,7 +44,7 @@ concept; it never renames it — code, tasks and the plan keep the project's one
    - a glossary of every theoretical term the document uses: term, symbol, definition.
 
    Every claim points to a real type, function or data flow in the code, or, before there is code,
-   to the section of the plan. Use formulas only where they make a mapping clearer.
+   to the section of the requirements. Use formulas only where they make a mapping clearer.
 4. **Point to it:** one line in the project's `CLAUDE.md` that names THEORY.md.
 
 ## Allowed Prompts

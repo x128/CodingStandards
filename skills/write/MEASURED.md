@@ -36,13 +36,13 @@ Not read by the agent that writes; read by whoever changes `SKILL.md`.
   ranks versions, but only the reader says whether a message is clear.
 - **Two rules beat six.** Fewer unseen names in 13 texts of 24 (p = 0.021); shorter in 21 of 24
   (p < 0.001).
-- **The old reporting rules undo a skill.** Added to the two rules: more unseen names in 21 of 24, longer
-  in 22 of 24 (both p < 0.001). They were cut from EXECUTION_GUIDE.md.
-- **Rules that did nothing in the six-rule version.** Each deleted alone, none of these raised its own failures: show
-  what you point to; say what a number counts; give the reason of each step; options are actions.
-  Two narrow yes/no judges confirmed it for reasons and options; they had first caught every error
-  inserted into accepted messages. A third judge, for pointers, could not tell accepted messages
-  from broken ones, so pointers stay unmeasured.
+- **The old reporting rules undo a skill.** Added to the two rules: more unseen names in 21 of 24,
+  longer in 22 of 24 (both p < 0.001). They were cut from EXECUTION_GUIDE.md.
+- **Rules that did nothing in the six-rule version.** Each deleted alone, none of these raised its
+  own failures: show what you point to; say what a number counts; give the reason of each step;
+  options are actions. Two narrow yes/no judges confirmed it for reasons and options; they had first
+  caught every error inserted into accepted messages. A third judge, for pointers, could not tell
+  accepted messages from broken ones, so pointers stay unmeasured.
 - **Any added instruction costs.** The four process points kept in EXECUTION_GUIDE.md add two to
   three unseen names per text; the first two of them alone did so in 17 texts of 24 (p = 0.001).
 - **Styles.** On the same twelve inputs the reader compared, side by side: the steps of this skill

@@ -33,23 +33,31 @@ Every platform the app runs on must have end-to-end tests covering general user 
 A new test is seen failing once: break the code it covers, run it, put the code back. A test that
 passes with its code broken checks nothing.
 
-See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runners, and platform-specific frameworks.
+See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runners, and
+platform-specific frameworks.
 
 ---
 
 ## Test File Conventions
 
-- Test class naming: `{ClassUnderTest}Test`; a test class split by fixture or behaviour is `{ClassUnderTest}{FixtureOrBehaviour}Test`, for example `ReaderViewModelStorageFailureTest`
+- Test class naming: `{ClassUnderTest}Test`; a test class split by fixture or behaviour is
+  `{ClassUnderTest}{FixtureOrBehaviour}Test`, for example `ReaderViewModelStorageFailureTest`
 - Fakes: `private class Fake{Interface}` defined inside test files
-- Factory functions: `private fun test{Entity}()` with sensible defaults (see [Test Data](#test-data))
-- A test class is split by its fixture or by the behaviour it tests, never by its number of lines. A test class that needs a large setup points at a class under test that does too much.
-- A test has no branches and no loops. Its only comments are the markers of its three parts, `// Arrange`, `// Act`, `// Assert` or `// Given`, `// When`, `// Then`; everything else it has to say goes into its name, its helpers and its assertions.
+- Factory functions: `private fun test{Entity}()` with sensible defaults (see [Test
+  Data](#test-data))
+- A test class is split by its fixture or by the behaviour it tests, never by its number of lines. A
+  test class that needs a large setup points at a class under test that does too much.
+- A test has no branches and no loops. Its only comments are the markers of its parts, `// Arrange`,
+  `// Act`, `// Assert` or `// Given`, `// When`, `// Then`; everything else it has to say goes into
+  its name, its helpers and its assertions.
 
 ---
 
 ## Test Naming
 
-Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason or a source ends with it: `→ result because reason`, with no comma — Kotlin/Native refuses one in a backtick name (KOTLIN_MULTIPLATFORM.md).
+Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason
+or a source ends with it: `→ result because reason`, with no comma — Kotlin/Native refuses one in a
+backtick name (KOTLIN_MULTIPLATFORM.md).
 
 ### Kotlin (backtick names)
 
@@ -98,7 +106,9 @@ func test_launch_showsLanguageChips()
 
 ### Arrange-Act-Assert (AAA)
 
-Every test has exactly three sections, each opened by its marker: `// Arrange`, `// Act`, `// Assert`. `// Given`, `// When`, `// Then` mark the same three sections; a project keeps to one set.
+A test has its sections in this order, each opened by its marker: `// Arrange`, `// Act`,
+`// Assert`; a test with nothing to arrange has no `// Arrange`. `// Given`, `// When`, `// Then`
+mark the same sections; a project keeps to one set.
 
 ```kotlin
 // BAD: Mixed setup, action, and checks
@@ -132,10 +142,12 @@ fun `returns matching verses for Russian search`() {
 
 ### One Concept Per Test
 
-Multiple assertions are fine if they test the same behavior. Different behaviors need different tests.
+Multiple assertions are fine if they test the same behavior. Different behaviors need different
+tests.
 
 ```kotlin
-// BAD: Tests two unrelated behaviors: the missing book is a different behavior from the valid chapter
+// BAD: Tests two unrelated behaviors:
+// the missing book is a different behavior from the valid chapter
 @Test
 fun `chapter loading works`() = runTest {
     val result = useCase(bookId = 1, chapter = 1, Language.RU)
@@ -149,7 +161,6 @@ fun `chapter loading works`() = runTest {
 // GOOD: Separate tests for separate behaviors
 @Test
 fun `returns all verses for valid chapter`() = runTest {
-    // Arrange
     // Act
     val result = useCase(bookId = 1, chapter = 1, Language.RU)
 
@@ -160,7 +171,6 @@ fun `returns all verses for valid chapter`() = runTest {
 
 @Test
 fun `returns book not found for nonexistent book`() = runTest {
-    // Arrange
     // Act
     val result = useCase(bookId = 999, chapter = 1, Language.RU)
 
@@ -176,7 +186,8 @@ fun `returns book not found for nonexistent book`() = runTest {
 Each test creates its own data and has no shared mutable state.
 
 ```kotlin
-// BAD: Shared mutable state between tests: the companion object shares one repository, the first test mutates it, and the second test depends on the first
+// BAD: Shared mutable state between tests: the companion object shares one repository,
+// the first test mutates it, and the second test depends on the first
 class VerseRepositoryTest {
     companion object {
         val repository = DatabaseVerseRepository(testDb)
@@ -221,10 +232,12 @@ class VerseRepositoryTest {
 
 ## Fakes Over Mocks
 
-Use hand-written fakes instead of mocking frameworks. Fakes are simpler, more readable, and work across KMP platforms.
+Use hand-written fakes instead of mocking frameworks. Fakes are simpler, more readable, and work
+across KMP platforms.
 
 ```kotlin
-// BAD: Mocking framework; verify(mockVerses).getVerses(1, 1, Language.RU) checks an implementation detail: which call the use case makes, not what it returns
+// BAD: Mocking framework; verify(mockVerses).getVerses(1, 1, Language.RU) checks
+// an implementation detail: which call the use case makes, not what it returns
 @Test
 fun `loads chapter from repository`() = runTest {
     val mockBooks = mock<BookRepository>()
@@ -311,7 +324,6 @@ class GetChapterUseCaseTest {
 
     @Test
     fun `returns book not found when book does not exist`() {
-        // Arrange
         // Act
         val result = runBlocking { useCase(999, 1, Language.RU) }
 
@@ -321,7 +333,6 @@ class GetChapterUseCaseTest {
 
     @Test
     fun `returns chapter out of range when book has fewer chapters`() {
-        // Arrange
         // Act
         val result = runBlocking { useCase(1, 51, Language.RU) }
 
@@ -354,7 +365,6 @@ class DatabaseVerseRepositoryTest {
 
     @Test
     fun `returns verses ordered by id`() = runTest {
-        // Arrange
         // Act
         val verses = repository.getVerses(bookId = 1, chapter = 1, Language.RU)
 
@@ -366,7 +376,8 @@ class DatabaseVerseRepositoryTest {
 
 ### Presentation Layer (ViewModel Tests)
 
-Test state transitions using Turbine for Flow assertions. The ViewModel is the place that catches `StorageException`, so its tests cover that path.
+Test state transitions using Turbine for Flow assertions. The ViewModel is the place that catches
+`StorageException`, so its tests cover that path.
 
 ```kotlin
 // Location: composeApp/src/commonTest/kotlin/.../feature/{name}/presentation/
@@ -463,7 +474,8 @@ fun `state updates on event`() = runTest {
 ### Use StandardTestDispatcher for Coroutine Control
 
 ```kotlin
-// BAD: Using real dispatchers in tests: MyViewModel uses Dispatchers.Main, and the test waits a fixed delay and hopes the work is done
+// BAD: Using real dispatchers in tests: MyViewModel uses Dispatchers.Main,
+// and the test waits a fixed delay and hopes the work is done
 @Test
 fun `loads data`() = runBlocking {
     val viewModel = MyViewModel(useCase)
@@ -562,7 +574,9 @@ SearchScreenUITests.swift // Search flow: open, filter, close
 
 ### What Each Class Should Cover
 
-Each class tests the **end-to-end behavior** of one flow — not individual UI elements in isolation. Tests within a class share setup (e.g., navigating to a specific screen) and test meaningful user interactions.
+Each class tests the **end-to-end behavior** of one flow — not individual UI elements in isolation.
+Tests within a class share setup (e.g., navigating to a specific screen) and test meaningful user
+interactions.
 
 ```swift
 // BAD: Testing individual elements in isolation
@@ -593,7 +607,6 @@ final class SearchScreenUITests: XCTestCase {
     }
 
     func test_openSearch_showsScopeChips() {
-        // Arrange
         // Act
         openSearch()
 
@@ -610,7 +623,9 @@ final class SearchScreenUITests: XCTestCase {
 - Data classes (auto-generated equals/hashCode/copy)
 - Enum values
 - Direct delegation (a function that just calls another function)
-- Framework code (Compose UI rendering, Koin module wiring). A composable that makes decisions of its own is covered by a UI test, or its CRAP exception is recorded in the Decisions Log (CLEAN_CODE.md, "One Thing per Function")
+- Framework code (Compose UI rendering, Koin module wiring). A composable that makes decisions of
+  its own is covered by a UI test, or its CRAP exception is recorded in the requirements
+  (CLEAN_CODE.md, "One Thing per Function")
 - Third-party library behavior
 
 Focus testing effort on:
@@ -624,11 +639,13 @@ Focus testing effort on:
 
 ## Shared Expensive Resources
 
-Some integration tests need a resource that is slow to create (native engine, database connection pool, ML model). Load it once in a companion object and share across tests.
+Some integration tests need a resource that is slow to create (native engine, database connection
+pool, ML model). Load it once in a companion object and share across tests.
 
 ### Thread-Safe Lazy Init Pattern (JVM)
 
-Examples use JUnit 4 annotations (`@AfterClass`). For JUnit 5, replace with `@AfterAll` (still needs `@JvmStatic`).
+Examples use JUnit 4 annotations (`@AfterClass`). For JUnit 5, replace with `@AfterAll` (still needs
+`@JvmStatic`).
 
 ```kotlin
 class ExpensiveIntegrationTest {
@@ -666,7 +683,9 @@ Key points:
 - `@AfterClass` for cleanup — runs after all tests in the class
 - `assumeTrue` to skip gracefully when the resource is unavailable
 
-> **KMP note:** `synchronized` and `@Volatile` are JVM-only. For multiplatform test code, use `kotlinx.coroutines.sync.Mutex` with a `suspend fun` instead. The pattern above targets `desktopTest` / `jvmTest` source sets.
+> **KMP note:** `synchronized` is JVM-only. For multiplatform test code, use
+> `kotlinx.coroutines.sync.Mutex` with a `suspend fun` instead. The pattern above targets
+> `desktopTest` / `jvmTest` source sets.
 
 ### When to share vs isolate
 
@@ -680,11 +699,13 @@ Key points:
 
 ## External Dependencies
 
-Tests that require files or services not in version control (model files, API keys, external databases) must skip gracefully — never fail CI because a resource is absent.
+Tests that require files or services not in version control (model files, API keys, external
+databases) must skip gracefully — never fail CI because a resource is absent.
 
 ### Pattern: assumeTrue for Optional Resources
 
-When the model file is missing, `assumeTrue` skips the test; the Act and Assert sections run only when the model is present.
+When the model file is missing, `assumeTrue` skips the test; the Act and Assert sections run only
+when the model is present.
 
 ```kotlin
 @Test
@@ -740,7 +761,7 @@ fun `processes model output`() = runTest {
 ### Quality
 - [ ] Tests document behavior (readable as specs)
 - [ ] Test data uses factory functions with defaults
-- [ ] No fragile timing (no `delay()` in tests)
+- [ ] No test waits a fixed time for work to finish
 - [ ] No tests for trivial/generated code
 
 ### Shared Resources & External Dependencies

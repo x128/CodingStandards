@@ -1,13 +1,15 @@
 ---
-description: Turn a disagreement of the user with the task loop into a rule or setting in .review/. Use when the user says a finding was real, a task needed their eyes, or asks where a problem entered.
+description: >-
+  Turn a disagreement of the user with the task loop into a rule or setting in .review/. Use when
+  the user says a finding was real, a task needed their eyes, or asks where a problem entered.
 ---
 
 # Policy Skill
 
 Turns a disagreement of the user with the task loop into a rule or a setting of the project, so
 the loop's maintainer learns the user's judgment. It works only in the project's `.review/` and
-follows the two limits of MAINTAINER_TRAINING.md: a rejected finding never becomes a rule, and
-nothing here counts or scores anything.
+follows the two limits of MAINTAINER_TRAINING.md: a "not yet" never becomes a rule, and nothing here
+counts or scores anything.
 
 ## Instructions
 
@@ -15,13 +17,12 @@ First work out which kind of disagreement it is:
 
 | The user said | Track | Goes into |
 |---|---|---|
-| "that finding was real" | A — findings | `.review/REVIEW_POLICY.md` |
+| "that finding was real", or "this is right here on purpose" | A — findings | `.review/REVIEW_POLICY.md` |
 | "you should have shown me this task" | B — advancing | `.review/land.conf` |
 | a trigger of Track C fired | C — where it entered | wherever it entered |
 
-"Stop flagging this" is none of them: a rejection usually means "not yet". Record why it was
-rejected, and leave the reviewer looking. In every track, fix both the outcome and what produced
-it.
+"Not yet" is none of them: record why it was rejected, and leave the reviewer looking. In every
+track, fix both the outcome and what produced it.
 
 ### Track A: a finding's verdict was wrong
 
@@ -104,9 +105,9 @@ Report the chain walked, where it entered, and what changed.
 
 - You draft; the user confirms every rule. No rule is deleted without asking.
 - Never write inside `CodingStandards/`.
-- A disagreement that produced no rule will come back: write it down, or record why it is a
-  one-off.
-- Policy changes are committed like code (EXECUTION_GUIDE.md, "Who writes to git").
+- A disagreement that produced no rule will come back: write it down, or record why it is a one-off.
+- Policy changes are the user's to commit: a commit of the loop never holds them, at every answer to
+  "Who writes to git" (TASK_LOOP.md, "Landing").
 
 ## Allowed Prompts
 - Read `.review/**`, the diff and source files

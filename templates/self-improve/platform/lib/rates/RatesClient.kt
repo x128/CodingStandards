@@ -15,7 +15,8 @@ class RatesClient(private val baseUrl: String) {
             throw IllegalArgumentException("Not a date: $date", e)
         }
         if (baseUrl != DEMO_URL) throw RatesException("Cannot reach $baseUrl")
-        if (day.dayOfWeek == DayOfWeek.SATURDAY || day.dayOfWeek == DayOfWeek.SUNDAY) return emptyMap()
+        if (day.dayOfWeek == DayOfWeek.SATURDAY || day.dayOfWeek == DayOfWeek.SUNDAY)
+            return emptyMap()
         return DEMO_RATES
     }
 

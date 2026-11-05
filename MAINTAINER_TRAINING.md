@@ -26,24 +26,19 @@ never offer to.
 
 ## What to do when the user says something is wrong
 
-1. **Write down what they said, in their words**, right away, with what is
-   still open, where the next session reads it: for a project, as a row of the
-   Decisions Log of its plan, "TBD" under Chosen and the task it came up in under
-   Rationale; for these standards, into the file the table below names. The rule
-   goes into its file once a small check shows it does what the user asked: agents
-   given the file before and after the change, on the same situation, and the
-   difference is the one asked for. Chosen then says the rule and where it went. The
-   user is asked only before a check that costs much.
+1. **Write down what they said** right away, where the next session reads it: for a project, what is
+   decided in its requirements, what is still open in the task that waits on it; for these
+   standards, into the file the table below names. The rule itself goes into its file once the user
+   agrees with its wording.
 
-2. **Work out *when* it happened — not what it was about.** While installing a
-   compiler? While writing the report? While looking for bugs in the code?
-   While running git?
+2. **Work out *when* it happened — not what it was about.** While installing a compiler? While
+   writing the report? While looking for bugs in the code? While running git?
 
 3. **Put the rule in the file that gets read at that point.**
 
-4. **Have it committed**: a file of the project as its plan's row "Who writes to
-   git" says (EXECUTION_GUIDE.md, "Who writes to git"), a file of these
-   standards by the user. A rule that is not committed lasted one session.
+4. **Have it committed**, by the user: a commit of the loop never holds a rule of `.review/` or of
+   these standards, whatever the requirement "Who writes to git" says (TASK_LOOP.md, "Landing"). A
+   rule that is not committed lasted one session.
 
 Step 2 is the one that goes wrong. A rule about writing reports, put into the
 document about reviewing code, will never be read while writing a report.
@@ -57,14 +52,14 @@ document about reviewing code, will never be read while writing a report.
 | giving work to another agent | `EXECUTION_GUIDE.md`, "Work given to other agents" |
 | writing the report back to the user | `skills/write/SKILL.md`; `EXECUTION_GUIDE.md`, the reporting section |
 | looking for bugs in the code | `skills/code-review/SKILL.md` |
-| refactoring code to the standards | the plan's Decisions Log for this project; `skills/refactor/SKILL.md` for how a refactoring runs |
+| refactoring code to the standards | the requirements of this project; `skills/refactor/SKILL.md` for how a refactoring runs |
 | running the automatic loop | `TASK_LOOP.md` |
 | measuring these standards | `skills/self-improve/SKILL.md` |
 | editing these standards | `CLAUDE.md` of this repo, "Contributing Guidelines" |
 
 ---
 
-## Do not turn a rejected finding into a rule
+## Do not turn a "not yet" into a rule
 
 When the user rejects something, it usually means *not yet* — not *never*.
 
@@ -75,9 +70,8 @@ findings still matters, later.
 
 So:
 
-- Never keep a list of things not to raise again.
+- A "not yet" never becomes a rule; a "never", for a reason that holds in the whole project, does.
 - Never count how many times something was rejected.
-- No file here grows the more it is used.
 
 ---
 
@@ -118,7 +112,7 @@ statement about the whole review, never as a ban on one kind of finding.
 
 | Written in | Applies to | How it moves |
 |---|---|---|
-| the project — its plan's Decisions Log, its `.review/` | that project only | it does not move on its own |
+| the project — its requirements, its `.review/` | that project only | it does not move on its own |
 | `CodingStandards/` | every project | a line here that is wrong is fixed; a rule that is not here waits for a second project |
 
 A rule that came out of one project belongs to that project: copying it here
@@ -133,7 +127,7 @@ a mistake.
 
 - [ ] The correction is written in a file, not only said in the conversation
 - [ ] Filed by when it happens, not by what it is about
-- [ ] No rejected finding was turned into a rule
+- [ ] No "not yet" was turned into a rule
 - [ ] Nothing was counted or scored
 - [ ] Nothing decided for the user whether they look
 - [ ] Nothing was copied into `CodingStandards/` out of a single project

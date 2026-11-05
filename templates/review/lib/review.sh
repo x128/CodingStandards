@@ -69,7 +69,8 @@ PROJECT_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 
 # Running from inside the CodingStandards checkout resolves PROJECT_ROOT to the
 # standards repo itself, which has no .review/ and no diff worth reviewing.
-if [ -f "$PROJECT_ROOT/TASK_LOOP.md" ] && [ -f "$PROJECT_ROOT/templates/review/lib/review.sh" ]; then
+if [ -f "$PROJECT_ROOT/TASK_LOOP.md" ] && \
+  [ -f "$PROJECT_ROOT/templates/review/lib/review.sh" ]; then
   echo "run this from your project root, not from inside the CodingStandards checkout" >&2
   exit 1
 fi
@@ -124,7 +125,8 @@ fi
 ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
 case "$ASK_AFTER_RUNS" in
   ''|*[!0-9]*|0*|??????????*)
-    echo "ASK_AFTER_RUNS in $REVIEW_DIR/land.conf must be a whole number from 1 to 999999999, not '$ASK_AFTER_RUNS'" >&2
+    echo "ASK_AFTER_RUNS in $REVIEW_DIR/land.conf must be a whole number from 1 to 999999999, "\
+"not '$ASK_AFTER_RUNS'" >&2
     exit 1 ;;
 esac
 
@@ -159,12 +161,14 @@ if [ -n "$TASK_ID" ]; then
     'map(select((.epoch // 0) == $epoch and .past_limit != true)) | length')"
   if [ "$PAST_LIMIT" = true ]; then
     if [ "$RUNS_SO_FAR" -lt "$ASK_AFTER_RUNS" ]; then
-      echo "--past-limit is only for a task at its limit: $TASK_ID has had $RUNS_SO_FAR of $ASK_AFTER_RUNS runs — run without it" >&2
+      echo "--past-limit is only for a task at its limit: "\
+"$TASK_ID has had $RUNS_SO_FAR of $ASK_AFTER_RUNS runs — run without it" >&2
       exit 1
     fi
     EPOCH=$((EPOCH + 1))
   elif [ "$RUNS_SO_FAR" -ge "$ASK_AFTER_RUNS" ]; then
-    echo "WAIT FOR THE USER — $TASK_ID has had $RUNS_SO_FAR runs since the count started, $RUNS_IN_ALL in all"
+    echo "WAIT FOR THE USER — "\
+"$TASK_ID has had $RUNS_SO_FAR runs since the count started, $RUNS_IN_ALL in all"
     echo "   (ASK_AFTER_RUNS=$ASK_AFTER_RUNS); nothing ran."
     echo "   Ask the user whether to go on. Run again with --past-limit only on their"
     echo "   answer, or when the count is wrong — runs of another task under the same"
@@ -178,22 +182,28 @@ fi
 
 # Each role runs in its own fresh session, which keeps the maintainer from
 # rubber-stamping the reviewer. The model and effort of each role come from
-# .review/agents.conf, one line per role ("REVIEWER=opus high"); "inherit" leaves
-# the model to Claude Code's own setting. They are printed before anything runs,
-# so the user sees what a run costs before it does. REVIEWER_CMD or
-# MAINTAINER_CMD replaces a role's whole command.
+# .claude/agents.conf, one line per role ("REVIEWER=opus high"), opus when it names
+# none. Each runs in a process of its own, with no session to inherit a model from,
+# so "inherit" is refused. They are printed before anything runs, so the user sees
+# what a run costs before it does. REVIEWER_CMD or MAINTAINER_CMD replaces a role's
+# whole command.
+AGENTS_CONF="$(dirname "$REVIEW_DIR")/.claude/agents.conf"
 role_setting() {
   local role="$1" value model effort
-  value="$(read_conf "$REVIEW_DIR/agents.conf" "$role" inherit | tr '\t' ' ' | tr -s ' ')"
+  value="$(read_conf "$AGENTS_CONF" "$role" opus | tr '\t' ' ' | tr -s ' ')"
   model="${value%% *}"
   effort=""
   [ "$model" = "$value" ] || effort="${value#* }"
   case "$model" in
-    ''|*[!A-Za-z0-9._-]*) echo "$role in $REVIEW_DIR/agents.conf names no model: '$value'" >&2; return 1 ;;
+    ''|*[!A-Za-z0-9._-]*) \
+      echo "$role in $AGENTS_CONF names no model: '$value'" >&2; return 1 ;;
   esac
+  [ "$model" != inherit ] || { echo "$role in $AGENTS_CONF is inherit, but review.sh "\
+"starts it in a process of its own, with no session to inherit from: name a model" >&2; return 1; }
   case "$effort" in
     ''|low|medium|high|xhigh|max) ;;
-    *) echo "$role in $REVIEW_DIR/agents.conf has effort '$effort' — use low, medium, high, xhigh or max" >&2; return 1 ;;
+    *) echo "$role in $AGENTS_CONF has effort '$effort' "\
+"— use low, medium, high, xhigh or max" >&2; return 1 ;;
   esac
   printf '%s' "$model${effort:+ $effort}"
 }
@@ -201,7 +211,7 @@ role_setting() {
 role_flags() {
   local model="${1%% *}" effort=""
   [ "$model" = "$1" ] || effort="${1#* }"
-  [ "$model" = inherit ] || printf -- '--model %s ' "$model"
+  printf -- '--model %s ' "$model"
   [ -z "$effort" ] || printf -- '--effort %s ' "$effort"
 }
 
@@ -209,9 +219,12 @@ REVIEWER_SETTING="$(role_setting REVIEWER)" || exit 1
 MAINTAINER_SETTING="$(role_setting MAINTAINER)" || exit 1
 REVIEWER_SHOWN="${REVIEWER_CMD:+REVIEWER_CMD}"
 MAINTAINER_SHOWN="${MAINTAINER_CMD:+MAINTAINER_CMD}"
-REVIEWER_CMD="${REVIEWER_CMD:-claude -p $(role_flags "$REVIEWER_SETTING")--allowedTools Read,Grep,Glob,Bash --output-format json}"
-MAINTAINER_CMD="${MAINTAINER_CMD:-claude -p $(role_flags "$MAINTAINER_SETTING")--allowedTools Read --output-format json}"
-echo "── models: reviewer ${REVIEWER_SHOWN:-$REVIEWER_SETTING}, maintainer ${MAINTAINER_SHOWN:-$MAINTAINER_SETTING} ($REVIEW_DIR/agents.conf)"
+REVIEWER_CMD="${REVIEWER_CMD:-claude -p $(role_flags \
+"$REVIEWER_SETTING")--allowedTools Read,Grep,Glob,Bash --output-format json}"
+MAINTAINER_CMD="${MAINTAINER_CMD:-claude -p $(role_flags \
+"$MAINTAINER_SETTING")--allowedTools Read --output-format json}"
+echo "── models: reviewer ${REVIEWER_SHOWN:-$REVIEWER_SETTING}, "\
+"maintainer ${MAINTAINER_SHOWN:-$MAINTAINER_SETTING} ($AGENTS_CONF)"
 
 # Created only once the configuration is known good: otherwise every run against
 # an unconfigured project leaves an empty directory behind.
@@ -259,7 +272,8 @@ schema_enum() {
 # quietly vanish. So the two are cross-checked rather than merely both existing.
 RANKS='{"blocker":3,"major":2,"minor":1,"nit":0}'
 
-SCHEMA_SEVERITIES="$(schema_enum "$(lib_file schemas/review-findings.schema.json)" findings severity)" || exit 1
+SCHEMA_SEVERITIES=\
+"$(schema_enum "$(lib_file schemas/review-findings.schema.json)" findings severity)" || exit 1
 if ! printf '%s' "$RANKS" | jq -e --argjson declared "$SCHEMA_SEVERITIES" \
      '(keys | sort) == ($declared | sort)' >/dev/null; then
   echo "the severity ranks in review.sh and the severities in the findings schema disagree." >&2
@@ -272,7 +286,8 @@ fi
 # An unknown threshold indexes to null, with the same consequence: a typo would
 # send every nit to the executor and silently empty the optional list.
 if ! printf '%s' "$RANKS" | jq -e --arg t "$THRESHOLD" 'has($t)' >/dev/null; then
-  echo "unknown threshold '$THRESHOLD' — use $(printf '%s' "$RANKS" | jq -r 'keys_unsorted | join(", ")')" >&2
+  echo "unknown threshold '$THRESHOLD' — use "\
+"$(printf '%s' "$RANKS" | jq -r 'keys_unsorted | join(", ")')" >&2
   exit 1
 fi
 
@@ -404,7 +419,8 @@ verify_quotes() {
   # A finding with no correction line was dropped, and drops must be silent
   # losses of noise only — an id that survives always carries a located line.
   printf '%s' "$corrections" | jq -R --slurpfile findings "$input_file" -s '
-    ( split("\n") | map(select(length > 0) | split(" ") | {id: .[0], line: (.[1] | tonumber)}) ) as $corrections
+    ( split("\n") | map(select(length > 0) | split(" ")'\
+' | {id: .[0], line: (.[1] | tonumber)}) ) as $corrections
     | {findings: [ $findings[0].findings[]
         | . as $finding
         | ($corrections[] | select(.id == $finding.id)) as $correction
@@ -453,7 +469,8 @@ validate_verdicts() {
     jq -r --slurpfile findings "$findings_file" '
       ([.verdicts[].finding_id] - [$findings[0].findings[].id]) as $unknown
       | ([$findings[0].findings[].id] - [.verdicts[].finding_id]) as $unjudged
-      | "   verdicts for unknown findings: \($unknown | join(", ") // "none")\n   findings with no verdict: \($unjudged | join(", ") // "none")"
+      | "   verdicts for unknown findings: \($unknown | join(", ") // "none")\n'\
+'   findings with no verdict: \($unjudged | join(", ") // "none")"
     ' "$verdicts_file" >&2
     return 1
   }
@@ -475,15 +492,16 @@ else
   DIFF_FROM="HEAD"
 fi
 # `.review/` is pipeline bookkeeping, not task code: land.sh never stages it,
-# so the reviewer must not spend findings on it either.
-git diff "$DIFF_FROM" -- . ':(exclude).review' >"$RUN_DIR/diff.patch"
+# so the reviewer must not spend findings on it either. The same goes for the requirements,
+# the plan and the tracker, which land with the task but are not its code.
+git diff "$DIFF_FROM" -- . "${NOT_TASK_WORK[@]}" >"$RUN_DIR/diff.patch"
 
 # Untracked files are invisible to `git diff` but land.sh will commit them, so
 # a whole new source file would otherwise be committed with no review at all.
 while IFS= read -r untracked; do
   [ -n "$untracked" ] || continue
   git diff --no-index -- /dev/null "$untracked" >>"$RUN_DIR/diff.patch" 2>/dev/null
-done < <(git ls-files --others --exclude-standard | grep -v '^\.review/')
+done < <(git ls-files --others --exclude-standard | only_task_work)
 
 if [ ! -s "$RUN_DIR/diff.patch" ]; then
   echo "no changes against ${BASE:-HEAD} — nothing to review"
@@ -512,7 +530,8 @@ GATES_EXIT=$?
 # A gate runner that could not run is not a red gate. 126/127, or no usable
 # gates.json, means there is no gate output to send anywhere — and "GATES RED"
 # with an empty failure list would put the executor to work on nothing.
-if [ "$GATES_EXIT" -ge 126 ] || ! jq -e 'type == "object"' "$RUN_DIR/gates.json" >/dev/null 2>&1; then
+if [ "$GATES_EXIT" -ge 126 ] || \
+  ! jq -e 'type == "object"' "$RUN_DIR/gates.json" >/dev/null 2>&1; then
   echo "$REVIEW_DIR/gates.sh did not run (exit $GATES_EXIT) or wrote no usable" >&2
   echo "   $RUN_DIR/gates.json — fix the gate runner; this is not a red gate" >&2
   exit 1
@@ -535,7 +554,8 @@ fi
 if [ "$GATES_EXIT" -ne 0 ]; then
   echo
   echo "GATES RED — no LLM review. Failing gates:"
-  jq -r 'to_entries[] | select(.value.status == "fail") | "  \(.key): \(.value.command)\n\(.value.output)"' \
+  jq -r 'to_entries[] | select(.value.status == "fail")'\
+' | "  \(.key): \(.value.command)\n\(.value.output)"' \
     "$RUN_DIR/gates.json"
   exit 2
 fi
@@ -559,7 +579,8 @@ fi
   echo '```'
 } >"$RUN_DIR/reviewer-prompt.md"
 
-run_agent "$REVIEWER_CMD" "$RUN_DIR/reviewer-prompt.md" "$RUN_DIR/findings.raw.json" "reviewer" || exit 1
+run_agent "$REVIEWER_CMD" "$RUN_DIR/reviewer-prompt.md" "$RUN_DIR/findings.raw.json" \
+  "reviewer" || exit 1
 
 # The reviewer holds Bash so it can verify claims, and it is reading a diff it
 # did not write. If it changed the tree, say so here rather than letting landing
@@ -595,7 +616,8 @@ jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VA
   echo "   severity, confidence, evidence — all from the schema's enums;" >&2
   echo "   ids must be unique within the run" >&2
   jq -r '[.findings[].id] | group_by(.) | map(select(length > 1) | .[0]) as $dupes
-         | if ($dupes | length) > 0 then "   duplicate ids: \($dupes | join(", "))" else empty end' \
+         | if ($dupes | length) > 0'\
+' then "   duplicate ids: \($dupes | join(", "))" else empty end' \
     "$RUN_DIR/findings.raw.json" >&2 2>/dev/null
   exit 1
 }
@@ -666,8 +688,8 @@ fi
     cat "$TASK_FILE"
     echo
     echo "## Files changed in this diff"
-    git diff --name-only "$DIFF_FROM" -- . ':(exclude).review'
-    git ls-files --others --exclude-standard | grep -v '^\.review/'
+    git diff --name-only "$DIFF_FROM" -- . "${NOT_TASK_WORK[@]}"
+    git ls-files --others --exclude-standard | only_task_work
     echo
   else
     echo "## No task file supplied"
@@ -681,21 +703,24 @@ fi
   cat "$RUN_DIR/findings.json"
 } >"$RUN_DIR/maintainer-prompt.md"
 
-run_agent "$MAINTAINER_CMD" "$RUN_DIR/maintainer-prompt.md" "$RUN_DIR/verdicts.json" "maintainer" || exit 1
+run_agent "$MAINTAINER_CMD" "$RUN_DIR/maintainer-prompt.md" "$RUN_DIR/verdicts.json" \
+  "maintainer" || exit 1
 validate_verdicts "$RUN_DIR/verdicts.json" "$RUN_DIR/findings.json" || exit 1
 
 # ---------------------------------------------------------------------------
 # 5. Filter — only accepted findings at or above the threshold reach the executor
 # ---------------------------------------------------------------------------
 
-jq --argjson rank "$RANKS" --arg threshold "$THRESHOLD" --slurpfile findings "$RUN_DIR/findings.json" '
+jq --argjson rank "$RANKS" --arg threshold "$THRESHOLD" \
+  --slurpfile findings "$RUN_DIR/findings.json" '
   [ .verdicts[]
     | . as $verdict
     | select($verdict.verdict == "accept" and $rank[$verdict.severity] >= $rank[$threshold])
     | $verdict + {finding: ($findings[0].findings[] | select(.id == $verdict.finding_id))}
   ]' "$RUN_DIR/verdicts.json" >"$RUN_DIR/approved.json" || exit 1
 
-jq '[.verdicts[] | select(.verdict == "escalate")]' "$RUN_DIR/verdicts.json" >"$RUN_DIR/escalated.json" || exit 1
+jq '[.verdicts[] | select(.verdict == "escalate")]' "$RUN_DIR/verdicts.json" \
+  >"$RUN_DIR/escalated.json" || exit 1
 jq --argjson rank "$RANKS" --arg threshold "$THRESHOLD" \
   '[.verdicts[] | select(.verdict == "accept" and $rank[.severity] < $rank[$threshold])]' \
   "$RUN_DIR/verdicts.json" >"$RUN_DIR/optional.json" || exit 1
@@ -703,7 +728,8 @@ jq --argjson rank "$RANKS" --arg threshold "$THRESHOLD" \
 APPROVED_COUNT="$(require_array_length "$RUN_DIR/approved.json")" || exit 1
 ESCALATED_COUNT="$(require_array_length "$RUN_DIR/escalated.json")" || exit 1
 OPTIONAL_COUNT="$(require_array_length "$RUN_DIR/optional.json")" || exit 1
-REJECTED_COUNT="$(jq '[.verdicts[] | select(.verdict == "reject")] | length' "$RUN_DIR/verdicts.json")"
+REJECTED_COUNT=\
+"$(jq '[.verdicts[] | select(.verdict == "reject")] | length' "$RUN_DIR/verdicts.json")"
 
 echo
 echo "── review complete: $RUN_DIR"

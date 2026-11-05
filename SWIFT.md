@@ -228,7 +228,8 @@ struct VideoSettings {
 }
 ```
 
-Use a class when you need identity (`===`), inheritance, a deinitializer, or reference semantics on purpose.
+Use a class when you need identity (`===`), inheritance, a deinitializer, or reference semantics on
+purpose.
 
 ### Use Enums for Finite States
 
@@ -398,15 +399,22 @@ let duration: TimeInterval? = firstTrack.flatMap { $0.duration }
 A function reports a failure according to its kind (CLEAN_CODE.md, Error Handling):
 
 - A bug (a broken precondition or invariant) stops the program: `precondition`, `fatalError`.
-- An outcome that the requirements name, such as "video not found", is a case of the enum that the function returns. The signature names it and the caller must handle it. When the only such outcome is "there is none", the function returns `nil`.
-- Any other failure of storage, network or the platform is thrown as the application's own `Error` type, with a message and the library's error as the cause, by the code that calls the library. That code catches only the library's own error types, never every error. Only the code that started the operation catches the application's error.
+- An outcome that the requirements name, such as "video not found", is a case of the enum that the
+  function returns. The signature names it and the caller must handle it. When the only such outcome
+  is "there is none", the function returns `nil`.
+- Any other failure of storage, network or the platform is thrown as the application's own `Error`
+  type, with a message and the library's error as the cause, by the code that calls the library.
+  That code catches only the library's own error types, never every error. Only the code that
+  started the operation catches the application's error.
 
-`CancellationError` is not a failure. It is passed on as it is: never wrapped, never shown to the user as an error.
+`CancellationError` is not a failure. It is passed on as it is: never wrapped, never shown to the
+user as an error.
 
 ### Use Swift Errors
 
 ```swift
-// BAD: nil for every failure. The caller cannot tell "no such video" from a disk that cannot be read
+// BAD: nil for every failure.
+// The caller cannot tell "no such video" from a disk that cannot be read
 func loadVideo(id: String) -> Video? {
     try? decode(Data(contentsOf: videoURL(id: id)))
 }
@@ -429,7 +437,8 @@ struct StorageError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-// GOOD: Code that calls a library catches only the library's own error types, through this one function
+// GOOD: Code that calls a library catches only the library's own error types,
+// through this one function
 func storageCall<T>(_ message: String, _ call: () throws -> T) throws -> T {
     do {
         return try call()
@@ -449,7 +458,8 @@ func storageCall<T>(_ message: String, _ call: () async throws -> T) async throw
     }
 }
 
-// GOOD: A missing file is the outcome "there is none", not a failure: loadVideo turns it into nil before storageCall sees it
+// GOOD: A missing file is the outcome "there is none", not a failure:
+// loadVideo turns it into nil before storageCall sees it
 func loadVideo(id: String) throws -> Video? {
     precondition(!id.isEmpty, "Video id is empty")
     let data: Data? = try storageCall("Cannot read video \(id)") {
@@ -464,7 +474,8 @@ func loadVideo(id: String) throws -> Video? {
 }
 
 // GOOD: Code that starts an operation catches only StorageError, through this one function.
-// CancellationError passes: it ends the task and is never shown. Any other error is a bug: it stops the program
+// CancellationError passes: it ends the task and is never shown.
+// Any other error is a bug: it stops the program
 @discardableResult
 func launchCatchingStorage(
     onStorageFailure: @escaping @MainActor () -> Void,
@@ -483,10 +494,14 @@ func launchCatchingStorage(
 }
 ```
 
-In a Kotlin Multiplatform app, Swift calls Kotlin use cases. A Kotlin `StorageException` and a Kotlin cancellation reach Swift as an `NSError` with the domain `KotlinException`; the Kotlin object is in `userInfo["KotlinException"]`, as `StorageException` and `KotlinCancellationException`. The same one function recognizes them too:
+In a Kotlin Multiplatform app, Swift calls Kotlin use cases. A Kotlin `StorageException` and a
+Kotlin cancellation reach Swift as an `NSError` with the domain `KotlinException`; the Kotlin object
+is in `userInfo["KotlinException"]`, as `StorageException` and `KotlinCancellationException`. The
+same one function recognizes them too:
 
 ```swift
-// GOOD: Kotlin's StorageException is shown like StorageError, Kotlin's cancellation passes like CancellationError
+// GOOD: Kotlin's StorageException is shown like StorageError,
+// Kotlin's cancellation passes like CancellationError
 @discardableResult
 func launchCatchingStorage(
     onStorageFailure: @escaping @MainActor () -> Void,
@@ -541,13 +556,17 @@ func openVideo(id: String) throws -> OpenVideoResult {
 
 ```swift
 // GOOD: Result for async callbacks (pre-async/await). What the function would throw is .failure
-func openVideo(id: String, completion: @escaping @Sendable (Result<OpenVideoResult, Error>) -> Void) {
+func openVideo(
+    id: String,
+    completion: @escaping @Sendable (Result<OpenVideoResult, Error>) -> Void
+) {
     DispatchQueue.global().async {
         completion(Result { try openVideo(id: id) })
     }
 }
 
-// Usage: .failure is thrown again, so launchCatchingStorage catches only StorageError and shows a general message
+// Usage: .failure is thrown again,
+// so launchCatchingStorage catches only StorageError and shows a general message
 openVideo(id: "123") { result in
     launchCatchingStorage(onStorageFailure: showGeneralError) {
         switch result {
@@ -609,7 +628,7 @@ enum PlaybackState: Equatable {
 @Published private(set) var state = EditorState()
 
 func play() {
-    state = state.copy(playbackState: .playing)
+    state.playbackState = .playing
 }
 ```
 
@@ -795,7 +814,8 @@ func loadVideo() {
     }
 }
 
-// GOOD: MainActor annotation guarantees the main thread. launchCatchingStorage (Error Handling) catches only
+// GOOD: MainActor annotation guarantees the main thread.
+// launchCatchingStorage (Error Handling) catches only
 // StorageError and shows a general message; CancellationError passes
 @MainActor
 class EditorViewModel: ObservableObject {
@@ -804,7 +824,9 @@ class EditorViewModel: ObservableObject {
 
     func loadVideo() {
         loadTask?.cancel()
-        loadTask = launchCatchingStorage(onStorageFailure: { self.state.error = "Could not load the video" }) {
+        loadTask = launchCatchingStorage(
+            onStorageFailure: { self.state.error = "Could not load the video" }
+        ) {
             let video = try await self.videoLoader.load(self.id)
             self.state.video = video
         }
@@ -1117,8 +1139,10 @@ func test_viewModel_loadsVideo_onAppear() async {
 - [ ] No force unwraps (`!`) except IBOutlets
 - [ ] Guard statements for early exit
 - [ ] A bug stops the program (`precondition`, `fatalError`)
-- [ ] An outcome that the requirements name is returned, not thrown; when there is more than one, each is a case of the function's own result enum and carries the values that explain it
-- [ ] Any other failure is thrown as the application's own `Error` type, with a message and the library's error as the cause
+- [ ] An outcome that the requirements name is returned, not thrown; when there is more than one,
+      each is a case of the function's own result enum and carries the values that explain it
+- [ ] Any other failure is thrown as the application's own `Error` type, with a message and the
+      library's error as the cause
 - [ ] `CancellationError` is passed on, never wrapped or shown as an error
 - [ ] No implicitly unwrapped optionals (except IBOutlets)
 

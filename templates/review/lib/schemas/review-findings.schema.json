@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Review findings",
-  "description": "Strict output contract for the reviewer (Layer 2). Free-form prose is not accepted.",
+  "description":
+    "Strict output contract for the reviewer (Layer 2). Free-form prose is not accepted.",
   "type": "object",
   "properties": {
     "findings": {
@@ -34,11 +35,13 @@
           },
           "severity": {
             "enum": ["blocker", "major", "minor", "nit"],
-            "description": "Derived from the violated rule's level: MUST=blocker, SHOULD=major, MAY=minor"
+            "description":
+              "Derived from the violated rule's level: MUST=blocker, SHOULD=major, MAY=minor"
           },
           "rule_violated": {
             "type": "string",
-            "description": "Pointer to the rule: REVIEW_POLICY.md R-011, CLEAN_CODE.md#naming, lint rule id"
+            "description":
+              "Pointer to the rule: REVIEW_POLICY.md R-011, CLEAN_CODE.md#naming, lint rule id"
           },
           "evidence": {
             "type": "string",
@@ -51,7 +54,8 @@
           },
           "confidence": {
             "enum": ["confirmed", "likely", "possible"],
-            "description": "confirmed = proven by execution or an exact rule match; possible = pattern match only"
+            "description":
+            "confirmed = proven by execution or an exact rule match; possible = pattern match only"
           },
           "suggested_fix": {
             "type": "string",

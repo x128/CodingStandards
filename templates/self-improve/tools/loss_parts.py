@@ -1,6 +1,7 @@
 import json, sys
 
-USAGE = 'usage: loss_parts.py <json of removed_comments.py> <out folder> <project name> [blocks per part, 55 by default]'
+USAGE = ('usage: loss_parts.py <json of removed_comments.py> <out folder> <project name> '
+         '[blocks per part, 55 by default]')
 
 
 def main():
@@ -13,8 +14,10 @@ def main():
         with open(f'{out}/{project}-part{k}.md', 'w') as f:
             f.write(f'# Comments removed from {project}, part {k} of {len(parts)}\n\n')
             for b in part:
-                f.write(f"## {b['id']}\nWas in: src/{b['file']} line {b['line']}\n\n```\n" + '\n'.join(b['text']) + '\n```\n')
-                f.write('The code line under it (or the line it trailed): ' + b['documents'] + '\n\n')
+                f.write(f"## {b['id']}\nWas in: src/{b['file']} line {b['line']}\n\n```\n"
+                        + '\n'.join(b['text']) + '\n```\n')
+                f.write('The code line under it (or the line it trailed): '
+                        + b['documents'] + '\n\n')
     print(project, len(blocks), 'blocks in', len(parts), 'parts')
 
 

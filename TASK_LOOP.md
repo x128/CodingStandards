@@ -26,21 +26,20 @@ by hand every day, and `/code-review` works on its own.
 runs them in a fixed order with roles that cannot mark their own work, and it
 adds two things that do not otherwise exist:
 
-- a **landing contract** — the conditions under which a commit may happen
-  without you (`land.sh`), where the plan's row "Who writes to git" lets the
-  loop commit
-- an **advance decision** — whether the loop waits for you after a finished
-  task, or goes on with one line saying what it finished (`land.conf`)
+- a **landing contract** — the conditions under which a commit may happen without you (`land.sh`),
+  and how far it then goes (`publish.sh`), where the requirement "Who writes to git" lets the loop
+  commit
+- an **advance decision** — whether the loop waits for you after a finished task, or goes on with
+  one line saying what it finished (`land.conf`)
 
 Those two are the whole reason this document exists. Everything else here is
 plumbing that makes them safe enough to use.
 
-**What it does not change.** The execution rules hold inside the loop exactly as
-they do outside it: one task at a time, exit criteria are the definition of
-done, and *you* decide a task is genuinely finished. Where the plan's row "Who
-writes to git" lets the loop commit, it moves **one** action — the mechanical
-act of committing — behind a contract you enable and can revoke. It never moves
-the judgment.
+**What it does not change.** The execution rules hold inside the loop exactly as they do outside it:
+one task at a time, exit criteria are the definition of done, and *you* decide a task is genuinely
+finished. Where the requirement "Who writes to git" lets the loop commit, it moves **mechanical**
+acts — committing and, as far as it says, pushing, opening a pull request and merging it — behind a
+contract you enable and can revoke. It never moves the judgment.
 
 Remove the loop and nothing is lost except the automation: the rules, the review,
 and the gates are all still there, and you run them yourself.
@@ -85,7 +84,7 @@ Three roles. The third one owns the tree.
                                   └──────┬──────────────┬─────┘
                                          │              │
                                     land.sh          escalate
-                                    (commit)            │
+                                    (commit, publish)   │
                                          │              ▼
                                          ▼            HUMAN
                                     next task
@@ -95,13 +94,12 @@ Three roles. The third one owns the tree.
 |------|---------|-------|
 | Executor | How to write it | Edits files inside the task's scope |
 | Reviewer | What is broken | None — emits JSON, touches nothing |
-| Maintainer | What counts, whether another round is needed, what lands | Commits through one narrow script where the plan's row "Who writes to git" lets the loop commit; otherwise none |
+| Maintainer | What counts, whether another round is needed, what lands | Lands through two narrow scripts as far as the requirement "Who writes to git" lets the loop go; otherwise none |
 
-The maintainer is the role this pipeline exists for. It is not a second
-reviewer: it never hunts for defects. It filters the reviewer's output, decides
-whether another round is needed, lands the task where the plan's row "Who writes
-to git" lets the loop commit, and moves to the next one once the task is
-accepted and committed.
+The maintainer is the role this pipeline exists for. It is not a second reviewer: it never hunts for
+defects. It filters the reviewer's output, decides whether another round is needed, lands the task
+where the requirement "Who writes to git" lets the loop commit, and moves to the next one once the
+task is accepted and committed.
 
 ### Where the reliability comes from
 
@@ -123,10 +121,12 @@ executor's reasoning, and the maintainer sees the findings and the gates, not
 the reviewer's reasoning. A session that judges work it argued for in its own
 context approves too much.
 
-**Models.** `.review/agents.conf` names the model and effort of each role:
-executor, reviewer, maintainer, `/qa` and helper. `review.sh` and every skill that
-starts agents take the role's model from it and say it before they start; a role
-set to `inherit` runs on the model Claude Code is set to.
+**Models.** `.claude/agents.conf` names the model and effort of each role: executor, reviewer,
+maintainer, `/qa` and helper. `review.sh` and every skill that starts agents take the role's model
+from it and say it before they start. `review.sh` starts the reviewer and the maintainer in a
+process of their own, with no session to inherit from: a role it starts gets the model named, `opus`
+when the file names none; `inherit` is for an agent a session starts, which then runs on the
+session's model.
 
 ---
 
@@ -168,23 +168,21 @@ Fill in `.review/gates.sh`. Reference commands:
 | Go | `go build ./...` | `go test ./...` | `test -z "$(gofmt -l .)"` | `golangci-lint run` | `go-arch-lint` |
 | C# | `dotnet build` | `dotnet test` | `dotnet format --verify-no-changes` | Roslyn analyzers | NetArchTest |
 
-Every command there **checks** and never rewrites. A `--format` or `--write`
-mode in the `format` slot breaks the rule above and stops the run right after
-the gates, before a single token is spent on review; and a
-command that exits 0 on failure — bare `gofmt -l` is the classic — is a gate
-that never fires at all. So is a test command on a project that has no tests:
-`./gradlew allTests`, `pytest`, `go test ./...` all exit 0 with nothing to run.
+Every command there **checks** and never rewrites. A `--format` or `--write` mode in the `format`
+slot breaks the rule above and stops the run right after the gates, before a single token is spent
+on review; and a command that exits 0 on failure — bare `gofmt -l` is the classic — is a gate that
+never fires at all. So is a test command on a project that has no tests: `./gradlew allTests`,
+`pytest`, `go test ./...` all exit 0 with nothing to run.
 
 **Checklist when starting a project in a new language:**
 
-- [ ] A tool for each of the five slots. If none exists for `arch`, write the
-      rules as ordinary unit tests — every language can do this.
+- [ ] A tool for each of the five slots. If none exists for `arch`, write the rules as ordinary unit
+      tests — every language can do this.
 - [ ] Every gate runs from one command and exits non-zero on failure.
-- [ ] Fast enough to run per task, and again at landing (target: under 2
-      minutes). Scope `test` to affected modules if the full suite is slow, and
-      run the full suite in CI.
+- [ ] Fast enough to run per task, and again at landing (target: under 2 minutes). Scope `test` to
+      affected modules if the full suite is slow, and run the full suite in CI.
 - [ ] One definition, three call sites: local, hook, CI.
-- [ ] Tool choices recorded in the plan's Decisions Log.
+- [ ] Tool choices recorded in the Tech Stack of the requirements.
 
 **Gates run before the reviewer and again at landing.** A red build means the
 reviewer never runs — send the executor back with the compiler output.
@@ -208,7 +206,7 @@ exactly the "add a module" task, not an edge case.
 
 ## Executor
 
-Writes code for **one task** in its own worktree or branch.
+Writes code for **one task**.
 
 - **Narrow scope beats clever orchestration.** A tightly scoped task with an
   explicit file boundary costs an order of magnitude less than a broad one, and
@@ -317,14 +315,12 @@ spreads without anyone choosing to spread it.
 
 ### Deterministic fields are computed, not asked
 
-- `severity` follows from the rule level (`MUST` → blocker, `SHOULD` → major,
-  `MAY` → minor).
-- Quote-matches-source, `file:line` validity, and duplicate detection are script
-  checks. A finding whose quote appears elsewhere in the file is relocated to the
-  line where it actually is; one whose quote appears nowhere is dropped. That
-  check alone removes a large share of hallucinations, and relocating rather
-  than dropping keeps real findings that merely miscounted the diff.
-  Multi-line quotes are matched on their first non-blank line.
+- `severity` follows from the rule level (`MUST` → blocker, `SHOULD` → major, `MAY` → minor).
+- Quote-matches-source, `file:line` validity, and duplicate detection are script checks. A finding
+  whose quote appears elsewhere in the file is relocated to the line where it actually is; one whose
+  quote appears nowhere is dropped. That check alone removes a large share of hallucinations, and
+  relocating rather than dropping keeps real findings that merely miscounted the diff. Multi-line
+  quotes are matched on their first non-blank line.
 - Truncated JSON is a mechanical failure: detect and retry with a smaller scope.
 
 ---
@@ -335,9 +331,9 @@ Three jobs, in order. Only the first is a judgment call.
 
 ### Job 1 — Triage the findings
 
-Inputs: `findings.json`, `gates.json`, `REVIEW_POLICY.md`, the architecture
-context, and the task's exit criteria. One verdict per finding —
-`accept` / `reject` / `escalate` — against `maintainer-verdicts.schema.json`.
+Inputs: `findings.json`, `gates.json`, `REVIEW_POLICY.md`, the architecture context, and the task's
+exit criteria. One verdict per finding — `accept` / `reject` / `escalate` — against
+`maintainer-verdicts.schema.json`.
 
 Decision rules, first match wins:
 
@@ -373,14 +369,11 @@ authoritative and nothing checks it. Rule 6 was wrong in the prompt for exactly
 this reason: two human-readable copies said one thing and the copy that decided
 verdicts said another.
 
-Only `accept` at or above the threshold reaches the executor. The threshold has
-one source — `THRESHOLD` in `.review/land.conf`, overridable per run by
-`review.sh --threshold`. The value actually used is recorded in the run, and
-`land.sh` reads it from there, so landing can never apply a different bar than
-the review did.
-Accepted `minor`/`nit` go to an optional list. This threshold is the most
-effective dial in the pipeline: raise it when diffs bloat, lower it when defects
-leak.
+Only `accept` at or above the threshold reaches the executor. The threshold has one source —
+`THRESHOLD` in `.review/land.conf`, overridable per run by `review.sh --threshold`. The value
+actually used is recorded in the run, and `land.sh` reads it from there, so landing can never apply
+a different bar than the review did. Accepted `minor`/`nit` go to an optional list. This threshold
+is the most effective dial in the pipeline: raise it when diffs bloat, lower it when defects leak.
 
 ### Job 2 — Another round, or done?
 
@@ -403,54 +396,79 @@ round n: execute → gates → review → triage → accepted findings? → fix,
   two consecutive rounds, or a round accepted as many findings as the one before
   it, or more: the fix is not converging, and another attempt will not help.
 
-**The same failure twice in a row goes to the user**: gates red for the same
-reason, `review.sh` exit 5 or 1, or the same refusal of `land.sh`. Another attempt
-does not mend what broke outside the code — a simulator that will not boot, a
-review that cannot quote a deleted file. Never a third try alone.
+**The same failure twice in a row goes to the user**: gates red for the same reason, `review.sh`
+exit 5 or 1, the same refusal of `land.sh`, or `land.sh` exit 4 or `publish.sh` exit 5 for the same
+reason. Another attempt does not mend what broke outside the code — a simulator that will not boot,
+a review that cannot quote a deleted file. Never a third try alone. Checks still running are not a
+failure, and have their own count ([Publishing](#publishing)).
 
-**`review.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`,
-5 by default). It counts every run that got as far as the gates, whatever ended
-it: rounds, red gates, unusable reviews, and the reviews again after `/qa`, an
-answer `fixed` or a landing refusal. Five leaves room for the three or four
-rounds of a large change; a large task that also had a red gate reaches it, and
-the user is asked — that is the point, not a wrong count. Past the limit
-`review.sh` runs nothing and exits 6, and the user decides whether to go on.
-`--past-limit` runs once more and starts the count again — on the user's
-answer, or when the count is wrong (runs of another task under the same id),
-said in the report: it is a warning, not a lock. `land.sh` checks its other
-conditions before the gates, so a landing refused for one of them costs no
-build; a landing that fails at or after its gates — red, killed, or a commit
-that fails — may be retried once on the same run, so the answers to its
-escalations still apply, and a second time goes back through `review.sh`, since
-nothing else counts landings. The two stops back
-each other: the rule above stops early, at the second failure; the count stops
-a session that missed the rule, on every path that runs a review or the
-gates.
+**`review.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`, 5 by default).
+It counts every run that got as far as the gates, whatever ended it: rounds, red gates, unusable
+reviews, and the reviews again after `/qa`, an answer `fixed` or a landing refusal. Five leaves room
+for the three or four rounds of a large change; a large task that also had a red gate reaches it,
+and the user is asked — that is the point, not a wrong count. Past the limit `review.sh` runs
+nothing and exits 6, and the user decides whether to go on. `--past-limit` runs once more and starts
+the count again — on the user's answer, or when the count is wrong (runs of another task under the
+same id), said in the report: it is a warning, not a lock. `land.sh` checks its other conditions
+before the gates, so a landing refused for one of them costs no build; a landing that fails at or
+after its gates — red, killed, or a commit that fails — may be retried once on the same run, so the
+answers to its escalations still apply, and a second time goes back through `review.sh`, since
+nothing else counts landings. The two stops back each other: the rule above stops early, at the
+second failure; the count stops a session that missed the rule, on every path that runs a review or
+the gates.
 
 ### Job 3 — Land, then advance
 
-Covered in the next two sections. The maintainer does not decide *whether the
-work is good enough*; it checks conditions and commits (where `LANDING=on`), or
-refuses and says which condition failed.
+Covered in the next two sections. The maintainer does not decide *whether the work is good enough*;
+it checks conditions and commits (at every `LANDING` but `off`), or refuses and says which condition
+failed.
 
 ### Prohibitions
 
-- Never adds findings the reviewer did not report; never rewrites a finding into
-  a different problem.
+- Never adds findings the reviewer did not report; never rewrites a finding into a different
+  problem.
 - Never edits code, tests, or `REVIEW_POLICY.md`. Policy changes are yours.
-- Never resolves an escalation by guessing. Escalation is a cheap, correct
-  outcome.
-- Never runs git directly. Its only write path is `land.sh`.
+- Never resolves an escalation by guessing. Escalation is a cheap, correct outcome.
+- Never runs git directly, and reads a pull request only with `gh pr view` and `gh pr checks`. Its
+  only write paths are `land.sh` and `publish.sh`.
 
 ---
 
 ## Landing
 
-Where the plan's row "Who writes to git" lets the loop commit, the maintainer
-commits. This is the whole point of the role — but the authority is deliberately
-shaped so that "commit" means one specific, checkable thing. Where that row
-leaves commits to you,
-`LANDING` stays `off`, and the maintainer shows the files and the message.
+Where the requirement "Who writes to git" lets the loop commit, the maintainer commits. This is the
+whole point of the role — but the authority is deliberately shaped so that "commit" means one
+specific, checkable thing. How far the task goes after that is your answer there, and
+`/maintain --init` writes it to `LANDING` in `.review/land.conf`, the first time and each time the
+answer changes. The answer is the permission: nothing is switched on by hand. The scripts do what
+`LANDING` says and cannot read the requirements, so `/maintain` compares the two before each landing
+and stops if `LANDING` goes further than the answer; a lower `LANDING` is yours, and stands.
+
+| Answer | `LANDING` | What the loop does | What is left to you |
+|-----|-----------|--------------------|---------------------|
+| (a) | `off` | Shows the files and the message | The commit |
+| (b) | `push` | Commits, pushes a branch | The merge |
+| (c) | `pr` | Commits, pushes, opens a pull request | The merge |
+| (d) | `merge` | Commits, pushes, opens a pull request, fixes what the review finds, merges it | Looking when you want to |
+
+`on` commits on the current branch and publishes nothing. Any value not listed here is a refusal,
+never a silent `off` or `on`, and so is a line that only looks like one, such as `LANDING = merge`.
+
+At (d) the merge does not wait for you: that is what the answer gives away, and it is why "you look
+when you want to" is about main, not about the next task. `ADVANCE` still says whether the next task
+waits for you ([Advancing](#advancing)). What you object to afterwards is already in main: the
+objection becomes a new task on top of it, or a revert you make, since no agent can revert.
+
+At every answer a commit of the loop holds the task's files and the files the loop keeps as it goes:
+`TASK_TRACKER.md` and `qa/test-cases.md`. These are in no task's scope and are written after the
+review, so the reviewer and conditions 2 and 6 leave them out. They land with the task, or a line in
+the tracker would refuse the next task and the two would reach main only by hand.
+
+`REQUIREMENTS.md` and `PLAN.md` change only with your answer, so no landing commits them, and
+neither the reviewer nor conditions 2 and 6 count them as task work. They stay in the working tree
+for you to read and commit, at every answer, as do your policy rules and the decision logs under
+`.review/`, which record what you said. A log committed on a task branch would also stop you going
+back to the base branch while its next line waits in the tree.
 
 ### The contract
 
@@ -459,23 +477,22 @@ leaves commits to you,
 | # | Condition | Why |
 |---|-----------|-----|
 | 1 | The run directory is a completed review run | An empty directory must never authorise a commit |
-| 2 | The run's tree fingerprint matches the tree now | A review of a tree that has since changed is not a review of what is being committed |
+| 2 | The run's tree fingerprint matches the tree now, the loop's own files apart | A review of a tree that has since changed is not a review of what is being committed |
 | 3 | Gates re-run green **now** | Cheap insurance; catches a drifted environment |
 | 4 | Zero accepted findings at or above the run's threshold | Nothing outstanding |
 | 5 | Zero pending escalations | A human owes an answer |
-| 6 | Changed files ⊆ the task's declared scope | The diff did not sprawl |
+| 6 | Changed files ⊆ the task's declared scope, the loop's own files apart | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim | The tracker's definition of done, with the claim recorded in the commit |
-| 8 | Branch is not detached, and not protected when `LANDING=on` | Landing never touches trunk, and never makes an unreachable commit; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
+| 8 | `LANDING` is a known level and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
-Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`.
-With `LANDING=on` the eight checks are followed by a commit; with `LANDING=off`
-they are followed by the exact `git` commands, printed for the maintainer, who
-gives you the files and the message, and the exit code is 0. Every check runs either way — turning landing off removes the
-commit, never the contract. The one exception is the protected branch of
-condition 8: it guards the loop's own commit, so with `LANDING=off` it is printed
-as a note, and a project that commits by hand on `main` still gets the files and
-the message. That is why `off` is the shipped default: you get the full pipeline
-before you delegate anything.
+Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`. At `on`, `push`, `pr`
+and `merge` the eight checks are followed by a commit; at `push` and up, by publishing too; with
+`LANDING=off` they are followed by the exact `git` commands, printed for the maintainer, who gives
+you the files and the message, and the exit code is 0. Every check runs either way — turning landing
+off removes the commit, never the contract. The one exception is the protected branch of condition
+8: it guards the loop's own commit, so with `LANDING=off` it is printed as a note, and a project
+that commits by hand on `main` still gets the files and the message. That is why `off` is what
+`land.sh` falls back to when nothing is set: it delegates nothing.
 
 **Condition 7 is the one with no mechanical backing.** It checks that a claim
 was *made*, not that it is true. `.review/` is excluded from the tree
@@ -488,40 +505,136 @@ Conditions 1, 2, and 4 exist because the dangerous failure is not a wrong
 judgment — it is a **missing** one reading as approval. An unreadable count, an
 absent artifact, or a stale run must refuse, never default to zero.
 
-Then, and only then, it stages **exactly the in-scope files** — never
+Then, and only then, it stages **exactly the in-scope files and the loop's own** — never
 `git add -A` — and commits with trailers linking the task and the review run.
 
-The commit is `git commit --only -- <in-scope files>`, not a bare `git commit`.
-A bare commit writes the whole index, so anything the user had staged when the
-loop ran would ride along inside the task's commit without ever being
-scope-checked — `.review/land.conf` and `.review/REVIEW_POLICY.md` most of all,
-since they are filtered out of the changed-file list by design. The files that
-define this pipeline's limits must not be able to change inside a commit the
-pipeline made on its own. Whatever the user had staged stays staged, untouched.
+The commit is `git commit --only -- <those files>`, not a bare `git commit`. A bare commit writes
+the whole index, so anything the user had staged when the loop ran would ride along inside the
+task's commit without ever being scope-checked — `.review/land.conf` and `.review/REVIEW_POLICY.md`
+most of all, since they are filtered out of the changed-file list by design. The files that define
+this pipeline's limits must not be able to change inside a commit the pipeline made on its own.
+Whatever the user had staged stays staged, untouched.
+
+`land.sh` exits `0` when the task went as far as `LANDING` says, `3` on a refusal, `1` on an error,
+and `4` when the commit landed but publishing did not finish. The output of `publish.sh` is shown.
+If no code has to change — the network was down, the checks are still running — meet the cause and
+run `publish.sh` alone, never `land.sh` again: the commit is in, and another landing with nothing
+new would only be refused. If code has to change, that is a new pass of the loop on the same branch:
+the work, a review run and `land.sh`, which adds a commit.
+
+### Branches
+
+At `push`, `pr` and `merge` the commit never goes onto a protected branch: `main`, `master`,
+`PROTECTED_BRANCHES` and the base branch.
+
+- On a protected branch, or on `task/<another id>`, `land.sh` creates `task/<id>` from HEAD with
+  `git switch -c`, after the gates are green and just before the commit, so a refused landing leaves
+  the branch as it was. The uncommitted tree moves with it, and the tree fingerprint has no branch
+  name in it. The task id has to make a branch name: it matches `^[A-Za-z0-9._-]+$` or landing
+  refuses.
+- On `task/<id>`, or on any other branch that is not protected, it stays there.
+- If `task/<id>` exists, here or on the remote, and is not the current branch, condition 8 refuses
+  before the gates: the work on that task is somewhere else.
+
+A next task starts where the last one left the checkout, and agents cannot move it. At `push` and
+`pr` that is the branch of the earlier task, so the next one stacks on it, merged or not: its branch
+starts from the earlier one, and its pull request still goes to the base branch, so it shows the
+earlier commits too until those are in the base branch, and merging it merges them. After you merge,
+go back to the base branch and update it before the next task starts; a squash merge above all
+leaves the stack showing those commits again. At `merge` a task ends on the base branch, so the next
+one starts there. If it does stack, because the earlier one is still waiting, it waits too:
+`publish.sh` does not merge a pull request that carries another task's commits, because they would
+reach the base branch past the review on their own pull request.
+
+**Remote:** `REMOTE` in `land.conf`, else `origin` if it exists, else the only remote, else a
+refusal. **Base branch:** `BASE_BRANCH` in `land.conf`, else the HEAD of the remote, asked at every
+landing because what a clone recorded goes stale, else `main` if it exists, else `master`. A remote
+that cannot be reached is a refusal, never a guess. Nothing assumes a remote named `origin`, and
+`gh` is told which repository that remote is, or it would pick one of its own.
+
+### Publishing
+
+`land.sh` keeps the job of committing and has no push in it. `publish.sh` holds the push, the pull
+request and the merge, and has no commit in it. `land.sh` calls it after a commit at `push`, `pr`
+and `merge`; run alone, with `publish.sh --task-file <task.json>`, it finishes a push that failed or
+a pull request that was waiting, without another commit.
+
+1. **Refuses** at `off` and `on`, on a protected branch, on a detached HEAD, on a task id that
+   cannot name a branch, and unless HEAD carries the trailer `Task-Id: <id>` of the task file. It
+   also refuses a branch that carries commits no landing made: among those the push would add to the
+   remote and, at `merge`, among all that are not yet on the base branch. At `push` and `pr` a
+   person merges and sees what the branch holds, so what they pushed themselves stands; at `merge`
+   nobody does. A merge commit counts as neither: only a person can make one, and it is how the base
+   gets into a branch that conflicts with it, so with one on top the trailer is read from the commit
+   under it.
+2. **Looks at what is there**, at `pr` and `merge`, before it pushes. A pull request of this branch
+   into the base branch that was closed without a merge is somebody's no: nothing is pushed or
+   opened, it exits `5`, and only a person reopens it. One merged at this very commit is finished:
+   nothing is pushed back.
+3. **Pushes** with `git push -u`, never forced, with both sides of the refspec written out, so
+   `remote.<name>.push` cannot force or redirect it. A rejected push is an error that says the
+   remote branch moved.
+4. **At `pr` and `merge`, opens the pull request** with the commit subject as its title and the
+   trailers as its body, if the branch has none open. If one is open it does nothing, so a rerun
+   never opens a second one, and it prints the URL.
+5. **At `merge`, merges**, unless the pull request carries another task's commits, its head is not
+   the commit landed here, changes are requested, or checks are failing or pending; then it says
+   which, with the URL, and exits `5`. A cancelled check is a failing one. Up to `CHECKS_WAIT`
+   seconds (30 unless `land.conf` says otherwise) it waits for checks to appear, since until some
+   seconds after a push `gh` reports none, and then to finish. A repository that reports none after
+   that long merges. It merges that commit and no other, with `--merge --match-head-commit`, never a
+   squash, because a merge commit keeps the `Task-Id` trailers, and `--delete-branch` for
+   `task/<id>` only: any other branch is someone's. A refusal by `gh` is exit `5` with its reason.
+   It finishes on the base branch, updated with `git pull --ff-only`, and deletes the local
+   `task/<id>`. When the base branch is checked out in another worktree, this one stays where it is
+   and says so. When the checkout cannot move, it says so and exits `1`: the merge is in, and
+   `publish.sh` again only tries the move again. When the base branch here cannot fast-forward, the
+   same; that one is for you to settle, as the script refuses on the base branch.
+
+Exit codes: `0` done, `1` error, `3` refused, `5` waiting.
+
+At `merge` the rest of that answer, "fixes what the review finds", is the loop itself. On `5`, or
+`4` from `land.sh`, the maintainer reads the pull request with `gh pr view` and `gh pr checks`, and
+what needs fixing goes through the normal loop on the same branch: the work, a review run, landing
+again, which adds a commit and updates the pull request.
+
+Checks still running are not a failure. Each run of `publish.sh` waits `CHECKS_WAIT` seconds, and
+the maintainer runs it again, up to three runs in a row, then tells you. Set `CHECKS_WAIT` a little
+over what your checks take and a landing ends in one run, with `0`, which is what the next task
+waits for at `ADVANCE=auto`.
+
+A conflict with the base branch goes to you, since no agent can merge or rebase: `gh` refuses the
+merge and `publish.sh` exits `5` with its reason. Merge the base into the branch, and `publish.sh`
+alone finishes it; or merge the pull request yourself.
 
 ### What landing cannot do
 
-`land.sh` has no code path for `push`, `amend`, `--force`, `rebase`,
-`checkout`, `reset`, `stash`, or `clean`. It commits on the current branch or it
-fails. Trunk, history, and the remote are never touched by an agent.
+`land.sh` has no code path for `push`, `amend`, `--force`, `rebase`, `checkout`, `reset`, `stash`,
+or `clean`. It commits, on the current branch or on the one branch it may create, or it fails.
+`publish.sh` has no code path for `commit`, `amend`, `--force`, `rebase`, `reset`, `stash`, or
+`clean`. History is never rewritten by an agent, and for the loop **main is reached only through a
+pull request, never a direct commit**: neither script commits onto a protected branch or pushes one.
+It reaches main at `merge` alone. At `push` and `pr` it stops at the branch and you merge it, and at
+`off` and `on` the remote is never touched at all. What you do by hand is yours.
 
 ### Why the authority is a script, not a permission
 
-Agents get **no write-git permission by policy**. `.claude/settings.json` denies
-the mutating `git` subcommands and their flag forms, and pre-approves one
-command so it does not prompt: `land.sh`. That allow entry is a convenience, not
-the boundary — `review.sh`, `gates.sh`, tests and linters are ordinary `Bash` calls
-under the project's normal permission settings. What makes `land.sh` special is
-that it is the only one that can write to git at all.
+Agents get **no write-git permission by policy**. `.claude/settings.json` denies the mutating `git`
+subcommands and their flag forms, and the `gh` commands that write or reach around the list, and
+pre-approves two commands that write so they do not prompt: `land.sh` and `publish.sh`. Those allow
+entries are a convenience, not the boundary — `review.sh`, `gates.sh`, tests and linters are
+ordinary `Bash` calls under the project's normal permission settings. What makes the two special is
+that they are the only ones that can write to git at all. The deny list is what stops an agent from
+merging by hand; `gh pr view` and `gh pr checks` stay allowed, because reading is how the fix loop
+of `merge` sees a pull request.
 
-Be precise about what this is: permission patterns match by prefix, so the list
-covers the invocations an agent would actually write, not every syntactically
-possible one. It is a strong guardrail, not a sandbox. The structural guarantees
-are elsewhere — the maintainer's tool grant, and the fact that `land.sh` cannot
-push, amend, force, or switch branches no matter who calls it. The
-agent's power is then the *script's semantics*, not git's surface area — and the
-script lives in the CodingStandards submodule, so a project cannot quietly widen
-it.
+Be precise about what this is: permission patterns match by prefix, so the list covers the
+invocations an agent would actually write, not every syntactically possible one. It is a strong
+guardrail, not a sandbox. The structural guarantees are elsewhere — the maintainer's tool grant, and
+the fact that `land.sh` cannot push, amend, force, or move to any branch but `task/<id>`, and
+`publish.sh` cannot commit, amend, force, or publish a protected branch, no matter who calls them.
+The agent's power is then the *scripts' semantics*, not git's surface area — and the scripts live in
+the CodingStandards submodule, so a project cannot quietly widen them.
 
 ```json
 {
@@ -557,47 +670,77 @@ it.
       "Bash(git --config-env:*)", "Bash(git --no-replace-objects:*)",
       "Bash(git --no-lazy-fetch:*)", "Bash(git --no-advice:*)",
       "Bash(git --glob-pathspecs:*)", "Bash(git --noglob-pathspecs:*)",
-      "Bash(git --icase-pathspecs:*)", "Bash(git --attr-source:*)"
+      "Bash(git --icase-pathspecs:*)", "Bash(git --attr-source:*)",
+      "Bash(gh pr create:*)", "Bash(gh pr merge:*)", "Bash(gh pr close:*)",
+      "Bash(gh pr edit:*)", "Bash(gh pr reopen:*)", "Bash(gh pr ready:*)",
+      "Bash(gh pr review:*)", "Bash(gh pr comment:*)", "Bash(gh pr checkout:*)",
+      "Bash(gh pr update-branch:*)", "Bash(gh pr revert:*)", "Bash(gh pr lock:*)",
+      "Bash(gh pr unlock:*)", "Bash(gh pr -R:*)", "Bash(gh pr --repo:*)",
+      "Bash(gh -R:*)", "Bash(gh --repo:*)", "Bash(gh api:*)", "Bash(gh repo:*)",
+      "Bash(gh release:*)", "Bash(gh workflow:*)", "Bash(gh alias:*)",
+      "Bash(gh extension:*)", "Bash(gh extensions:*)", "Bash(gh config:*)",
+      "Bash(gh secret:*)", "Bash(gh variable:*)", "Bash(gh issue:*)",
+      "Bash(gh label:*)", "Bash(gh cache:*)", "Bash(gh ruleset:*)",
+      "Bash(gh project:*)", "Bash(gh gist:*)", "Bash(gh codespace:*)",
+      "Bash(gh run rerun:*)", "Bash(gh run cancel:*)", "Bash(gh run delete:*)",
+      "Bash(gh auth login:*)", "Bash(gh auth logout:*)", "Bash(gh auth refresh:*)",
+      "Bash(gh auth setup-git:*)", "Bash(gh auth switch:*)", "Bash(gh auth token:*)"
+    ],
+    "ask": [
+      "Edit(.review/land.conf)", "Write(.review/land.conf)"
     ],
     "allow": [
       "Bash(CodingStandards/templates/review/lib/land.sh:*)",
-      "Bash(./CodingStandards/templates/review/lib/land.sh:*)"
+      "Bash(./CodingStandards/templates/review/lib/land.sh:*)",
+      "Bash(CodingStandards/templates/review/lib/publish.sh:*)",
+      "Bash(./CodingStandards/templates/review/lib/publish.sh:*)",
+      "Bash(gh pr view:*)", "Bash(gh pr checks:*)"
     ]
   }
 }
 ```
 
-The allow entries are literal command prefixes, so they only match the form the
-command is actually typed in. `/maintain` invokes both scripts as
-`CodingStandards/templates/review/lib/...` from the project root — the first
-entry. The `./` variant is there because it is the other way people type it; an
-absolute path matches neither and will prompt. That prompt is a nuisance, never
-a hole: the deny list is what carries the guarantee, and an allow entry that
-fails to match only costs a confirmation.
+The `ask` entries make any edit of `land.conf` stop for your yes, `/maintain --init` included: that
+file says how far the loop may go, and the scripts believe it. A shell redirect gets past them, as
+it gets past any entry here. That is the limit of a guardrail, and `/maintain`'s comparison with the
+requirement is the second one.
 
-A global option written before the subcommand (`git --no-pager add`) starts
-with no `git <subcommand>` prefix of the list, so each global option git accepts
-before a subcommand has its own line; so do the writing forms of `remote` and
-`reflog`, whose reading forms stay allowed. Reading is therefore written
-without a global option — `git diff`, not `git --no-pager diff`; git opens no
-pager when its output is not a terminal anyway.
+`gh` is never allowed as a whole: `Bash(gh:*)`, added to read pull requests, would let through every
+`gh` command this list does not name, each of which prompts today. Reading has its own entries;
+`gh run view` and `gh auth status` stay open and prompt.
+
+The allow entries are literal command prefixes, so they only match the form the command is actually
+typed in. `/maintain` invokes the scripts as `CodingStandards/templates/review/lib/...` from the
+project root — the first entry of each. The `./` variant is there because it is the other way people
+type it; an absolute path matches neither and will prompt. That prompt is a nuisance, never a hole:
+the deny list is what carries the guarantee, and an allow entry that fails to match only costs a
+confirmation.
+
+A global option written before the subcommand (`git --no-pager add`) starts with no
+`git <subcommand>` prefix of the list, so each global option git accepts before a subcommand has its
+own line; so do the writing forms of `remote` and `reflog`, whose reading forms stay allowed.
+Reading is therefore written without a global option — `git diff`, not `git --no-pager diff`; git
+opens no pager when its output is not a terminal anyway. `gh pr` takes `-R` before its subcommand in
+the same way, and `gh alias` and `gh extension` reach any command by another name, so they have
+lines too.
 
 Keep this list in step with the prohibitions in
 [EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git): a subcommand that
 is forbidden in prose but absent from the deny list is not forbidden at all.
 
-`LANDING=off` in `.review/land.conf` is the kill switch: the pipeline then runs
-to completion, and the maintainer gives you the files and the message instead of
-committing.
+`LANDING=off` in `.review/land.conf` is the kill switch: the pipeline then runs to completion, and
+the maintainer gives you the files and the message instead of committing. `publish.sh` refuses at it
+too. It holds whatever the requirement says: `/maintain` stops only when `LANDING` goes further than
+it, never when it stays behind it.
 
 ### Interactive work is different
 
-This delegation is scoped to the pipeline. Outside it — in an ordinary chat
-session — git is what the project decided in the plan's row "Who writes to
-git", and read-only for agents where it decided nothing. See
-[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git). The difference is
-not the tool, it is that landing is a contract you defined, enabled, and can
-revoke, and the pipeline reaches it only through the eight conditions above.
+This delegation is scoped to the pipeline. The requirement "Who writes to git" says how far the loop
+goes, and only that. Outside the loop — in an ordinary chat session, or a project that has not set
+it up — git is read-only for agents at every answer. See
+[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git). The difference is not the tool, it is
+that landing is a contract you defined, enabled, and can revoke, and the pipeline reaches it only
+through the eight conditions above.
 
 ---
 
@@ -610,11 +753,11 @@ After the landing step, the maintainer either asks you or takes the next task.
 
 `ADVANCE=ask` — the default, and where every project begins.
 
-The maintainer presents the finished task: what changed, which findings were
-accepted and how they were addressed, which were rejected and why, and the gate
-results. You accept, or you object. On acceptance — and with `LANDING=off`,
-once you have committed it — it takes the next unblocked task from the tracker
-and starts the loop again.
+The maintainer presents the finished task: what changed, which findings were accepted and how they
+were addressed, which were rejected and why, and the gate results. You accept, or you object. On
+acceptance — and with `LANDING=off`, once you have committed it — it takes the next unblocked task
+from the tracker and starts the loop again. At `merge` you are shown a task already in main; the
+loop waits for you, main did not.
 
 You are looking at the *task*, not the diff of each commit. If the summary looks
 right, that is enough.
@@ -634,13 +777,13 @@ whether behaviour changed without a test, the task category, and your history in
 those paths. That sentence is the whole list — there is no table elsewhere, and
 no score derived from it.
 
-`ADVANCE=auto` works only where `LANDING=on`. It unlocks per-category, never globally, and **only you unlock it**:
-you name a category in `ADVANCE_CATEGORIES` because you have decided you no
-longer want to see it. Nothing measures its way in. The maintainer may say it
-thinks a category has gone quiet; adding the line is your edit
-([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) § Never decide whether the
-user looks). Rollback is not a calculation either: one task you should have
-seen, and the category goes back to `ask`.
+`ADVANCE=auto` works at any `LANDING` but `off`, and only once the landing has finished: `land.sh`,
+or the last `publish.sh` after it, ended with `0`. It unlocks per-category, never globally, and
+**only you unlock it**: you name a category in `ADVANCE_CATEGORIES` because you have decided you no
+longer want to see it. Nothing measures its way in. The maintainer may say it thinks a category has
+gone quiet; adding the line is your edit ([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) § Never
+decide whether the user looks). Rollback is not a calculation either: one task you should have seen,
+and the category goes back to `ask`.
 
 ### The asymmetry that should make you slow to unlock
 
@@ -663,36 +806,37 @@ So the pipeline splits by ownership:
 
 | Part | Lives in | Edited | Why there |
 |------|----------|--------|-----------|
-| `review.sh`, `land.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` in particular must not be widened by a project |
+| `review.sh`, `land.sh`, `publish.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` and `publish.sh` in particular must not be widened by a project |
 | `gates.sh` | project — `.review/` | Always | Encodes the stack — the one language-specific file |
 | `REVIEW_POLICY.md` | project — `.review/` | Constantly | Your taste, this codebase |
 | `land.conf` | project — `.review/` | Rarely | Landing and advancing switches |
-| `agents.conf` | project — `.review/` | Rarely | The model and effort of each role |
+| `agents.conf` | project — `.claude/` | Rarely | The model and effort of each role |
 | `decisions/`, `eval/` | project — `.review/` | Constantly | Your decisions, your golden set |
 | Subagents | project — `.claude/agents/` | Rarely | Claude Code only discovers them there |
 
 ```
 my-project/
-├── CodingStandards/                     # submodule — the project does not edit it
+├── CodingStandards/                   # submodule — the project does not edit it
 │   └── templates/review/
-│       ├── lib/                         # runs from here
-│       │   ├── review.sh                # one review pass (gates, review, triage)
-│       │   ├── land.sh                  # the only thing that commits
-│       │   ├── selftest.sh              # review.sh and land.sh on a throwaway repository
-│       │   ├── export-version.sh        # one version of the project into a folder of its own
-│       │   ├── triage.py                # you answer findings — terminal or browser
+│       ├── lib/                       # runs from here
+│       │   ├── review.sh              # one review pass (gates, review, triage)
+│       │   ├── land.sh                # the only thing that commits
+│       │   ├── publish.sh             # the only thing that pushes, opens or merges a pull request
+│       │   ├── selftest.sh            # review.sh, land.sh and publish.sh on throwaway repositories
+│       │   ├── export-version.sh      # one version of the project into a folder of its own
+│       │   ├── triage.py              # you answer findings — terminal or browser
 │       │   ├── prompts/{reviewer,maintainer}.md
 │       │   └── schemas/*.json
-│       └── project/                     # copied once into .review/
-├── .review/                             # yours, versioned in this repo
-│   ├── gates.sh                         # ← the only file you must fill in
-│   ├── land.conf                        # ← LANDING / ADVANCE switches
-│   ├── agents.conf                      # ← the model of each role
-│   ├── REVIEW_POLICY.md                 # ← grows with every disagreement
-│   ├── current-task.json                # the task in flight — scope, exit criteria
+│       └── project/                   # copied once into .review/
+├── .review/                           # yours, versioned in this repo
+│   ├── gates.sh                       # ← the only file you must fill in
+│   ├── land.conf                      # ← LANDING / ADVANCE switches
+│   ├── REVIEW_POLICY.md               # ← grows with every disagreement
+│   ├── current-task.json              # the task in flight — scope, exit criteria
 │   ├── decisions/{findings,tasks,escalations}.jsonl
-│   ├── eval/golden.jsonl                # your verdicts, for /policy --eval
-│   └── runs/                            # per-run artifacts — gitignored
+│   ├── eval/golden.jsonl              # your verdicts, for /policy --eval
+│   └── runs/                          # per-run artifacts — gitignored
+├── .claude/agents.conf                # ← the model of each role
 └── .claude/agents/{reviewer,maintainer}.md
 ```
 
@@ -703,8 +847,9 @@ git submodule add https://github.com/x128/CodingStandards.git CodingStandards
 mkdir -p .review .claude/agents
 cp -r CodingStandards/templates/review/project/. .review/
 cp CodingStandards/templates/agents/*.md .claude/agents/
+cp CodingStandards/templates/agents/agents.conf .claude/
 for f in decisions/findings decisions/tasks decisions/escalations eval/golden; do
-  mv ".review/$f.example.jsonl" ".review/$f.jsonl"
+  : > ".review/$f.jsonl"
 done
 chmod +x .review/gates.sh
 printf '%s\n' .review/runs/ .review/current-task.json >> .gitignore
@@ -715,37 +860,39 @@ Then, in order:
 1. **Fill in `.review/gates.sh`** — the five slots. See
    [Wiring a new language](#wiring-a-new-language).
 2. **Add the permissions block above** to `.claude/settings.json`.
-3. **Run a task.** `/maintain` writes `.review/current-task.json` itself, from
-   the tracker entry. For a manual pass, start from the template:
-   `cp .review/task.example.json .review/current-task.json` and fill in `id`,
-   `scope`, and `exit_criteria`.
+3. **Set `LANDING`** in `.review/land.conf` from the requirement "Who writes to git": (a) `off`,
+   (b) `push`, (c) `pr`, (d) `merge`.
+4. **Run a task.** `/maintain` writes `.review/current-task.json` itself, from the tracker entry.
+   For a manual pass, start from the template:
+   `cp .review/task.example.json .review/current-task.json` and fill in `id`, `scope`, and
+   `exit_criteria`.
 
 ```bash
-# the loop is driven by the /maintain skill, which calls review.sh and land.sh
+# the loop is driven by the /maintain skill, which calls review.sh and land.sh;
+# land.sh calls publish.sh
 /maintain --task T-001
 ```
 
-`/maintain --init` does the first two, including detecting the stack and writing
-the gate commands.
+`/maintain --init` does the first three, including detecting the stack and writing the gate
+commands.
 
-The loop is a **default**, not a rule for the user: any change can be made
-outside the pipeline, on request, without justification
-([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work)
-states this in full, and `skills/maintain/SKILL.md` repeats it to the
-agents that need to hear it — the one duplication in this repo that is on
-purpose).
+The loop is a **default**, not a rule for the user: any change can be made outside the pipeline, on
+request, without justification
+([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work) states this in
+full, and `skills/maintain/SKILL.md` repeats it to the agents that need to hear it — the one
+duplication in this repo that is on purpose).
 
 ### Overriding a shared file
 
-`review.sh` prefers `.review/<path>` over the submodule's copy, so a project can
-override a prompt or schema by copying just that file. `land.sh` is deliberately
-**not** overridable — it is the one file with write authority.
+`review.sh` prefers `.review/<path>` over the submodule's copy, so a project can override a prompt
+or schema by copying just that file. `land.sh` and `publish.sh` are deliberately **not**
+overridable — they are the two files with write authority.
 
-Prefer contributing improvements back to the submodule; an override is a fork
-you now maintain. An overridden schema is updated together with the submodule's
-prompt that fills it: a decision rule the prompt names and the schema lacks
-fails every run that reaches it (`selftest.sh` checks the shipped pair). Project-specific *content* (rules, examples) belongs in
-`.review/REVIEW_POLICY.md`, which is already in the maintainer's context.
+Prefer contributing improvements back to the submodule; an override is a fork you now maintain. An
+overridden schema is updated together with the submodule's prompt that fills it: a decision rule the
+prompt names and the schema lacks fails every run that reaches it (`selftest.sh` checks the shipped
+pair). Project-specific *content* (rules, examples) belongs in `.review/REVIEW_POLICY.md`, which is
+already in the maintainer's context.
 
 ### Hooks
 
@@ -753,7 +900,6 @@ Use hooks for invariants, never for logic:
 
 - `PostToolUse` on edits → format and lint gates. Formatting must never reach
   the reviewer as a finding.
-- `Stop` → refuse to finish while build or test is red.
 
 ---
 
@@ -767,6 +913,9 @@ Use hooks for invariants, never for logic:
 | Same finding every run | Missing policy rule | Write the rule — or better, encode it as a lint rule in Layer 0 |
 | Landed commits you would have rejected | `ADVANCE=auto` too broad | Revert that category to `ask`; tighten thresholds |
 | Landing refused and nobody knows why | Contract failure not surfaced | `land.sh` names the failing condition — read it, do not bypass it |
+| Pull request stuck open | Checks failing or pending, or changes requested | `publish.sh` exit 5 says which; fix through the loop on the same branch, or run it again later |
+| Pull request will not merge | It conflicts with the base branch | `gh` says so at exit 5; merge the base into the branch yourself, then `publish.sh` alone |
+| Next task's pull request repeats merged commits | The loop started on the earlier task's branch | After a merge at `push` or `pr`, go back to the base branch and update it |
 | Maintainer metrics improve, real quality doesn't | Reward hacking in the loop | Re-separate roles, lower `ASK_AFTER_RUNS`, strengthen Layer 0 |
 | Cost per task is high | Broad scope | Narrow the task; diff + touched deps only; cheap model for triage |
 
@@ -786,11 +935,19 @@ Use hooks for invariants, never for logic:
 - [ ] Rounds go on while each accepts fewer findings; an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly
 - [ ] Missing or malformed pipeline output fails closed, never as "nothing found"
-- [ ] `lib/selftest.sh` passes after any change to `review.sh`, the schemas or
-  the output contract — it is the only run of the validation that does not need
-  a model to answer with findings
-- [ ] Agents have no write-git permission; `land.sh` is the only allowed command
-- [ ] `land.sh` never pushes, amends, forces, or switches branches
+- [ ] `lib/selftest.sh` passes after any change to `review.sh`, `land.sh`, `publish.sh`, the schemas
+      or the output contract — it is the only run of the validation that does not need a model to
+      answer with findings
+- [ ] Agents have no write-git or write-`gh` permission; `land.sh` and `publish.sh` are the only
+      pre-approved commands that write
+- [ ] `land.sh` never pushes, amends, forces, or moves to a branch but `task/<id>`
+- [ ] `publish.sh` never commits or forces, publishes only what landings made, and merges only this
+      task's commits
+- [ ] The loop reaches main only through a pull request, never a direct commit
+- [ ] The tracker and the test cases land with the task; a line left in the tracker does not refuse
+      the next one; the requirements, the plan and the decision logs stay for you to commit
+- [ ] `LANDING` goes no further than the requirement "Who writes to git"; an unknown value refuses,
+      and a change to `land.conf` asks you
 - [ ] `LANDING=off` kill switch works and is documented
 - [ ] `ADVANCE=ask` until you add a category yourself
 - [ ] Every task boundary is logged: signals + your decision

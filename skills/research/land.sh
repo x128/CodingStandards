@@ -20,7 +20,8 @@ skill_dir=$(cd -P "$(dirname "$0")" && pwd -P)
 skill_top=$(git -C "$skill_dir" rev-parse --show-toplevel 2>/dev/null)
 [ -n "$skill_top" ] && skill_top=$(cd -P "$skill_top" && pwd -P)
 if [ -n "$top" ] && [ "$top" = "$skill_top" ]; then
-  echo "land.sh: refused — this is the skill's own repository; research belongs to the project that uses the skill." >&2
+  echo "land.sh: refused — this is the skill's own repository; "\
+"research belongs to the project that uses the skill." >&2
   exit 3
 fi
 [ "${1:-}" = "--check" ] && [ $# -eq 1 ] && exit 0
@@ -51,7 +52,8 @@ fi
 # Relative to $top, since every git command here runs with -C "$top".
 captures=":(exclude)${dir#"$top"/}/captures"
 # --no-optional-locks: even this read must not refresh the project's index.
-changed=$(git --no-optional-locks -C "$top" status --porcelain --untracked-files=all -- "$dir" "$captures")
+changed=$(git --no-optional-locks -C "$top" status --porcelain --untracked-files=all \
+  -- "$dir" "$captures")
 if [ "$landing" != "on" ]; then
   if [ -z "$changed" ]; then echo "Nothing changed under $dir."; exit 0; fi
   echo "$changed"
@@ -69,8 +71,10 @@ branch=$(git -C "$top" branch --show-current)
 # The project's answer goes with the research, so other clones are not asked again.
 paths=("$dir" "$captures")
 [ -f "$dir/../land.conf" ] && paths+=("$(cd -P "$dir/.." && pwd -P)/land.conf")
-if ! git -C "$top" add -- "${paths[@]}" || ! git -C "$top" commit --only -m "$subject" -- "${paths[@]}"; then
-  echo "land.sh: the commit failed (git says why above; often a hook). The files of $dir stay staged." >&2
+if ! git -C "$top" add -- "${paths[@]}" || \
+  ! git -C "$top" commit --only -m "$subject" -- "${paths[@]}"; then
+  echo "land.sh: the commit failed (git says why above; often a hook). "\
+"The files of $dir stay staged." >&2
   exit 1
 fi
 echo "Committed $(git -C "$top" rev-parse --short HEAD) on $branch: $subject"

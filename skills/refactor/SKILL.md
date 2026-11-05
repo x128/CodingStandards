@@ -1,5 +1,7 @@
 ---
-description: 'Bring code to the standards without changing its behaviour: one target, or the whole project in rounds. Use when asked to refactor or clean up code.'
+description: >-
+  Bring code to the standards without changing its behaviour: one target, or the whole project in
+  rounds. Use when asked to refactor or clean up code.
 ---
 
 # Refactor Skill
@@ -47,7 +49,8 @@ When: Class has multiple responsibilities
 ```
 // Before: UserManager handles user logic + email + persistence
 
-// After: UserService has the core user logic, UserNotifier the email handling, UserRepository the persistence
+// After: UserService has the core user logic, UserNotifier the email handling,
+//        UserRepository the persistence
 UserService
 UserNotifier
 UserRepository
@@ -128,7 +131,7 @@ doThing()
 ## A Whole Project, in Rounds
 
 A round is one list of the places where the code departs from the standards, worked through by
-fresh agents. The list and the checks run on the role `REVIEWER` of `.review/agents.conf`, the
+fresh agents. The list and the checks run on the role `REVIEWER` of `.claude/agents.conf`, the
 work on `EXECUTOR`.
 
 1. **Before starting**, ask one question at a time and wait for each answer: what must not change
@@ -137,22 +140,22 @@ work on `EXECUTOR`.
    each round, say what it will cost and where the estimate comes from; above 1 million tokens,
    wait for a yes.
 2. **Save the project as it is**, outside the repository, to compare against in step 5.
-3. **The list.** A fresh agent that will not do the work reads `CLAUDE.md`, the standards, the plan
-   and the code, runs the build and the tests, and lists where the code departs from a rule of
-   the standards: the place, the rule (quoted in a few words), and what to change. Not taste. It
-   decides nothing for the human: a decision the standards ask the project to make, or use case
-   texts the plan lacks, are proposed to the human.
+3. **The list.** A fresh agent that will not do the work reads `CLAUDE.md`, the standards, the
+   requirements, the plan and the code, runs the build and the tests, and lists where the code
+   departs from a rule of the standards: the place, the rule (quoted in a few words), and what to
+   change. Not taste. It decides nothing for the human: a decision the standards ask the project to
+   make, or use case texts the requirements lack, are proposed to the human.
 4. **The work.** Fresh engineers do the items one at a time; the build and the tests pass after
-   each. Where an item's suggestion would break the rule it cites, the rule wins. An item that
-   needs a download not allowed, would change what must not change, or needs the human's
-   decision waits for the human.
+   each. Where an item's suggestion would break the rule it cites, the rule wins. An item that needs
+   a download not allowed, would change what must not change, or needs the human's decision waits
+   for the human.
 5. **Check.** The build and the tests pass. A fresh agent reads the diff for code made harder to
    read and for tests that check less; another runs `/loss-check` against the saved project.
    What they find is repaired.
-6. **Report.** First what is needed from the human: answers to what waits, whether to go on
-   ("finish what waited", "one more pass over the whole project", "stop"), and the commit, which is made as the project
-   decided (EXECUTION_GUIDE.md, "Who writes to git"). Then what was done, what waits, and what
-   could not be run. The repository gets only the project.
+6. **Report.** First what is needed from the human: answers to what waits, whether to go on ("finish
+   what waited", "one more pass over the whole project", "stop"), and the commit, which the human
+   makes (EXECUTION_GUIDE.md, "Who writes to git"). Then what was done, what waits, and what could
+   not be run. The repository gets only the project.
 
 ## How the Rules Worked
 
@@ -162,10 +165,11 @@ and line of code:
 - Which change followed a rule and made the code harder to read or to change?
 - Which rule was read two ways, or which two files of the standards say different things?
 - Which problem of the code does no rule name?
-The answers go into the report, or "nothing". A correction of the human about the project goes
-where [MAINTAINER_TRAINING.md](../../MAINTAINER_TRAINING.md) says; one about the standards or a skill
-is an answer here. The refactoring changes only the project.
-For the answers about the standards or a skill, propose [/self-improve](../self-improve/SKILL.md) for them, and say what it would cost.
+
+The answers go into the report, or "nothing". A correction of the human about the project goes where
+[MAINTAINER_TRAINING.md](../../MAINTAINER_TRAINING.md) says; one about the standards or a skill is
+an answer here. The refactoring changes only the project. For the answers about the standards or a
+skill, propose [/self-improve](../self-improve/SKILL.md) for them, and say what it would cost.
 
 ## Output Format
 

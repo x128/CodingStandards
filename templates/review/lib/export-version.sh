@@ -38,7 +38,8 @@ if [ "$REF" = "WORKTREE" ]; then
     fi
   done
 else
-  git rev-parse --verify --quiet "$REF^{commit}" >/dev/null || { echo "no such commit: $REF" >&2; exit 1; }
+  git rev-parse --verify --quiet "$REF^{commit}" >/dev/null || \
+    { echo "no such commit: $REF" >&2; exit 1; }
   git ls-tree -r -z "$REF" | while IFS= read -r -d '' entry; do
     meta="${entry%%$'\t'*}"
     path="${entry#*$'\t'}"

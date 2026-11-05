@@ -94,19 +94,25 @@ run_gate arch yes "echo 'TODO: architecture rule tests' && false"
 # Examples (delete the stubs above and uncomment what fits):
 #
 # Kotlin / KMP (modules composeApp and androidApp, KOTLIN_MULTIPLATFORM.md)
-#   run_gate build yes  "./gradlew :composeApp:compileKotlinMetadata :composeApp:linkDebugFrameworkIosSimulatorArm64 :androidApp:assembleDebug"
+#   run_gate build yes  "./gradlew :composeApp:compileKotlinMetadata "\
+# ":composeApp:linkDebugFrameworkIosSimulatorArm64 :androidApp:assembleDebug"
 #   run_gate test  yes  "./gradlew :composeApp:allTests :androidApp:testDebugUnitTest"
 #   run_gate format yes "./gradlew ktlintCheck"
-#   run_gate lint  yes  "./gradlew detekt && ! grep -rnE --include='*.kt' --exclude-dir=build '(^|[[:space:]])(//|/[*])' . | grep -viE '// (arrange|act|assert|given|when|then)\$'"
+#   run_gate lint  yes  "./gradlew detekt && "\
+# "! grep -rnE --include='*.kt' --exclude-dir=build '(^|[[:space:]])(//|/[*])' . "\
+# "| grep -viE '// (arrange|act|assert|given|when|then)\$'"
 #     (the grep fails the gate on any comment but the test markers, CLEAN_CODE.md "Comments";
-#      add "| grep -v '<pattern>'" for each kind of comment that the Decisions Log of the plan allows)
+#      add "| grep -v '<pattern>'" for a license header the license requires and for each kind of
+#      comment that the requirements allow; where they allow comments, drop the grep)
 #   run_gate arch  yes  "./gradlew :architecture:test"
 #
 # Swift
 #   run_gate build yes  "swift build"
 #   run_gate test  yes  "swift test"
 #   run_gate format yes "swift-format lint --recursive Sources"
-#   run_gate lint  yes  "swiftlint --strict && ! grep -rnE --include='*.swift' --exclude-dir=.build '(^|[[:space:]])(//|/[*])' . | grep -v 'swiftlint:' | grep -viE '// (arrange|act|assert|given|when|then)\$'"
+#   run_gate lint  yes  "swiftlint --strict && "\
+# "! grep -rnE --include='*.swift' --exclude-dir=.build '(^|[[:space:]])(//|/[*])' . "\
+# "| grep -v 'swiftlint:' | grep -viE '// (arrange|act|assert|given|when|then)\$'"
 #   run_gate arch  yes  "swift test --filter ArchitectureTests"
 #
 # TypeScript

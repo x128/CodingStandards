@@ -47,12 +47,12 @@ GOOD: Goal: the project's rule files stop growing and get shorter, without losin
 ## Sub-questions
 
 Break the goal into the questions whose answers together cover it. Each sub-question says why it
-matters for the goal. For a goal of the kind "how do I get X", the usual facets are: what the primary
-sources and the people who built the thing say; what already exists (tools, prior art) and where it
-falls short; how others do it; what to build and how; how to run it, measure it and what it costs;
-what can go wrong; what to do first. For a goal of the kind "what is true", the facets are the
-competing answers and what would decide between them. Five to nine sub-questions is usual. They are
-the research plan: later runs take the open ones, and the challenge asks which one is missing.
+matters for the goal. For a goal of the kind "how do I get X", the usual facets are: what the
+primary sources and the people who built the thing say; what already exists (tools, prior art) and
+where it falls short; how others do it; what to build and how; how to run it, measure it and what it
+costs; what can go wrong; what to do first. For a goal of the kind "what is true", the facets are
+the competing answers and what would decide between them. Five to nine sub-questions is usual. They
+are the research plan: later runs take the open ones, and the challenge asks which one is missing.
 
 ```
 BAD:  Q1 Is the user's view right?  Q2 Is the rival right?
@@ -198,9 +198,11 @@ captures/     captured texts: local, never committed
 - [ ] The goal is written before anything is searched, with what the user already has
 - [ ] Sub-questions cover the goal; each says why it matters; later runs take the open ones
 - [ ] Every cited source is captured and quoted verbatim; origins traced; blocked is not empty
-- [ ] Each sub-question has an answer in words, options where there are several, what would change it
+- [ ] Each sub-question has an answer in words, options where there are several, what would change
+      it
 - [ ] "What to build" is answered with artifacts
 - [ ] A fresh agent challenged the draft and asked what sub-question is missing
-- [ ] The report follows the shape; no journal vocabulary, no numbers for likelihood, references by number
+- [ ] The report follows the shape; no journal vocabulary, no numbers for likelihood, references by
+      number
 - [ ] PLAN.md keeps the history struck through; REPORT.md shows only the current state
 - [ ] The user's answers go into BRIEF.md and the report

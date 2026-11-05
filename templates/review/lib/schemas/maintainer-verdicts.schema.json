@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Maintainer verdicts",
-  "description": "Output contract for the maintainer's triage job. Exactly one verdict per input finding.",
+  "description":
+    "Output contract for the maintainer's triage job. Exactly one verdict per input finding.",
   "type": "object",
   "properties": {
     "verdicts": {
@@ -35,7 +36,8 @@
           },
           "policy_rule": {
             "type": "string",
-            "description": "Rule id from REVIEW_POLICY.md when decision_rule is policy-rule, e.g. R-011"
+            "description":
+              "Rule id from REVIEW_POLICY.md when decision_rule is policy-rule, e.g. R-011"
           },
           "reason": {
             "type": "string",
