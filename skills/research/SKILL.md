@@ -63,8 +63,13 @@ first time (section 3).
 2. **Research** (section 5), with the depth and the conversation choice in `BRIEF.md`, unless the
    user's words with this run say otherwise.
 3. **Write**, in the formats of METHOD.md: `REPORT.md` (the current report only), `PLAN.md` (the
-   history struck through, nothing deleted) and `notes/NNN.md`. After a deep run these files are
-   already written: read them and fix only what breaks METHOD.md's shape or writing rules.
+   history struck through, nothing deleted) and `notes/NNN.md`. Then the editing pass of METHOD.md
+   "The Report": `python3 SKILL/edit-check.py research/<name>/REPORT.md`, every breach fixed, the
+   whole read once — by a subagent (Agent tool) that did not write it, when one is available. Then
+   the cold reading of METHOD.md: a subagent that gets the report's text and nothing else restates
+   it and lists every word it cannot explain; a wrong restatement or one such word goes back to the
+   editor, until the reader understands. After a deep run all of this is already done: read the
+   files and fix only what still breaks METHOD.md's shape or rules.
 4. **Commit.** `bash SKILL/land.sh research/<name> "research(<name>): <the main change>"`, from the
    project. It commits the research's folder on the current branch when `research/land.conf` says
    `LANDING=on`; otherwise it lists the changed files and does nothing else. `captures/` is never
@@ -97,8 +102,10 @@ called final: a research that is only ever continued keeps its first answers.
 
 ### 5. How to research
 
-Follow SKILL/METHOD.md: the goal first, then the sub-questions, then the search, the challenge and
-the report. SKILL/SOURCES.md says how to reach each kind of source.
+Follow SKILL/METHOD.md: the goal first, then the sub-questions — one for every thing the user named,
+all the facets of the goal's kind, and what the project's own files answer, answered in the same
+run — then the search, the challenge, the report and its editing pass. SKILL/SOURCES.md says how to
+reach each kind of source.
 - **The conversation.** By default this session researches, and so uses what was said here. When
   the user chose to start clean, the research is done by a subagent (Agent tool) that gets the
   research's files and the user's words for this run, and nothing of this conversation; a deep run
@@ -106,16 +113,15 @@ the report. SKILL/SOURCES.md says how to reach each kind of source.
 - **Normal**: the session (or that subagent) does every step of METHOD.md itself, at a smaller
   scale: the sub-questions it can cover in one sitting, searching with WebSearch and WebFetch,
   capturing what it quotes with `python3 SKILL/capture.py <url> research/<name>/captures/<slug>.md`
-  (pages, PDFs, YouTube captions), and a challenge by a subagent (Agent tool) when one is
-  available.
+  (pages, PDFs, YouTube captions), and a challenge by a subagent (Agent tool) when one is available.
 - **Deep**: the **Deep** button, which shows the cost, is the user's yes for this run; when the
-  depth comes from `BRIEF.md` or from words, say the cost and wait for a yes. Then call the
-  Workflow tool with `scriptPath: "SKILL/deep.js"` and `args`: `skill` (SKILL, absolute), `root`
-  (the research's folder, absolute), `mode` (`topic`, or `fresh` for a re-check), `date` (today,
+  depth comes from `BRIEF.md` or from words, say the cost and wait for a yes. Then call the Workflow
+  tool with `scriptPath: "SKILL/deep.js"` and `args`: `skill` (SKILL, absolute), `root` (the
+  research's folder, absolute), `mode` (`topic`, or `fresh` for a re-check), `date` (today,
   `YYYY-MM-DD`), `run` (NNN, e.g. `003`), `context` (what the user chose to bring from this
   conversation, or ""), `steer` (their words for this run, or ""). It returns a summary, the
-  report's "Коротко", the changes, the next steps, the questions for the user and the downloads it
-  needs.
+  report's "Коротко", the changes, the next steps, the questions for the user, the downloads it
+  needs, what the editing pass left and what the cold reader could not explain.
 - **Audio and video without captions.** capture.py says the length and the audio's size. Ask in one
   question, one option per file plus **None**. For each yes,
   `bash SKILL/fetch-media.sh <url> <folder>` into a folder made with `mktemp -d` (outside the
@@ -147,7 +153,7 @@ questions the research has for the user, and the absolute path of `REPORT.md`.
 
 - Read the project; write inside `research/` of the project
 - Run `bash SKILL/land.sh --check` and `bash SKILL/land.sh <folder> "<subject>"`
-- WebSearch and WebFetch; run the scripts in this folder
+- WebSearch and WebFetch; run the scripts in this folder, `edit-check.py` among them
 - Run deep.js and subagents; a deep run after the user's yes to its cost
 - Download media or install a tool only after the user's yes
 

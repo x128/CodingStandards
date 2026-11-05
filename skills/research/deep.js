@@ -8,6 +8,12 @@ export const meta = {
     { title: 'Draft', detail: 'the report from all the findings' },
     { title: 'Challenge', detail: 'a fresh agent attacks the draft and asks what is missing' },
     { title: 'Write', detail: 'REPORT.md, PLAN.md and the run note' },
+    { title: 'Edit', detail: 'a fresh editor brings the report to the writing rules' },
+    {
+      title: 'Cold read',
+      detail:
+        'a reader who saw nothing restates the report; unexplained words go back to the editor'
+    },
   ],
 }
 
@@ -53,7 +59,12 @@ const SUBQUESTION = obj({
   id: { type: 'string', description: 'Q1, Q2, ... (an existing id when the plan already has it)' },
   question: STR,
   why: { type: 'string', description: 'why it matters for the goal' },
-  kind: { enum: ['sources', 'existing', 'others', 'build', 'run', 'risks', 'first-step', 'fact'] },
+  kind: {
+    enum: [
+      'sources', 'existing', 'others', 'build', 'run', 'risks', 'first-step', 'fact', 'project',
+      'named-by-user'
+    ]
+  },
   status: { enum: ['open', 'partly', 'answered'] },
   current: { type: 'string', description: 'the current answer from PLAN.md, or ""' }
 })
@@ -162,6 +173,25 @@ const FINAL = obj({
   next: STRS,
   questions_for_user: STRS
 })
+const COLD = obj({
+  what_is_researched: STR,
+  the_answer: STR,
+  first_step: STR,
+  unexplained: {
+    type: 'array',
+    items: obj({ term: STR, where: STR, guess: STR }),
+    description: 'every word or phrase the reader cannot explain from the text alone'
+  },
+  lost: { type: 'array', items: STR, description: 'sentences the reader could not follow' },
+  verdict: { enum: ['understood', 'partly', 'lost'] }
+})
+const EDITED = obj({
+  breaches_before: { type: 'integer' },
+  breaches_after: { type: 'integer' },
+  changed: STRS,
+  left: { type: 'array', items: STR, description: 'breaches left on purpose, each with why' },
+  short: { type: 'string', description: 'the Коротко section after editing, verbatim' }
+})
 
 // --- Understand ---
 phase('Understand')
@@ -170,12 +200,15 @@ const plan = await agent(`${prelude}
 Your stage: understand (METHOD.md "The Goal, Not the Words" and "Sub-questions"). Write the goal
 behind the user's words and what the user already has: when the goal is about their project, read
 the project's files now (the folder above ROOT's research/ folder, read only) and name what is
-there. Then the sub-questions that together cover the goal, each with why it matters;
+there. Then the sub-questions that together cover the goal, each with why it matters: every thing
+the user named in their words is one (kind "named-by-user"); the facets METHOD.md lists for a goal
+of this kind are all there; a sub-question that the project's own files answer is kind "project"
+and is always researched in this run.
 ${FRESH
-  ? 'this is a clean re-check, so build the plan from BRIEF.md alone.'
-  : 'keep the ids and answers of PLAN.md where it exists, add what is missing, and choose which ' +
-    'sub-questions this run researches: the open ones, the ones the last note\'s Next or the ' +
-    'user\'s words point to, at most eight.'}
+  ? 'This is a clean re-check, so build the plan from BRIEF.md alone.'
+  : 'Keep the ids and answers of PLAN.md where it exists, add what is missing, and choose which ' +
+    'sub-questions this run researches: every "project" one that is still open, then the open ' +
+    'ones the last note\'s Next or the user\'s words point to, at most eight in all.'}
 Search nothing yet; write nothing.`,
   { label: 'understand', phase: 'Understand', schema: PLAN, effort: 'high' })
 if (!plan) throw new Error('the understand agent returned nothing; nothing was written')
@@ -187,6 +220,9 @@ if (todo.length > 8) {
 }
 if (!todo.length) throw new Error('the plan has no sub-question to research')
 log(`goal: ${plan.goal}`)
+if (!plan.subquestions.some(q => q.kind === 'named-by-user')) {
+  log('the plan has no sub-question taken from the user\'s own words')
+}
 log(`researching ${todo.map(q => q.id).join(', ')} of ${plan.subquestions.length}`)
 
 // --- Research ---
@@ -198,9 +234,13 @@ Other agents take the others.
 The goal: ${json(plan.goal)}
 What the user already has: ${json(plan.exists)}
 Your sub-question: ${json(q)}
-Search wide, in the languages the field writes in, older work too; run at least one search for what
-would prove the leading answer wrong, and look in at least one practitioner channel. Capture each
-source you cite with python3 SKILL/capture.py into
+${q.kind === 'project'
+  ? 'This sub-question is answered by the user\'s project: read its files (the folder above ' +
+    'ROOT\'s research/ folder, read only) and answer from them, with file and line for every ' +
+    'item; search the web only where the files leave a term unexplained.'
+  : 'Search wide, in the languages the field writes in, older work too; run at least one search ' +
+    'for what would prove the leading answer wrong, and look in at least one practitioner channel.'}
+Capture each source you cite with python3 SKILL/capture.py into
 ${CAPTURES}/${A.run}-${q.id.toLowerCase()}-<slug>.md and quote a short phrase verbatim from the
 capture; capture only what you cite. When the sub-question is about what to build, return the
 artifacts themselves. A blocked source stays blocked. Never download audio or video: list it under
@@ -228,8 +268,10 @@ Your stage: draft REPORT.md (METHOD.md "The Report" and its writing rules), for 
 plan and the findings below. One section per sub-question, headed by its finding; a sub-question not
 researched this run keeps its current answer from PLAN.md. Number the sources in order of first use
 and list them at the end with link and capture path. Where a sub-question returned artifacts, put
-them in; where the goal is to build something, a "Что построить" section with the design. Write
-nothing to disk; return the report.
+them in; where the goal is to build something, one "Что построить" section with the whole design in
+one place; where the goal is to cut something the research read, a "Первые кандидаты" section with
+each item's file and line. Every facet of the goal's kind that is not closed goes under "Что
+осталось неясным" with its reason. Write nothing to disk; return the report.
 Plan: ${json(plan)}
 Researched: ${json(researched.map(r => ({ ...r, downloads: undefined })))}`,
   { label: 'draft', phase: 'Draft', schema: DRAFT, effort: 'high' })
@@ -248,8 +290,10 @@ The draft report: ${draft.report}
 It rests on: ${json(draft.rests_on)}
 For each main claim: the strongest reason it is wrong, with a source where you find one. For each
 quote it rests on: open the capture and check it is there word for word and says what the report
-says. Then completeness: which sub-question the plan lacks for this goal, and what the report still
-does not answer about the goal. Use at most 12 web searches.`,
+says. Then completeness, against METHOD.md "Sub-questions": which facet of this goal's kind the plan
+lacks, which thing the user named in BRIEF.md has no sub-question, which sub-question the project's
+own files could answer but the report leaves open, and what the report still does not answer about
+the goal. Use at most 12 web searches.`,
   { label: 'challenge', phase: 'Challenge', schema: CHALLENGE, effort: 'high' })
 if (!challenge) log('the challenge agent returned nothing; the final stage goes on without it')
 
@@ -262,7 +306,11 @@ Your stage: write the research files
 1. Correct the draft report where the challenge holds: drop or soften a claim that falls, fix a
 quote that was not found, add a sub-question the challenge found missing (as open, with
 "Added: run ${A.run}"), and answer in "Что осталось неясным" what the report cannot. Keep the shape
-and the writing rules of METHOD.md "The Report".
+and the writing rules of METHOD.md "The Report". Before writing, recompute every number the report
+derives from a table, a listing or a file (counts, shares, word totals) from its source, and open
+every artifact the report describes to check it exists and says what the report says; the report
+names the current state only and never corrects an earlier run's figure (that goes in the note and
+the plan).
 ${FRESH ? `2. Write ${NOTE} with the run note sections, then ROOT/notes/${A.run}-fresh-REPORT.md
 (this run's report) and ROOT/notes/${A.run}-fresh-PLAN.md (this run's plan). Touch no other file:
 the main session compares them with the research's own.`
@@ -284,13 +332,73 @@ Downloads that need the user's yes: ${json(downloads)}`,
 if (!final)
   throw new Error('the write agent returned nothing; the research files may be half-written')
 
+// --- Edit ---
+phase('Edit')
+const REPORT = FRESH ? `ROOT/notes/${A.run}-fresh-REPORT.md` : 'ROOT/REPORT.md'
+const edited = await agent(`You are the editor of a research report; you did not write it. SKILL is
+${A.skill}: read SKILL/METHOD.md "The Report" (the shape and the writing rules). ROOT is ${A.root};
+the report is ${REPORT}; its sources are the captures it cites. Write only that file.
+Run python3 SKILL/edit-check.py ${REPORT} and fix every breach it lists; then read the whole report
+once for what the script cannot see: one point per paragraph, a term defined where it first
+appears, a number said once, the design in one place, "Коротко" that a reader can stop after. Keep
+every fact, figure, source number and caveat as they are; translate, split, shorten and move, do
+not add or remove claims. Run the script again until it passes or only breaches you can justify
+remain.`, { label: 'edit', phase: 'Edit', schema: EDITED, effort: 'high' })
+if (!edited) log('the editor returned nothing; the report stands as written')
+else log(`edited: ${edited.breaches_before} -> ${edited.breaches_after} breaches`)
+
+// --- Cold read ---
+// The only measure of readability: a reader who has seen nothing of the research must restate
+// the report and explain every word of it from the text. Judges who read the journal have learnt
+// the vocabulary and cannot see what a reader lacks (METHOD.md "The Report").
+phase('Cold read')
+const coldPrompt = (text, scope) => `You are a cold reader: an intelligent person who has never
+seen this project, this research or any file behind it. You read ${scope} and nothing else: open no
+file, search nothing, use nothing you may know about the subject. Restate in your own words what is
+researched and what the answer is. List EVERY word or phrase you cannot explain from the text
+alone — a name, a term, a tool, an abbreviation, a number without a stated meaning — with the
+sentence it stands in and your guess; "I can roughly guess" counts as unexplained. Answer in the
+text's language.
+
+${text}`
+const readFile = (what, label) => agent(`Print ${what} of ${REPORT} verbatim and nothing else.`,
+  { label, phase: 'Cold read', schema: obj({ text: STR }), effort: 'low' })
+let cold = null
+for (let round = 1; round <= 3; round++) {
+  const whole = await readFile('the full text', `read report ${round}`)
+  if (!whole) break
+  cold = await agent(coldPrompt(whole.text, 'a research report'),
+    { label: `cold read ${round}`, phase: 'Cold read', schema: COLD, effort: 'high' })
+  if (!cold) break
+  log(`cold read ${round}: ${cold.verdict}, ${cold.unexplained.length} unexplained`)
+  if (cold.verdict === 'understood' && !cold.unexplained.length) break
+  const fixed = await agent(`You are the editor of a research report; you did not write it. SKILL
+is ${A.skill}: read SKILL/METHOD.md "The Report". ROOT is ${A.root}; the report is ${REPORT}. Write
+only that file.
+A cold reader who saw nothing but the text reported: ${json(cold)}
+Fix the report so that reader understands: introduce each unexplained term where it first appears,
+in the reader's terms (what it is, why it matters here); rewrite each sentence the reader could not
+follow; make the first paragraph say what was researched, for whom and why. Keep every fact, figure,
+source number, caveat and artifact as they are. Then run python3 SKILL/edit-check.py ${REPORT} and
+fix what it lists.`,
+    { label: `fix for the cold reader ${round}`, phase: 'Cold read', schema: obj({ changed: STRS }),
+      effort: 'high' })
+  if (!fixed) break
+}
+
 return {
   summary: final.summary,
-  short: final.short,
+  short: edited ? edited.short : final.short,
   changes: final.changes,
   next: final.next,
   questions_for_user: final.questions_for_user,
   downloads,
   subquestions: plan.subquestions.length,
-  researched: researched.length
+  researched: researched.length,
+  edit: edited
+    ? { before: edited.breaches_before, after: edited.breaches_after, left: edited.left }
+    : null,
+  cold_read: cold
+    ? { verdict: cold.verdict, unexplained: cold.unexplained.map(u => u.term) }
+    : null
 }

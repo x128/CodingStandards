@@ -54,6 +54,22 @@ costs; what can go wrong; what to do first. For a goal of the kind "what is true
 the competing answers and what would decide between them. Five to nine sub-questions is usual. They
 are the research plan: later runs take the open ones, and the challenge asks which one is missing.
 
+Three rules keep the plan honest. Every thing the user named in their words is a sub-question of its
+own, even when it looks like an example ("the skill files too", "reviews and analytics"): what they
+named, they will look for. A goal that means retiring or auditing something has these facets whether
+or not anyone thought of them: how a candidate is found; how it is tested; how it waits before it
+goes (a quarantine); how the record is bootstrapped when there is none yet; what the rule of entry
+is from now on; what it costs and how often it runs. A goal that means watching or monitoring has:
+sources; reading each; sorting; delivery and its cadence; handing a signal on to action; failures
+and how they are noticed; how the thing is tested. A facet that stays open is written under "Что
+осталось неясным" with its reason; it never silently disappears.
+
+A sub-question that is answered by reading the user's project — what exists, what is already covered
+by a tool, which rules are candidates — is answered in the run that opens it; "not researched" is
+not a status for it. When the goal is to cut or shorten something the research can read, the report
+is not done without a section "Первые кандидаты": the concrete items, each with its file and line,
+and why.
+
 ```
 BAD:  Q1 Is the user's view right?  Q2 Is the rival right?
 GOOD: Q1 What do Cherny and Anthropic say, in their own words, about deleting rules?
@@ -119,29 +135,71 @@ softened; a missing sub-question joins the plan.
 
 ## The Report
 
-REPORT.md is written for the person, in the language of BRIEF.md, in this shape:
+REPORT.md is written for a person who has never seen the project, the research or any file behind
+them. That reader must be able to restate what was researched and what the answer is, and to explain
+every word of the text from the text itself. Nothing is known in advance: a rule, a hook, a script,
+a standard, a name of a file — each is introduced where it first appears, in the reader's terms ("a
+hook: a small program that Claude Code runs before each command and that can refuse it"), and a
+number comes with the thing it counts. The first paragraph says what was researched, for whom and
+why, before any finding. The language of BRIEF.md, in this shape:
 
 ```
 # <title: what the report settles, in one line>
-## Коротко            five to eight sentences: the answer to the goal, what to build or do, the
-                      main caveat — a reader may stop here
+## Коротко            five to eight sentences in two to four paragraphs: first what was
+                      researched, for whom and why; then the answer, what to build or do, the
+                      main caveat — a reader may stop here and knows the answer
 ## Цель и что уже есть the goal in one paragraph; what the user already has (from the project)
 ## <one section per sub-question, headed by its finding, not by its question>
                       the answer; what it rests on, with [n] references; options where there are
                       several; what to do; a table or an artifact where it says more than prose
-## Что построить      only when the goal is to build something: the design with its artifacts
+## Первые кандидаты   when the goal is to cut something the research could read: each item with
+                      its file and line, why it is a candidate, what would be lost
+## Что построить      only when the goal is to build something: the design, in one place, with
+                      its artifacts
 ## Порядок действий   numbered, each step with what it gives and what it needs
 ## Что осталось неясным  what could not be verified, what the user must decide or supply
 ## Что отслеживать    the signals, with two readings and a date to look again
 ## Источники          numbered; each with its link and the capture path
 ```
 
-Writing rules: whole sentences in the report's language, with a quote from a source translated or
-followed by its translation; a paragraph makes one point in at most six sentences; a reference is a
-number in brackets [12], never a path or a URL in the prose; a bold phrase at the start of a
-paragraph says what it establishes; no probability numbers, no hypothesis ids, no run numbers, no
-journal vocabulary in the report; a caveat stands next to the claim it limits; an automatic
-transcript is paraphrased or cleaned, with the timecode, never quoted with its errors.
+Writing rules: whole sentences in the report's language, with a quote from a source followed by its
+translation in parentheses; "Коротко" is five to eight sentences in two to four paragraphs; a
+paragraph makes one point in at most six sentences and 120 words, a sentence in at most 35 words (a
+long sentence is two short ones, not one with semicolons); a heading is at most ten words; a
+reference is a number in brackets [12], never a path or a URL in the prose (an artifact is named in
+code font); a term the reader was not given (a canary, an arm, a grader, ablation, a bench) is
+defined where it first appears; a number is given once and referred to after; a bold phrase at the
+start of a paragraph says what it establishes; no probability numbers, no sub-question or hypothesis
+ids, no run numbers, no journal vocabulary in the report; a caveat stands next to the claim it
+limits; an automatic transcript is paraphrased or cleaned, with the timecode, never quoted with its
+errors. The report is as long as its sub-questions need and no longer: a reader who stops after
+"Коротко" and the section headings knows the answer. The report speaks of the current state only: a
+number that changed since an earlier run is given, not corrected ("not 27 as before" belongs in the
+note and the plan). Every number the report derives from a table, a listing or a count is recomputed
+from its source before it is written, and every artifact the report describes exists and says what
+the report says it says.
+
+The editing pass is a step of its own, after the report is written and before it is handed over:
+`python3 SKILL/edit-check.py REPORT.md` lists the mechanical breaches (sentence counts, headings,
+untranslated quotes, paths and URLs in prose, journal words, repeated numbers); an editor who did
+not write the report fixes every breach and reads the whole once for the rules the script cannot
+check — one point per paragraph, terms defined, the design in one place — without changing a fact or
+a source. Then the cold reading: an agent that has seen nothing of the research gets the text alone,
+restates what was researched and what the answer is, and lists every word it cannot explain from the
+text. A wrong restatement or one unexplained word sends the report back to the editor; the report is
+done when the cold reader of "Коротко" and of the whole report understands and lists nothing. No
+other measure of readability counts: a judge who has read the plan, the notes or the captures has
+learnt the vocabulary and cannot see what a reader lacks.
+
+```
+BAD:  В пяти стандартах и двенадцати скиллах 20 599 слов и не меньше 220 правил; 44 утверждения
+      уже исполняет инструмент: хук запрета записи в git, land.sh и run.sh [1][2][3].
+GOOD: Исследовали, как остановить рост файлов с правилами для Claude в репозитории
+      CodingStandards. Правило здесь — строка, которая велит Claude что-то делать или не
+      делать; таких файлов семнадцать, в них около двадцати тысяч слов и не меньше 220 правил.
+      Сорок четыре правила уже не нуждаются в тексте: их исполняет программа, которая проверяет
+      каждую команду Claude перед запуском и запрещает запись в git.
+```
 
 ```
 BAD:  Нужен не новый «мотор», а тонкий аудит (#12a ↑, captures/001-a3-opus5.md). Вероятно, 65%.
@@ -201,8 +259,11 @@ captures/     captured texts: local, never committed
 - [ ] Each sub-question has an answer in words, options where there are several, what would change
       it
 - [ ] "What to build" is answered with artifacts
+- [ ] Every thing the user named is a sub-question; the facets of the goal's kind are all closed or
+      listed as open with a reason
+- [ ] What the project itself answers is answered; a cutting goal has "Первые кандидаты" with file
+      and line
 - [ ] A fresh agent challenged the draft and asked what sub-question is missing
-- [ ] The report follows the shape; no journal vocabulary, no numbers for likelihood, references by
-      number
+- [ ] The report follows the shape; `edit-check.py` passes and an editor read the whole once
 - [ ] PLAN.md keeps the history struck through; REPORT.md shows only the current state
 - [ ] The user's answers go into BRIEF.md and the report
