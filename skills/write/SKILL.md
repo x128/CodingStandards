@@ -1,9 +1,9 @@
 ---
 description: >-
-  Write a message a person understands on the first reading: their question first, then what
-  happened, why, what came of it and what they decide, in their words, without the machinery of the
-  work. Use for every report, answer or question to the user, and for anything else written for a
-  person to read.
+  Write a message to the user in the chat that they understand on the first reading: their question
+  first, then what happened, why, what came of it and what they decide, in their words, without the
+  machinery of the work. Use for every report, answer or question to the user in the chat; not for
+  documents or files.
 ---
 
 # Write Skill
@@ -97,5 +97,5 @@ clear to the reader.
 ```
 /write the report on the finished task
 /write simple the question about the failing build
-/write explained the summary for the team
+/write explained the answer about why the landing was refused
 ```
