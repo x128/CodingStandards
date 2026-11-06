@@ -45,7 +45,7 @@ Every step below, when `.review/gates.sh` does not exist.
    there. At `merge`, set `CHECKS_WAIT` a little over what the project's checks take, or to `0` if
    it has none.
 7. **Report**, in the user's language, starting with what the user has to do — commit the new files,
-   at `push` and up push that commit too (condition 8 refuses to publish a commit no landing made),
+   at `push` and up, push that commit too (condition 8 refuses to publish a commit no landing made),
    add a missing remote, log `gh` in, fill what only they can — then each check with its command,
    and the risk paths.
 
@@ -190,8 +190,8 @@ done directly.
     kind of task stops being shown.
 13. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
-      object, with `LANDING=off`, commit, at `push`, merge the branch, at `pr`, merge the pull
-      request, and at both go back to the base branch and update it, so the next task starts there;
+      object; with `LANDING=off`, commit; at `push`, merge the branch; at `pr`, merge the pull
+      request; and at both, go back to the base branch and update it, so the next task starts there;
       at every level commit the decision logs and the policy rules under `.review/`, and the
       requirements and the plan if they changed — then what changed, the findings accepted and what
       was done, the findings rejected and why, the results of the build, test, format, lint and

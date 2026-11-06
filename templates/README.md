@@ -49,7 +49,7 @@ What that gets you, and what still needs your judgment:
    pre-approve the two scripts that are allowed to write — `land.sh` and `publish.sh`. The block is
    in [TASK_LOOP.md](../TASK_LOOP.md#landing).
 6. **Set `LANDING` in `.review/land.conf`** from the requirement "Who writes to git": (a) `off`,
-   (b) `push`, (c) `pr`, (d) `merge`. `/maintain --init` does this and the two above.
+   (b) `push`, (c) `pr`, (d) `merge`. `/maintain --init` does this, and items 1 and 5.
 
 Run it from the project root. `/maintain` writes the task file itself; for a
 manual pass, start from the template:

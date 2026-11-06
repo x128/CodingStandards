@@ -9,8 +9,8 @@ description: >-
 # Groom Skill
 
 Looks at one epic the way the owner of the product does, when its work is about to start: what the
-user will be able to do after it, whether its tasks are the ones that needs, and what is now known
-about each task. By then more is known than when the plan was written: the epics before it are
+user will be able to do after it, whether its tasks are the ones that thing needs, and what is now
+known about each task. By then more is known than when the plan was written: the epics before it are
 done, and their tasks have shown what they hand on. The skill turns that into a corrected list of
 tasks with their exit criteria, and asks the user what only they can say. It needs the requirements,
 the plan and the tracker, and writes only to them, after the user has answered.

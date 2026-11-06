@@ -587,8 +587,8 @@ a pull request that was waiting, without another commit.
    It finishes on the base branch, updated with `git pull --ff-only`, and deletes the local
    `task/<id>`. When the base branch is checked out in another worktree, this one stays where it is
    and says so. When the checkout cannot move, it says so and exits `1`: the merge is in, and
-   `publish.sh` again only tries the move again. When the base branch here cannot fast-forward, the
-   same; that one is for you to settle, as the script refuses on the base branch.
+   running `publish.sh` again only retries the move. When the base branch here cannot fast-forward,
+   the same; that one is for you to settle, as the script refuses on the base branch.
 
 Exit codes: `0` done, `1` error, `3` refused, `5` waiting.
 
@@ -728,9 +728,9 @@ Keep this list in step with the prohibitions in
 is forbidden in prose but absent from the deny list is not forbidden at all.
 
 `LANDING=off` in `.review/land.conf` is the kill switch: the pipeline then runs to completion, and
-the maintainer gives you the files and the message instead of committing. `publish.sh` refuses at it
-too. It holds whatever the requirement says: `/maintain` stops only when `LANDING` goes further than
-it, never when it stays behind it.
+the maintainer gives you the files and the message instead of committing. `publish.sh` refuses at
+`off` too. `LANDING=off` holds whatever the requirement says: `/maintain` stops only when `LANDING`
+goes further than the requirement, never when it stays behind.
 
 ### Interactive work is different
 

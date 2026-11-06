@@ -47,10 +47,10 @@ The shape of every task:
 
 Steps 4 and 5 are the only ones the loop changes: there, the user reviews the finished task rather
 than the raw diff, and, where the requirement "Who writes to git" lets the loop commit, the commit
-happens through the landing contract instead of by hand, and before the user looks; at its last
-answer, so does the merge into main. That order is what the user chose there. Who decides that the
-task is finished — step 4 — never moves: an objection to a task already in main is a new task on top
-of it, or a revert the user makes.
+happens through the landing contract instead of by hand, and before the user looks; where that
+requirement's last answer lets the loop merge, so does the merge into main. That order is what the
+user chose in that requirement. Who decides that the task is finished — step 4 — never moves: an
+objection to a task already in main is a new task on top of it, or a revert the user makes.
 
 ---
 
