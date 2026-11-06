@@ -35,8 +35,8 @@ told what to hunt for, so it always runs the same four hunts. The task loop has 
    own intent. A whole feature or codebase does not: it needs exit criteria, a task or a plan,
    because without one a defect and unbuilt work look the same. With none, say so and offer two
    things: reconstruct the intent first (PLANNING_GUIDE.md, Steps 1-2), or run only hunts 1 and 4
-   and call the result an inventory, not findings. Unbuilt work is never a finding, and a
-   `CLAUDE.md` that lists features not built yet states intent, not a false claim.
+   and call the result an inventory, not findings. Unbuilt work is never a finding, and an
+   `AGENTS.md` that lists features not built yet states intent, not a false claim.
 2. **Read the surroundings** — the module's other functions, its conventions, how similar cases
    are handled — before judging.
 3. **Run the four hunts**, then check against CLEAN_CODE.md and the language standard for what the
@@ -161,7 +161,7 @@ writes to git", says. In the loop, `land.sh` writes it.
 - Say what you did not check.
 - Keep proven and suspected apart.
 - Change nothing on your own; findings are pointers for whoever owns the fix (the standards'
-  CLAUDE.md, "Handling Review Feedback"). When they go to someone else to act on, say so with them.
+  AGENTS.md, "Handling Review Feedback"). When they go to someone else to act on, say so with them.
 
 ## Allowed Prompts
 - Read the target, its module, the standards, and other call sites

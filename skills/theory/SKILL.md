@@ -45,11 +45,11 @@ never renames it — code, tasks, the requirements and the plan keep the project
 
    Every claim points to a real type, function or data flow in the code, or, before there is code,
    to the section of the requirements. Use formulas only where they make a mapping clearer.
-4. **Point to it:** one line in the project's `CLAUDE.md` that names THEORY.md.
+4. **Point to it:** one line in the project's `AGENTS.md` that names THEORY.md.
 
 ## Allowed Prompts
 - Read source files and project documents
-- Write THEORY.md and one line in CLAUDE.md
+- Write THEORY.md and one line in AGENTS.md
 
 ## Example Usage
 

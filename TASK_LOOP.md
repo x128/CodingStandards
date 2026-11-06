@@ -235,9 +235,8 @@ and lives in [skills/maintain](./skills/maintain/SKILL.md), the copy that
 is actually read at handoff time. It is not repeated here, because a framing
 whose whole point is being verbatim cannot survive two copies.
 
-This is the same principle `CLAUDE.md` states for human review comments: *the
-reviewer identifies the issue, you own the fix*. The pipeline does not change
-it; automation makes it easier to forget.
+This is the same principle `AGENTS.md` states for human review comments: *the reviewer identifies
+the issue, you own the fix*. The pipeline does not change it; automation makes it easier to forget.
 
 **Rejecting an accepted finding is a legitimate outcome.** The executor may come
 back with "F-004 points at real coupling, but the fix belongs in the repository

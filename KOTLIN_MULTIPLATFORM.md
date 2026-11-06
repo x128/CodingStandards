@@ -23,8 +23,7 @@ Every new project adds this repo as a git submodule (the user does it):
 git submodule add https://github.com/x128/CodingStandards.git CodingStandards
 ```
 
-The project's `CLAUDE.md` points at the standards as PLANNING_GUIDE.md, Step 4,
-shows.
+The project's `AGENTS.md` points at the standards as PLANNING_GUIDE.md, Step 4, shows.
 
 ### Proven Version Set
 

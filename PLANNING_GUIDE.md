@@ -4,7 +4,7 @@
 > process, rules, and formatting conventions.
 
 **Follow steps 0–4 in order. Report which step you are on as you progress. Planning produces:
-requirements, plan, task tracker, CLAUDE.md, and CodingStandards submodule. After Step 4 the
+requirements, plan, task tracker, AGENTS.md, and CodingStandards submodule. After Step 4 the
 planning process is complete. Task execution starts with T-001.**
 
 ---
@@ -529,7 +529,7 @@ Create the project-level artifacts that complete the planning process.
    and every import.
 2. **Add `x128/CodingStandards` as a git submodule** — the user does it; agents never write to git
    outside `land.sh` and `publish.sh`, and those only land a task
-3. **Create `CLAUDE.md`** at the project root: what the product is, where the requirements, the plan
+3. **Create `AGENTS.md`** at the project root: what the product is, where the requirements, the plan
    and the tracker are, and one line pointing at the standards. It is read on every request, so it
    holds only that:
    ```markdown
@@ -545,25 +545,25 @@ Create the project-level artifacts that complete the planning process.
    ```
    Link the skills into `.claude/skills/` as [skills/README.md](./skills/README.md), "Setup", says.
 
-4. **The user commits the requirements, the plan, the tracker, `CLAUDE.md`, `.claude/skills/`, and
+4. **The user commits the requirements, the plan, the tracker, `AGENTS.md`, `.claude/skills/`, and
    the files `/maintain --init` wrote if it ran, before a line of product code exists.** They are
    the first commit.
 
    **The failure to guard against is planning that never leaves the conversation.** Steps 0–3 can be
    run entirely in dialogue: the questions get asked, the answers are good, a complete plan takes
-   shape, `CLAUDE.md` gets written from it, and the code starts. The plan is real to everyone
+   shape, `AGENTS.md` gets written from it, and the code starts. The plan is real to everyone
    present — and it is gone when the session ends. Nothing was forgotten or dropped; it was simply
    never a file. **A plan that exists only in a session's context does not exist.**
 
-   What survives is a `CLAUDE.md` listing features nobody built, and no record anywhere of whether
+   What survives is an `AGENTS.md` listing features nobody built, and no record anywhere of whether
    they were cut, deferred, or just not reached yet. The next person — or the next session — cannot
    tell a defect from unstarted work, and will report the second as the first.
 
-   If you find a project in that state (`CLAUDE.md` and code, no requirements, no plan, no tracker),
-   reconstruct Steps 1–2 from what was built before doing anything else, and treat `CLAUDE.md`'s
-   feature list as the surviving evidence of what was intended.
+   If you find a project in that state (`AGENTS.md` or `CLAUDE.md` and code, no requirements, no
+   plan, no tracker), reconstruct Steps 1–2 from what was built before doing anything else, and
+   treat that file's feature list as the surviving evidence of what was intended.
 
-**Planning is now complete.** The artifacts are: requirements, plan, task tracker, CLAUDE.md, and
+**Planning is now complete.** The artifacts are: requirements, plan, task tracker, AGENTS.md, and
 CodingStandards submodule. Task execution starts with T-001. See `EXECUTION_GUIDE.md` for the task
 execution workflow.
 

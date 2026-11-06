@@ -26,16 +26,18 @@ skill's own file says how to call it.
 ## Setup
 
 Claude Code finds a skill only at `.claude/skills/<name>/SKILL.md` and puts its `description` into
-every session. Link each skill there from the project root; the links are relative, so they work
-in every clone where the submodule is initialised:
+every session. Run this in the project root before you start the agent: it links each skill there,
+with relative links that work in every clone where the submodule is initialised, and starts
+`AGENTS.md` with the line that has every reply in the chat written with `/write`:
 
 ```bash
 mkdir -p .claude/skills && for s in CodingStandards/skills/*/; do \
   ln -sfn "../../${s%/}" ".claude/skills/$(basename "$s")"; done
+grep -qs '/write' AGENTS.md || echo '- Every reply to the user in the chat is written with `/write`.' >> AGENTS.md
 ```
 
-Commit `.claude/skills/` with the project. A skill added to the standards later needs the same
-command again.
+Commit `.claude/skills/` and `AGENTS.md` with the project. A skill added to the standards later
+needs the same command again.
 
 ## Creating Custom Skills
 

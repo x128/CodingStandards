@@ -140,7 +140,7 @@ work on `EXECUTOR`.
    each round, say what it will cost and where the estimate comes from; above 1 million tokens,
    wait for a yes.
 2. **Save the project as it is**, outside the repository, to compare against in step 5.
-3. **The list.** A fresh agent that will not do the work reads `CLAUDE.md`, the standards, the
+3. **The list.** A fresh agent that will not do the work reads `AGENTS.md`, the standards, the
    requirements, the plan and the code, runs the build and the tests, and lists where the code
    departs from a rule of the standards: the place, the rule (quoted in a few words), and what to
    change. Not taste. It decides nothing for the human: a decision the standards ask the project to

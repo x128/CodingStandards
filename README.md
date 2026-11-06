@@ -60,23 +60,23 @@ portable URL and rewrite it locally, once, for every repo you touch:
 git config --global url."git@github.com:".insteadOf https://github.com/
 ```
 
-Then paste this prompt. It is the whole setup — standards wiring and the task
+Before you start the agent, run the command of [skills/README.md](./skills/README.md), "Setup", in
+the project root: it links the skills and starts `AGENTS.md` with the line that has every reply
+written with `/write`. Then paste this prompt. It is the whole setup — standards wiring and the task
 loop in one pass:
 
 ```text
-Read CodingStandards/CLAUDE.md and CodingStandards/TASK_LOOP.md, then set this
+Read CodingStandards/AGENTS.md and CodingStandards/TASK_LOOP.md, then set this
 project up to use those standards.
 
 1. Follow PLANNING_GUIDE.md Steps 0-3 first: ask me the intake questions, then
    write REQUIREMENTS.md, PLAN.md and TASK_TRACKER.md. If I say they already
    exist, show me the files.
-2. Write this project's CLAUDE.md as PLANNING_GUIDE.md, Step 4, shows. Link the
-   skills into .claude/skills/ as CodingStandards/skills/README.md, "Setup",
-   says.
+2. Complete this project's AGENTS.md as PLANNING_GUIDE.md, Step 4, shows.
 3. Run /maintain --init to set up the review loop: detect the stack, fill in
    .review/gates.sh, and wire permissions.
 4. Stop and list the files of the first commit for me to commit: the
-   requirements, the plan, the tracker, CLAUDE.md, .claude/skills/, and the
+   requirements, the plan, the tracker, AGENTS.md, .claude/skills/, and the
    files /maintain --init wrote. No feature code is in them.
 
 Report back, starting with what I have to do: the files to commit, and any check
@@ -104,7 +104,7 @@ reviewing or running the loop:
 
 ```text
 Follow CodingStandards/PLANNING_GUIDE.md Steps 1-2, reconstructing the
-requirements, the plan and the tracker from the existing code and CLAUDE.md.
+requirements, the plan and the tracker from the existing code and AGENTS.md or CLAUDE.md.
 Ask me about anything the code does not settle. No code changes yet.
 ```
 
@@ -141,7 +141,7 @@ MyApp/
 ├── .claude/
 │   ├── agents/               # reviewer, maintainer
 │   └── settings.json         # write-git deny list
-└── CLAUDE.md                 # the product, where the plan is, the standards
+└── AGENTS.md                 # the product, where the plan is, the standards
 ```
 
 ## What's Covered

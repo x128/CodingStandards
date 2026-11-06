@@ -2,6 +2,8 @@
 
 Reusable coding standards and Claude Code skills for consistent, clean code across projects.
 
+- Every reply to the user in the chat is written with `/write`.
+
 ## Structure
 ```
 PLANNING_GUIDE.md  # FIRST: intake, requirements, plan, task tracker — before any code

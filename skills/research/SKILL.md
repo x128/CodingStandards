@@ -40,7 +40,7 @@ Ask only what the user's words do not already say:
   and an hour** (one agent per sub-question in parallel, a fresh one attacks the report; an
   estimate).
 - "Commit each run?" — when the project has git and `research/land.conf` does not exist yet: **Yes,
-  on the current branch** / **No, I commit myself**. When the project's CLAUDE.md or requirements
+  on the current branch** / **No, I commit myself**. When the project's AGENTS.md or requirements
   say something about agents committing, quote it in the question and put the matching answer
   first. Write the answer to `research/land.conf` as `LANDING=on` or `LANDING=off`; it is the
   only place the skill reads it from. Say where the file is: it belongs to the project. Without
