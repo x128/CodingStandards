@@ -131,9 +131,9 @@ task when the user has said so — nothing measures its way out of asking
 
 ### Reporting to the user
 
-Every message to the user is written by [skills/write](./skills/write/SKILL.md). The points
-below are about the work, not the text; rules for the text were measured to make messages worse
-next to the skill ([MEASURED.md](./skills/write/MEASURED.md)).
+Every message to the user is written by [.agents/skills/write](./.agents/skills/write/SKILL.md). The
+points below are about the work, not the text; rules for the text were measured to make messages
+worse next to the skill ([MEASURED.md](./.agents/skills/write/MEASURED.md)).
 
 - **During long work, say what runs and what comes next** when a step starts or ends, in the user's
   terms: what it does to their product, not a step name. Never leave the user without word.

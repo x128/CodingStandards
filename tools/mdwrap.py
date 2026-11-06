@@ -4,7 +4,10 @@
     python3 tools/mdwrap.py check [FILE...]   report what is wrong; exit 1 when anything is
     python3 tools/mdwrap.py fill  [FILE...]   fix it in the files
 
-Without FILE, both take the Markdown files that differ from the last commit (HEAD), new files too.
+Without FILE, both take the Markdown files that differ from the last commit (HEAD), new files too,
+except one whose text is still HEAD's (moved, or changed only in mode). A file renamed in the index
+(git mv, git add) is compared with its text under the old name, so a move alone changes no line
+breaks; so is a copy whose source changed in the same diff, the only copy git pairs.
 
 A line that ends early, while the next word would still fit, reads as a deliberate break: a list,
 a new thought. So:
@@ -56,26 +59,54 @@ FILLER = "ㅤ"
 
 # ---------------------------------------------------------------- reading the repository
 
+def git(top, *args, can_fail=False):
+    """The output of a git command run at the top of the repository (where the tool runs, for top
+    None). A failure stops the tool with git's message, unless the caller takes it as an answer:
+    None."""
+    at = ["-C", str(top)] if top else []
+    r = subprocess.run(["git", "--no-optional-locks", *at, *args], capture_output=True,
+                       encoding="utf8")
+    if r.returncode != 0 and not can_fail:
+        sys.exit(f"mdwrap: git {args[0]} failed: {r.stderr.strip()}")
+    return r.stdout if r.returncode == 0 else None
+
+
 def top_level():
-    r = subprocess.run(["git", "--no-optional-locks", "rev-parse", "--show-toplevel"],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
+    out = git(None, "rev-parse", "--show-toplevel", can_fail=True)
+    if out is None:
         sys.exit("mdwrap: run it inside a git repository")
-    return Path(r.stdout.strip())
+    return Path(out.strip())
 
 
 def head_text(top, path):
-    r = subprocess.run(["git", "--no-optional-locks", "-C", str(top), "show", f"HEAD:{path}"],
-                       capture_output=True, text=True)
-    return r.stdout if r.returncode == 0 else ""
+    """The file's text in HEAD, "" for a path HEAD does not have."""
+    return git(top, "show", f"HEAD:{path}", can_fail=True) or ""
+
+
+def diff_base(top):
+    """HEAD, or the empty tree before the first commit, when every file is new."""
+    if git(top, "rev-parse", "--verify", "--quiet", "HEAD", can_fail=True) is not None:
+        return "HEAD"
+    return git(top, "hash-object", "-t", "tree", os.devnull).strip()
 
 
 def changed_files(top):
-    out = subprocess.run(["git", "--no-optional-locks", "-C", str(top), "diff", "HEAD", "--name-only",
-                          "--diff-filter=d", "--", "*.md"], capture_output=True, text=True).stdout
-    new = subprocess.run(["git", "--no-optional-locks", "-C", str(top), "ls-files", "--others",
-                          "--exclude-standard", "--", "*.md"], capture_output=True, text=True).stdout
-    return sorted(set(out.split()) | set(new.split()))
+    """The Markdown files that differ from HEAD, new files too, each with the path to read it from
+    HEAD by: the old path of a renamed file, or of the source of a copy git paired; its own else."""
+    files = {}
+    entries = iter(git(top, "diff", diff_base(top), "-M", "-C", "-z", "--name-status",
+                       "--diff-filter=d", "--").split("\0"))
+    for status in entries:
+        if not status:
+            break
+        in_head = next(entries)
+        now = next(entries) if status[0] in "RC" else in_head
+        if now.endswith(".md"):
+            files[now] = in_head
+    for f in git(top, "ls-files", "--others", "--exclude-standard", "-z", "--", "*.md").split("\0"):
+        if f:
+            files.setdefault(f, f)
+    return files
 
 
 # ---------------------------------------------------------------- the shape of a paragraph
@@ -504,13 +535,19 @@ def main():
     ap.add_argument("--width", type=int, default=WIDTH)
     args = ap.parse_args()
     top = top_level()
-    files = args.files or changed_files(top)
+    changed = changed_files(top)
+    files = args.files or [top / f for f in sorted(changed)]
     bad = 0
     for f in files:
         path = Path(f).resolve()
+        if not path.is_relative_to(top):
+            sys.exit(f"mdwrap: {f} is outside the repository")
         rel = path.relative_to(top).as_posix()
         text = path.read_text(encoding="utf8")
-        head = head_text(top, rel)
+        head = head_text(top, changed.get(rel, rel))
+        same_text_as_head = text == head
+        if same_text_as_head and not args.files:
+            continue
         if args.command == "check":
             for line, why in problems(text, head, args.width):
                 print(f"{rel}:{line}: {why}")

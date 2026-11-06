@@ -1,6 +1,6 @@
 # CodingStandards
 
-Reusable coding standards and Claude Code skills for consistent, clean code across projects.
+Reusable coding standards and agent skills for consistent, clean code across projects.
 
 - Every reply to the user in the chat is written with `/write`.
 
@@ -16,7 +16,7 @@ KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
 EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
 TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
 MAINTAINER_TRAINING.md # How a correction becomes a rule, and which file it goes in
-skills/            # Claude Code skills (slash commands)
+.agents/skills/    # Skills, open Agent Skills format; .claude/skills/ links to them
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 templates/self-improve/ # Tools of /self-improve; never copied into a project that is measured
 tools/mdwrap.py    # Line breaks of the Markdown at 100 columns: check, fill

@@ -9,7 +9,7 @@ WORK="$(cd "$1" && pwd)"; STANDARDS="$2"; PROJECT="$3"
 . "$WORK/env.sh"
 COPY="$PROJECT/CodingStandards"
 rm -rf "${COPY:?}"; mkdir -p "$COPY"
-rsync -a --exclude .git --exclude templates/self-improve --exclude skills/self-improve \
+rsync -a --exclude .git --exclude templates/self-improve --exclude .agents/skills/self-improve \
   "$STANDARDS/" "$COPY/"
 for index in $(cd "$COPY" && grep -rl -e 'self-improve' --include='*.md' .); do
   grep -v -e 'self-improve' "$COPY/$index" > "$COPY/$index.kept" &&

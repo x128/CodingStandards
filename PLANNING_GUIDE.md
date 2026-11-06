@@ -67,10 +67,10 @@ project are asked all the same, on top of the 10–20, except one the user has a
 with nothing left to ask is skipped. An open question, such as what the product does or who uses it,
 is asked as text, without options: made up, they would read as already settled. The card of its
 block comes after the user's answer. Except the three below, each question is written as
-[skills/write](./skills/write/SKILL.md) says. The three questions of every project are never moved
-into an earlier block, nor asked next to the package name of Step 4. Asked among the first questions
-about a project, a question about use cases comes from nowhere; asked after the product is
-described, it has something to stand on.
+[.agents/skills/write](./.agents/skills/write/SKILL.md) says. The three questions of every project
+are never moved into an earlier block, nor asked next to the package name of Step 4. Asked among the
+first questions about a project, a question about use cases comes from nowhere; asked after the
+product is described, it has something to stand on.
 
 **A card is all the user sees.** While a card is open, the text written before it is out of sight,
 and an app may show one question of the card at a time, without its header or the preview of an
@@ -543,11 +543,12 @@ Create the project-level artifacts that complete the planning process.
 
    Requirements — `REQUIREMENTS.md`, plan — `PLAN.md`, tasks — `TASK_TRACKER.md`.
    ```
-   Link the skills into `.claude/skills/` as [skills/README.md](./skills/README.md), "Setup", says.
+   Link the skills into `.agents/skills/` and `.claude/skills/` as
+   [.agents/skills/README.md](./.agents/skills/README.md), "Setup", says.
 
-4. **The user commits the requirements, the plan, the tracker, `AGENTS.md`, `.claude/skills/`, and
-   the files `/maintain --init` wrote if it ran, before a line of product code exists.** They are
-   the first commit.
+4. **The user commits the requirements, the plan, the tracker, `AGENTS.md`, `.claude/skills/`,
+   `.agents/skills/`, and the files `/maintain --init` wrote if it ran, before a line of product
+   code exists.** They are the first commit.
 
    **The failure to guard against is planning that never leaves the conversation.** Steps 0–3 can be
    run entirely in dialogue: the questions get asked, the answers are good, a complete plan takes

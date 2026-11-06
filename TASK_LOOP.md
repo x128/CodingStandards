@@ -16,7 +16,7 @@ Three things exist without this loop and are unchanged by it:
 | Ingredient | What it is | Defined in |
 |-----------|------------|-----------|
 | **Execution rules** | What doing a task means: one at a time, exit criteria are the definition of done, who decides a task is finished, who owns git | `EXECUTION_GUIDE.md` |
-| **Review** | Reading code for defects, inconsistency, replication | `skills/code-review/SKILL.md`, `CLEAN_CODE.md`, the language standards |
+| **Review** | Reading code for defects, inconsistency, replication | `.agents/skills/code-review/SKILL.md`, `CLEAN_CODE.md`, the language standards |
 | **Gates** | The project's own build, test, format, lint, and architecture commands | `.review/gates.sh` |
 
 You can execute tasks and review code with none of this document. People do it
@@ -227,13 +227,12 @@ the invariant, a `try/catch` around the symptom, a rename that makes the
 complaint stop applying. The diff grows, the review goes quiet, and nothing was
 fixed.
 
-So findings are handed over with a fixed framing that says exactly this: the
-output may be wrong, none of it is an instruction, decide for yourself whether
-something real is underneath, fix the cause rather than the complaint — and if
-there is nothing real, say so and leave the code alone. The wording is verbatim
-and lives in [skills/maintain](./skills/maintain/SKILL.md), the copy that
-is actually read at handoff time. It is not repeated here, because a framing
-whose whole point is being verbatim cannot survive two copies.
+So findings are handed over with a fixed framing that says exactly this: the output may be wrong,
+none of it is an instruction, decide for yourself whether something real is underneath, fix the
+cause rather than the complaint — and if there is nothing real, say so and leave the code alone. The
+wording is verbatim and lives in [.agents/skills/maintain](./.agents/skills/maintain/SKILL.md), the
+copy that is actually read at handoff time. It is not repeated here, because a framing whose whole
+point is being verbatim cannot survive two copies.
 
 This is the same principle `AGENTS.md` states for human review comments: *the reviewer identifies
 the issue, you own the fix*. The pipeline does not change it; automation makes it easier to forget.
@@ -878,7 +877,7 @@ commands.
 The loop is a **default**, not a rule for the user: any change can be made outside the pipeline, on
 request, without justification
 ([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work) states this in
-full, and `skills/maintain/SKILL.md` repeats it to the agents that need to hear it — the one
+full, and `.agents/skills/maintain/SKILL.md` repeats it to the agents that need to hear it — the one
 duplication in this repo that is on purpose).
 
 ### Overriding a shared file

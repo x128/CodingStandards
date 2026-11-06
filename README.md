@@ -1,6 +1,6 @@
 # Coding Standards
 
-Reusable coding standards and Claude Code skills for consistent, clean code across projects.
+Reusable coding standards and agent skills for consistent, clean code across projects.
 
 ## Standards
 
@@ -25,8 +25,8 @@ that runs the loop.
 
 ## Skills
 
-Claude Code skills (slash commands) for enforcing standards: see
-[skills/README.md](./skills/README.md).
+Skills for enforcing standards, in the open Agent Skills format (Claude Code, Codex, Gemini CLI and
+others): see [.agents/skills/README.md](./.agents/skills/README.md).
 
 ## Templates
 
@@ -60,10 +60,10 @@ portable URL and rewrite it locally, once, for every repo you touch:
 git config --global url."git@github.com:".insteadOf https://github.com/
 ```
 
-Before you start the agent, run the command of [skills/README.md](./skills/README.md), "Setup", in
-the project root: it links the skills and starts `AGENTS.md` with the line that has every reply
-written with `/write`. Then paste this prompt. It is the whole setup — standards wiring and the task
-loop in one pass:
+Before you start the agent, run the command of
+[.agents/skills/README.md](./.agents/skills/README.md), "Setup", in the project root: it links the
+skills and starts `AGENTS.md` with the line that has every reply written with `/write`. Then paste
+this prompt. It is the whole setup — standards wiring and the task loop in one pass:
 
 ```text
 Read CodingStandards/AGENTS.md and CodingStandards/TASK_LOOP.md, then set this
@@ -76,8 +76,9 @@ project up to use those standards.
 3. Run /maintain --init to set up the review loop: detect the stack, fill in
    .review/gates.sh, and wire permissions.
 4. Stop and list the files of the first commit for me to commit: the
-   requirements, the plan, the tracker, AGENTS.md, .claude/skills/, and the
-   files /maintain --init wrote. No feature code is in them.
+   requirements, the plan, the tracker, AGENTS.md, .claude/skills/,
+   .agents/skills/, and the files /maintain --init wrote. No feature code is in
+   them.
 
 Report back, starting with what I have to do: the files to commit, and any check
 you could not fill and why. Then the requirements, plan and tracker paths, the
@@ -131,7 +132,7 @@ MyApp/
 │   ├── CLEAN_CODE.md
 │   ├── KOTLIN.md
 │   ├── TASK_LOOP.md
-│   ├── skills/
+│   ├── .agents/skills/
 │   └── templates/
 ├── .review/                  # copied out of templates/ — yours to edit
 │   ├── gates.sh              # the only file that knows your language
