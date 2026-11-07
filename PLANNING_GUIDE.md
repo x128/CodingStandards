@@ -19,33 +19,33 @@ questions — only ones whose answers materially change the plan.
 
 **Product vision**
 
-1. One sentence: what does the product do?
-2. How does the user do this today, without the product, and what is hardest in that?
-3. Who is the user? (expertise level, context, device)
+1. What does the product do, how does the user do that today without it, and what is hardest in
+   that?
+2. Who is the user? (expertise level, context, device)
 
 **Platforms & core model**
 
-4. What platforms? (mobile, desktop, web, all)
-5. Online, offline, or hybrid? Any hard constraints?
-6. What's the core data model? (what are the "nouns" of the system?)
-7. What's the primary interaction loop? (what does the user do repeatedly?)
+3. What platforms? (mobile, desktop, web, all)
+4. Online, offline, or hybrid? Any hard constraints?
+5. What's the core data model? (what are the "nouns" of the system?)
+6. What's the primary interaction loop? (what does the user do repeatedly?)
 
 **Scope & philosophy**
 
-8. What is explicitly NOT in MVP? (name 3+ things you're tempted to include)
-9. What's the relationship between the user and AI (if any)?
-10. Are there external stakeholders who interact with the output?
+7. What is explicitly NOT in MVP? (name 3+ things you're tempted to include)
+8. What's the relationship between the user and AI (if any)?
+9. Are there external stakeholders who interact with the output?
 
 **UX**
 
-11. How does the user see progress?
-12. What's the smallest unit of user decision?
+10. How does the user see progress?
+11. What's the smallest unit of user decision?
 
 **Tech preferences**
 
-13. Any strong tech stack preferences or constraints?
-14. What's the deployment model?
-15. Any AI/ML components? What size/where?
+12. Any strong tech stack preferences or constraints?
+13. What's the deployment model?
+14. Any AI/ML components? What size/where?
 
 **Architecture, comments, git** — asked as "Three questions of every project" writes them
 
