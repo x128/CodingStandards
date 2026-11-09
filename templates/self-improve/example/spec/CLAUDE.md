@@ -3,9 +3,12 @@
 Shared expenses of people who travel together. Kotlin on the JVM.
 
 ## Standards
-Follow `CodingStandards/clean-code.md` Follow `CodingStandards/kotlin.md` Follow
-`CodingStandards/architecture.md` Follow `CodingStandards/testing.md` Follow
-`CodingStandards/planning-guide.md` Follow `CodingStandards/execution-guide.md`
+Follow `CodingStandards/clean-code.md`
+Follow `CodingStandards/kotlin.md`
+Follow `CodingStandards/architecture.md`
+Follow `CodingStandards/testing.md`
+Follow `CodingStandards/planning-guide.md`
+Follow `CodingStandards/execution-guide.md`
 
 ## Project
 - What to build: `REQUIREMENTS.md`. The product owner cannot be asked. Where a standard tells you to

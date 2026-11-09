@@ -307,13 +307,18 @@ def even(block, width, slack, hanging=False):
             and not any(ends_early(block[k], r[k + 1], width, slack) for k in range(len(block) - 1)))
 
 
+def line_by_line(block):
+    """Short lines one under another: laid out line by line on purpose."""
+    return len(block) >= 3 and all(len(l) < 60 for l in block)
+
+
 def crooked(block, width, slack, hanging=False):
     """A line ends far earlier than the paragraph's other lines, though words of the next would
     fit: a break that reads as deliberate, whatever width the paragraph was wrapped at."""
     q, first, _, contents = shape(block, hanging)
     r = [words(c) for c in contents]
-    if len(block) >= 3 and all(len(l) < 60 for l in block):
-        return False  # short lines one under another: laid out line by line on purpose
+    if line_by_line(block):
+        return False
     if len(q) + len(first) + len(" ".join(contents)) <= width and any(len(l) < 60 for l in block[:-1]):
         return True
     w = max(len(l) for l in block)
@@ -426,7 +431,7 @@ def refill_text(text, head, width=WIDTH, slack=SLACK):
         block = lines[a:b]
         if any(FILLER in l for l in block):
             continue
-        if norm(block) not in committed:
+        if norm(block) not in committed and not line_by_line(block):
             reason[(a, b)] = "new"
         elif max(len(l) for l in block) > width:
             reason[(a, b)] = "longer than the width"
