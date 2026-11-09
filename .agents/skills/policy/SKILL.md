@@ -33,9 +33,12 @@ track, fix both the outcome and what produced it.
    threshold"); ask one question if it is not clear.
 3. **A check first.** If a linter, a type checker or an architecture test could catch it, it is
    not a policy rule: offer to add it to `.review/gates.sh`. Policy is for judgments no tool makes.
-4. **An existing rule.** Search `review-policy.md`; if the case is a special case of a rule,
-   narrow that rule or add an `Overrides` line instead of adding a rule. A wrong match is usually
-   a missing path scope.
+4. **An existing rule.** A project set up before the standards took lower-case names keeps its rules
+   in `.review/REVIEW_POLICY.md`, and the review reads them there: search and write that file, and
+   tell the user once that `CodingStandards/tools/migrate-to-lower-case-names.sh` moves the project
+   to the new names. Search `review-policy.md`; if the case is a special case of a rule, narrow that
+   rule or add an `Overrides` line instead of adding a rule. A wrong match is usually a missing path
+   scope.
 5. **Write the rule:**
 
    ```markdown
@@ -49,9 +52,7 @@ track, fix both the outcome and what produced it.
    - **Added**: <date>, after <task> / <finding id>
    ```
 
-   Ids are never reused. MUST is a blocker, SHOULD major, MAY minor. A project set up before the
-   standards took lower-case names keeps its rules in `.review/REVIEW_POLICY.md`: rename it first,
-   `git mv .review/REVIEW_POLICY.md .review/review-policy.md`, so that no rule stays behind.
+   Ids are never reused. MUST is a blocker, SHOULD major, MAY minor.
 6. **Log it:** one line in `.review/decisions/findings.jsonl` with the rule id (format:
    `templates/review/project/decisions/findings.example.jsonl`).
 

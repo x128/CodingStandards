@@ -80,7 +80,8 @@ cd "$PROJECT_ROOT" || exit 1
 REVIEW_DIR=".review"
 
 # The policy was REVIEW_POLICY.md before the standards took lower-case names; a project that still
-# has the old name keeps working, and is told how to rename it.
+# has the old name keeps working, and is told how to move to the new names.
+MIGRATION="$(cd "$LIB_DIR/../../../tools" 2>/dev/null && pwd)/migrate-to-lower-case-names.sh"
 POLICY_FILE="$REVIEW_DIR/review-policy.md"
 if [ -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
   echo "two policy files: $REVIEW_DIR/REVIEW_POLICY.md and $POLICY_FILE — move the rules of the" >&2
@@ -89,7 +90,9 @@ if [ -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
 fi
 if [ ! -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
   POLICY_FILE="$REVIEW_DIR/REVIEW_POLICY.md"
-  echo "note: the policy has a new name — git mv $REVIEW_DIR/REVIEW_POLICY.md $REVIEW_DIR/review-policy.md" >&2
+  echo "note: this project uses the names the standards had before lower case; run" >&2
+  echo "  $MIGRATION" >&2
+  echo "  from the project root, then commit what it changes" >&2
 fi
 
 # Project-owned. No sensible default exists — these encode the stack and the taste.
@@ -579,6 +582,8 @@ fi
 
 {
   cat "$(lib_file prompts/reviewer.md)"
+  echo
+  echo "The project's rules, cited as \`review-policy.md R-nnn\`, are in $POLICY_FILE."
   echo
   echo "## Output schema (JSON only, no prose, no markdown fences)"
   cat "$(lib_file schemas/review-findings.schema.json)"

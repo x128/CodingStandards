@@ -104,8 +104,15 @@ review "a verdict given as a list fails closed" 1 "maintainer output is malforme
 review "a rejected finding leaves the run clean" 0 "rejected          : 1" \
   "$(finding '"bug"')" "$(verdict '"reject"' contradicts-green-gate)"
 mv .review/review-policy.md .review/REVIEW_POLICY.md
-review "a policy under its old name still works, with a note how to rename it" 0 \
-  "git mv .review/REVIEW_POLICY.md .review/review-policy.md" '{"findings":[]}' '{"verdicts":[]}'
+printf 'R-900 old-name marker\n' >>.review/REVIEW_POLICY.md
+review "a policy under its old name still works, with a note how to migrate" 0 \
+  "migrate-to-lower-case-names.sh" "$(finding '"bug"')" "$(verdict '"reject"' contradicts-green-gate)"
+if grep -qs 'R-900 old-name marker' .review/runs/*/maintainer-prompt.md; then
+  echo "ok    the rules of a policy under its old name reach the maintainer"
+else
+  echo "FAIL  the rules of a policy under its old name never reached the maintainer"
+  FAILURES=$((FAILURES + 1))
+fi
 cp .review/REVIEW_POLICY.md .review/review-policy.md
 review "two policy files stop the review, so no rule is missed" 1 "two policy files" \
   '{"findings":[]}' '{"verdicts":[]}'

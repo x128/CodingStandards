@@ -20,6 +20,7 @@ maintainer-training.md # How a correction becomes a rule, and which file it goes
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 templates/self-improve/ # Tools of /self-improve; never copied into a project that is measured
 tools/mdwrap.py    # Line breaks of the Markdown at 100 columns: check, fill
+tools/migrate-to-lower-case-names.sh # Moves a project set up before the lower-case names to them
 ```
 
 Language-specific standards (kotlin.md, swift.md) are per-stack. Everything else — including the
@@ -51,6 +52,10 @@ own the fix.
 ### File Names
 - Lower-case words joined by hyphens (`task-loop.md`), except names a tool looks for or custom
   expects: `README.md`, `AGENTS.md`, `CLAUDE.md`, `SKILL.md`, `LICENSE`, `CODEOWNERS`
+- `CLEAN_CODE.md`, `EXECUTION_GUIDE.md`, `KOTLIN_MULTIPLATFORM.md`, `MAINTAINER_TRAINING.md`,
+  `PLANNING_GUIDE.md` and `TASK_LOOP.md` are the old names, kept as pointers to the new files until
+  the projects that use the standards have run `tools/migrate-to-lower-case-names.sh`; then they are
+  deleted
 
 ### Standards Documents
 - Use BAD/GOOD code examples for every rule
