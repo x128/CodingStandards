@@ -3,9 +3,8 @@
 > The maintainer's rubric for this project: judgments no tool can make.
 > Loaded into the maintainer's context on every run.
 >
-> This file belongs to the project, not to the CodingStandards submodule.
-> See `CodingStandards/MAINTAINER_TRAINING.md` for how rules get written and
-> maintained.
+> This file belongs to the project, not to the CodingStandards submodule. See
+> `CodingStandards/maintainer-training.md` for how rules get written and maintained.
 
 **Rules of this file:**
 

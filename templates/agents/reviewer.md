@@ -28,7 +28,7 @@ The short version:
 - **Git is read-only for the reviewer, whatever the requirement "Who writes to git" says**:
   `status`, `diff`, `log`, `show`, `blame`. Never `add`, `commit`, `checkout`, `stash`, `reset`, or
   anything else that writes. You are reviewing the user's working tree, not managing it. See
-  `CodingStandards/EXECUTION_GUIDE.md`.
+  `CodingStandards/execution-guide.md`.
 - An empty `findings` array is a valid, common, correct answer.
 
 Output JSON only. No prose, no markdown fences.

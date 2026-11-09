@@ -33,7 +33,7 @@ Every platform the app runs on must have end-to-end tests covering general user 
 A new test is seen failing once: break the code it covers, run it, put the code back. A test that
 passes with its code broken checks nothing.
 
-See [KOTLIN_MULTIPLATFORM.md](KOTLIN_MULTIPLATFORM.md) for test locations, runners, and
+See [kotlin-multiplatform.md](kotlin-multiplatform.md) for test locations, runners, and
 platform-specific frameworks.
 
 ---
@@ -57,7 +57,7 @@ platform-specific frameworks.
 
 Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason
 or a source ends with it: `→ result because reason`, with no comma — Kotlin/Native refuses one in a
-backtick name (KOTLIN_MULTIPLATFORM.md).
+backtick name (kotlin-multiplatform.md).
 
 ### Kotlin (backtick names)
 
@@ -625,7 +625,7 @@ final class SearchScreenUITests: XCTestCase {
 - Direct delegation (a function that just calls another function)
 - Framework code (Compose UI rendering, Koin module wiring). A composable that makes decisions of
   its own is covered by a UI test, or its CRAP exception is recorded in the requirements
-  (CLEAN_CODE.md, "One Thing per Function")
+  (clean-code.md, "One Thing per Function")
 - Third-party library behavior
 
 Focus testing effort on:

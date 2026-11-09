@@ -68,7 +68,7 @@ a frame, a measurement, each by path. A pass with no evidence is not a pass.
 | Check | Fails when |
 |---|---|
 | **Build** — every target and configuration the project ships, debug and release | it does not build, or it has a warning the version to compare with does not have |
-| **Tests** — every test command of the project on every platform; each test the change adds is seen failing once with its code broken (TESTING.md, "Coverage Requirements"), in a copy of the tree | a test fails; a behaviour of the change has no test (TESTING.md); a test passes with its code broken |
+| **Tests** — every test command of the project on every platform; each test the change adds is seen failing once with its code broken (testing.md, "Coverage Requirements"), in a copy of the tree | a test fails; a behaviour of the change has no test (testing.md); a test passes with its code broken |
 | **Criteria** — each exit criterion, shown by a named test or by a check repeated with its artefact | a criterion is not met, or is claimed without evidence; one that cannot be checked is reported as not checked, never as met |
 | **Motion** — the app run on each platform; every transition on the list recorded and read frame by frame (below) | any frame the user would see as a flash, a jump or a wrong state |
 | **States** — each state on the list driven on the device and captured | the app shows what the requirements do not describe for that state, hangs, or loses data |
@@ -125,7 +125,7 @@ or unproven when the evidence settles nothing.
 
 ### 4. Report
 
-As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
+As execution-guide.md, "Reporting to the user", says. The failures come first, each with what the
 user sees, how to reproduce it and the evidence by path; with each, the test that pins it — a unit
 test, a UI test, or "no test catches it, because …"; then what is unproven and why — it does not
 count as passed; then what passed, with its evidence; then what was not checked and why. Never
@@ -146,7 +146,7 @@ task — is a defect of this skill as well as of the code.
 3. **Correct where it went wrong**: this file when a check missed it, a case was never written or
    `/qa` did not see how far the change reaches; `/maintain`, where it asks the author what the
    change may affect, when that account left the place out; the general instruction that would have
-   caught it, never the single case (MAINTAINER_TRAINING.md). The standards are committed by the
+   caught it, never the single case (maintainer-training.md). The standards are committed by the
    user, in their own repository.
 4. **Replay**: run the skill on the commit that still has the defect and see the defect reported.
    A correction that was not replayed is a guess.

@@ -8,7 +8,7 @@ description: >-
 # Self-Document Skill
 
 Makes code explain itself: each explanation a reader needs goes into a name, a type or a check in
-the code, pinned by a test, as CLEAN_CODE.md, "Comments", says. No information is lost: a comment
+the code, pinned by a test, as clean-code.md, "Comments", says. No information is lost: a comment
 goes only when what it says is somewhere better. Documents in `docs/` are the job of `/document`.
 
 ## Instructions
@@ -16,10 +16,10 @@ goes only when what it says is somewhere better. Documents in `docs/` are the jo
 1. **The scope.** The file or function named; with no argument, all source and test code.
 2. **Find** each comment, and each place where a reader would stop and ask what something is
    for, what unit a value is in, what must be true, or why it is done this way.
-3. **Move each explanation** where CLEAN_CODE.md, "Comments", puts it: a name, a named constant or
-   a type; a check that fails; a test whose name gives the reason and that fails when the code is
+3. **Move each explanation** where clean-code.md, "Comments", puts it: a name, a named constant or a
+   type; a check that fails; a test whose name gives the reason and that fails when the code is
    changed the obvious way; work still to do into the tracker (a project without one starts it as
-   PLANNING_GUIDE.md describes); history and code commented out into the commit message, or into
+   planning-guide.md describes); history and code commented out into the commit message, or into
    the report for whoever writes it.
 4. **While doing it:**
    - A comment goes only after what it says is in its new place, where a reader learns it without

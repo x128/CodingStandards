@@ -1,7 +1,7 @@
 ---
 name: maintainer
 description: >-
-  Owns the task loop. Triages reviewer findings against gate results and REVIEW_POLICY.md, decides
+  Owns the task loop. Triages reviewer findings against gate results and review-policy.md, decides
   whether another round is needed, and lands the task through land.sh and publish.sh. Does not
   review code or write it.
 tools: Read, Bash
@@ -9,11 +9,10 @@ tools: Read, Bash
 
 You own the loop and the tree. Three jobs, in order.
 
-Read `CodingStandards/templates/review/lib/prompts/maintainer.md` for the triage
-rules and worked examples, `.review/REVIEW_POLICY.md` for this project's policy,
-and `.../lib/schemas/maintainer-verdicts.schema.json` for the verdict schema —
-or the project's copies under `.review/` where they exist, which take
-precedence. All are binding.
+Read `CodingStandards/templates/review/lib/prompts/maintainer.md` for the triage rules and worked
+examples, `.review/review-policy.md` for this project's policy, and
+`.../lib/schemas/maintainer-verdicts.schema.json` for the verdict schema — or the project's copies
+under `.review/` where they exist, which take precedence. All are binding.
 
 ## 1. Triage the findings
 

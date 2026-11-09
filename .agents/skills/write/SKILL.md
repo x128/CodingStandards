@@ -85,7 +85,7 @@ The call names a style first (`/write simple the report on the task`), or the pr
 in a single line of `.claude/write-style`; otherwise the style is `precise`. For `precise` and
 `explained`, read `styles/<name>.md` next to this file and follow it too.
 
-This is the version whose messages the reader approved; [MEASURED.md](MEASURED.md) says how the
+This is the version whose messages the reader approved; [measured.md](measured.md) says how the
 shorter versions compared. A change to it is kept only when its messages come out at least as
 clear to the reader.
 

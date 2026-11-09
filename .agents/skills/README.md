@@ -10,7 +10,7 @@ it.
 |-------|---------|---------|
 | [code-review](./code-review/SKILL.md) | `/code-review` | Find what is wrong in code; each finding comes with options, and the user chooses |
 | [refactor](./refactor/SKILL.md) | `/refactor` | Bring code to the standards — one target, or the whole project in rounds — and say how the rules worked |
-| [test](./test/SKILL.md) | `/test` | Write or improve tests by TESTING.md |
+| [test](./test/SKILL.md) | `/test` | Write or improve tests by testing.md |
 | [qa](./qa/SKILL.md) | `/qa` | Accept a finished change as its user meets it — builds, tests, criteria, motion frame by frame, states, numbers — and replay on every defect that got past |
 | [write](./write/SKILL.md) | `/write` | Write a message to the user in the chat that they understand on the first reading: their question, what happened and why, what they decide — without the machinery of the work; styles `precise` (default), `simple`, `explained` |
 | [document](./document/SKILL.md) | `/document` | Write a document of a module or of the system in `docs/` |

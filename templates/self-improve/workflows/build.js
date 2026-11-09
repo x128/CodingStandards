@@ -53,9 +53,9 @@ const planPrompt = root => `You are the first engineer on a new project.
 ${note(root)}
 
 Read ${root}/CLAUDE.md first; it says which documents bind you. Read REQUIREMENTS.md,
-docs/LIBRARIES.md and the standards that CLAUDE.md lists.
+docs/libraries.md and the standards that CLAUDE.md lists.
 
-Your task is the planning step only, as CodingStandards/PLANNING_GUIDE.md describes it: add the
+Your task is the planning step only, as CodingStandards/planning-guide.md describes it: add the
 architecture and the tech stack to REQUIREMENTS.md, and write PLAN.md and TASK_TRACKER.md in the
 project root, for the whole product. Write no code.
 

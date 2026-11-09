@@ -3,12 +3,9 @@
 Shared expenses of people who travel together. Kotlin on the JVM.
 
 ## Standards
-Follow `CodingStandards/CLEAN_CODE.md`
-Follow `CodingStandards/KOTLIN.md`
-Follow `CodingStandards/ARCHITECTURE.md`
-Follow `CodingStandards/TESTING.md`
-Follow `CodingStandards/PLANNING_GUIDE.md`
-Follow `CodingStandards/EXECUTION_GUIDE.md`
+Follow `CodingStandards/clean-code.md` Follow `CodingStandards/kotlin.md` Follow
+`CodingStandards/architecture.md` Follow `CodingStandards/testing.md` Follow
+`CodingStandards/planning-guide.md` Follow `CodingStandards/execution-guide.md`
 
 ## Project
 - What to build: `REQUIREMENTS.md`. The product owner cannot be asked. Where a standard tells you to
@@ -21,11 +18,11 @@ Follow `CodingStandards/EXECUTION_GUIDE.md`
   `Test`.
 - Build and run all tests: `./build.sh`. A task is not done until it passes. The script uses tools
   that lie outside the project folder; that is as it should be.
-- What the project can use: `docs/LIBRARIES.md`. Nothing else is available.
+- What the project can use: `docs/libraries.md`. Nothing else is available.
 - Lint: `./lint.sh`. It fails on a comment in `src` other than the test markers `// Arrange`,
-  `// Act`, `// Assert` or `// Given`, `// When`, `// Then` (CLEAN_CODE.md, "Comments"; a kind that
+  `// Act`, `// Assert` or `// Given`, `// When`, `// Then` (clean-code.md, "Comments"; a kind that
   "Comments in the code" allows is listed as a grep pattern in `comment-allowed.txt`), and on a
-  function whose CRAP score is above 8 (CLEAN_CODE.md, "One Thing per Function"; an exception
+  function whose CRAP score is above 8 (clean-code.md, "One Thing per Function"; an exception
   recorded in the requirements is listed as `Class.function` in `crap-exceptions.txt`). A task is
   not done until `./build.sh` and `./lint.sh` pass.
 - This is Kotlin on the JVM only. There is no Android, iOS, Compose, Koin, SQLDelight or Voyager.

@@ -26,7 +26,7 @@ that did not do the work: the one who did it judges it too kindly.
    - Did anything go against a decision of the human — in the requirements, or in the file of
      decisions that the caller names?
    - Which correction of the human would the text have made unnecessary, and which file should
-     say it ([MAINTAINER_TRAINING.md](../../../MAINTAINER_TRAINING.md))?
+     say it ([maintainer-training.md](../../../maintainer-training.md))?
    - What worked and should stay?
 3. **The changes.** For each: the lines old and new, the evidence with its source, how sure you
    are and what would prove it wrong, what measuring it would cost, and whether it needs the human

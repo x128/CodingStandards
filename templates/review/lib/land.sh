@@ -15,7 +15,7 @@
 # It refuses (exit 3) unless all eight landing conditions hold. A ninth switch,
 # LANDING, then decides how far the task goes: off only prints the commit, which
 # is not a refusal and exits 0; on commits; push, pr and merge commit and call
-# publish.sh. See TASK_LOOP.md § Landing.
+# publish.sh. See task-loop.md § Landing.
 #
 # Usage, from the project root:
 #   land.sh --task-file <task.json> --run <run-dir> [--message "..."] [--dry-run]
@@ -215,7 +215,7 @@ done <<<"$EVERY_CHANGE"
 #    Machine-checkable criteria belong in gates; the rest must at least be
 #    stated, so the claim lands in the commit and can be audited later.
 #    A task may have none: criteria are gathered before a task starts, never
-#    written at its start (PLANNING_GUIDE.md, "Task Rules").
+#    written at its start (planning-guide.md, "Task Rules").
 # ---------------------------------------------------------------------------
 
 CRITERIA_COUNT="$(jq '.exit_criteria | length' "$TASK_FILE")"
@@ -426,7 +426,7 @@ fi
 # `git add` first, because --only alone cannot commit a path git has never seen;
 # then --only with the same pathspec, because a bare `git commit` writes the
 # WHOLE INDEX. Anything the user had staged beforehand would ride along inside
-# the task's commit — including `.review/land.conf` and `.review/REVIEW_POLICY.md`,
+# the task's commit — including `.review/land.conf` and `.review/review-policy.md`,
 # which are filtered out of CHANGED_FILES above and so are never scope-checked.
 # The files that define the pipeline's limits are exactly the ones that must not
 # be able to change unnoticed in a commit the pipeline made by itself.

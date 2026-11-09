@@ -221,7 +221,7 @@ def text_of_html(body, url):
     text = "\n".join(parser.lines)
     if not text.strip() or (len(text) <= 600 and JAVASCRIPT_NOTICE.search(text)):
         raise Failure(f"no readable text in the HTML of {host_of(url)} (built by JavaScript?): "
-                      "try the site's API or feed (SOURCES.md)", 200, NOTHING_READABLE)
+                      "try the site's API or feed (sources.md)", 200, NOTHING_READABLE)
     title = re.search(r"<title[^>]*>(.*?)</title>", page, re.I | re.S)
     return (one_line(html.unescape(title.group(1))) if title else "") or parser.first_heading, text
 

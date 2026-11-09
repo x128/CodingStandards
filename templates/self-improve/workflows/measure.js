@@ -38,12 +38,12 @@ const scenarioPrompt = s => `${NOTE}
 You are an acceptance tester. A team built an application in ${s.root} from the requirements in
 ${s.root}/REQUIREMENTS.md. You check whether it does what the owner expects.
 
-The expected behaviour is written as scenarios in ${HIDDEN}/ACCEPTANCE.md . Read that file (it is
+The expected behaviour is written as scenarios in ${HIDDEN}/acceptance.md . Read that file (it is
 the only thing you read outside ${s.root}). Your part is the scenarios ${s.ids}.
 
 For each scenario write tests in the new folder ${s.root}/acceptance/ (file names end in Test.kt,
 class names end in Test). Drive the application the way the hosting system would, through the one
-place the application offers for that (see ${s.root}/docs/LIBRARIES.md): send the events a user
+place the application offers for that (see ${s.root}/docs/libraries.md): send the events a user
 would cause and read what the screen state holds. If something cannot be reached through a screen,
 go one level below and say so in the detail.
 
@@ -104,7 +104,7 @@ const locatorPrompt = x => `${NOTE}
 
 You examine a codebase and change nothing in it. It is an application in ${x.root} ; its
 requirements are in ${x.root}/REQUIREMENTS.md and the libraries it uses are described in
-${x.root}/docs/LIBRARIES.md . Read ${HIDDEN}/RULES.md : it lists the rules of the product. Outside
+${x.root}/docs/libraries.md . Read ${HIDDEN}/rules.md : it lists the rules of the product. Outside
 ${x.root} that file is the only thing you read. Do not read the folder CodingStandards, the plan,
 the tracker or any REFACTORING file: judge only from the code.
 

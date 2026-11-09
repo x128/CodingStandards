@@ -138,7 +138,7 @@ totalSeconds = days * SECONDS_PER_DAY
 A function does one thing: each step in it is one level of abstraction below its name. A part that
 can get a name which does not just restate its code becomes a function with that name. A function
 whose body says no more than its name is put back where it is called; a use case under the second
-answer to "A request with nothing to check or decide" stays (ARCHITECTURE.md, "A request with no
+answer to "A request with nothing to check or decide" stays (architecture.md, "A request with no
 rules"). Size is not counted in lines, for functions, classes, files or tests.
 
 **CRAP score.** Each function is measured by its CRAP score: complexity² × (1 − coverage)³ +

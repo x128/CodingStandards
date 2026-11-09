@@ -48,7 +48,7 @@ Ask only what the user's words do not already say:
   git, say once that the files stay uncommitted.
 
 Then choose a short folder name from the goal (not from the words) and create `research/<name>/`
-with `BRIEF.md` in the shape of METHOD.md "Research Files": the user's words verbatim, the goal
+with `BRIEF.md` in the shape of method.md "Research Files": the user's words verbatim, the goal
 behind them, what the user already has, scope, the depth and the conversation choice. Run the
 first time (section 3).
 
@@ -63,14 +63,14 @@ first time (section 3).
    first is 001.
 2. **Research** (section 5), with the depth and the conversation choice in `BRIEF.md`, unless the
    user's words with this run say otherwise.
-3. **Write**, in the formats of METHOD.md: `REPORT.md` (the current report only), `PLAN.md` (the
-   history struck through, nothing deleted) and `notes/NNN.md`. Then the editing pass of METHOD.md
+3. **Write**, in the formats of method.md: `REPORT.md` (the current report only), `PLAN.md` (the
+   history struck through, nothing deleted) and `notes/NNN.md`. Then the editing pass of method.md
    "The Report": `python3 SKILL/edit-check.py research/<name>/REPORT.md`, every breach fixed, the
    whole read once — by a subagent (Agent tool) that did not write it, when one is available. Then
-   the cold reading of METHOD.md: a subagent that gets the report's text and nothing else restates
+   the cold reading of method.md: a subagent that gets the report's text and nothing else restates
    it and lists every word it cannot explain; a wrong restatement or one such word goes back to the
    editor, until the reader understands. After a deep run all of this is already done: read the
-   files and fix only what still breaks METHOD.md's shape or rules.
+   files and fix only what still breaks method.md's shape or rules.
 4. **Commit.** `bash SKILL/land.sh research/<name> "research(<name>): <the main change>"`, from the
    project. It commits the research's folder on the current branch when `research/land.conf` says
    `LANDING=on`; otherwise it lists the changed files and does nothing else. `captures/` is never
@@ -82,7 +82,7 @@ first time (section 3).
 ### 4. Re-check from scratch
 
 1. NNN is the next free number in `notes/`, as in section 3.
-2. A subagent (Agent tool) researches by METHOD.md from `BRIEF.md` alone; deep: deep.js with mode
+2. A subagent (Agent tool) researches by method.md from `BRIEF.md` alone; deep: deep.js with mode
    `fresh` and `run` NNN. The subagent gets the text of `BRIEF.md`, SKILL and the research folder as
    absolute paths, NNN, today's date and the depth, and is told to capture into
    `captures/fresh-NNN/`, to write `notes/NNN-fresh.md`, `notes/NNN-fresh-PLAN.md` and
@@ -103,15 +103,15 @@ called final: a research that is only ever continued keeps its first answers.
 
 ### 5. How to research
 
-Follow SKILL/METHOD.md: the goal first, then the sub-questions — one for every thing the user named,
+Follow SKILL/method.md: the goal first, then the sub-questions — one for every thing the user named,
 all the facets of the goal's kind, and what the project's own files answer, answered in the same
-run — then the search, the challenge, the report and its editing pass. SKILL/SOURCES.md says how to
+run — then the search, the challenge, the report and its editing pass. SKILL/sources.md says how to
 reach each kind of source.
 - **The conversation.** By default this session researches, and so uses what was said here. When
   the user chose to start clean, the research is done by a subagent (Agent tool) that gets the
   research's files and the user's words for this run, and nothing of this conversation; a deep run
   gets `context` "".
-- **Normal**: the session (or that subagent) does every step of METHOD.md itself, at a smaller
+- **Normal**: the session (or that subagent) does every step of method.md itself, at a smaller
   scale: the sub-questions it can cover in one sitting, searching with WebSearch and WebFetch,
   capturing what it quotes with `python3 SKILL/capture.py <url> research/<name>/captures/<slug>.md`
   (pages, PDFs, YouTube captions), and a challenge by a subagent (Agent tool) when one is available.

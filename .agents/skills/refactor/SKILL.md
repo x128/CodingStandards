@@ -120,7 +120,7 @@ doThing()
 4. **Execute refactoring**:
    - Make one change at a time
    - Run tests after each change
-   - Name the files and the message of each commit (EXECUTION_GUIDE.md, "Who writes to git")
+   - Name the files and the message of each commit (execution-guide.md, "Who writes to git")
 
 5. **Verify**:
    - Ensure tests still pass
@@ -155,7 +155,7 @@ work on `EXECUTOR`.
    What they find is repaired.
 6. **Report.** First what is needed from the human: answers to what waits, whether to go on ("finish
    what waited", "one more pass over the whole project", "stop"), and the commit, which the human
-   makes (EXECUTION_GUIDE.md, "Who writes to git"). Then what was done, what waits, and what could
+   makes (execution-guide.md, "Who writes to git"). Then what was done, what waits, and what could
    not be run. The repository gets only the project.
 
 ## How the Rules Worked
@@ -168,7 +168,7 @@ and line of code:
 - Which problem of the code does no rule name?
 
 The answers go into the report, or "nothing". A correction of the human about the project goes where
-[MAINTAINER_TRAINING.md](../../../MAINTAINER_TRAINING.md) says; one about the standards or a skill
+[maintainer-training.md](../../../maintainer-training.md) says; one about the standards or a skill
 is an answer here. The refactoring changes only the project. For the answers about the standards or
 a skill, propose [/self-improve](../self-improve/SKILL.md) for them, and say what it would cost.
 

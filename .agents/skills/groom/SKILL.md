@@ -33,12 +33,12 @@ the plan and the tracker, and writes only to them, after the user has answered.
    and the epics not yet done whose line, tasks or criteria rest on what changed.
 2. **What the user gets.** Read the epic's line in the list of epics, the user's own words it comes
    from, and what the done epics have built. Is it still one thing the user can do that they could
-   not before (PLANNING_GUIDE.md, "Epic Rules")? It may now look like two things, need a task of a
+   not before (planning-guide.md, "Epic Rules")? It may now look like two things, need a task of a
    later epic, or hold a task its thing works without. Say so, with the change you propose.
 3. **The tasks.** For each: is it needed for the epic's thing, is anything the thing needs missing,
    does the order hold. Tasks to add, move, merge or cancel are proposed, not made.
 4. **The criteria.** For each task, what is known now: what the user said, what done tasks hand it,
-   what the product has no choice about — written as criteria (PLANNING_GUIDE.md, "Task Rules"). A
+   what the product has no choice about — written as criteria (planning-guide.md, "Task Rules"). A
    choice about the product, or a conclusion of the agent, is a question, never a criterion. A fact
    nobody measured, or one the sources disagree on, is said to be so. The gaps about what the user
    sees come first. A task may still have no criteria.
@@ -48,12 +48,12 @@ the plan and the tracker, and writes only to them, after the user has answered.
    task of the epic waits on stays in that task, and is asked when the task before it is done. A
    choice that changes nothing the user sees or does is decided, and the report names it in one
    line; in doubt, it is asked. Each option is one the user could pick, and says what it costs; a
-   recommendation says why. Questions with answers to choose from are asked as PLANNING_GUIDE.md,
+   recommendation says why. Questions with answers to choose from are asked as planning-guide.md,
    "How the questions are asked", says.
 6. **Write**, once the user has answered, only what the report showed and the answers settled: the
    tasks and their criteria in the tracker, the plan's index of epics and tasks where tasks changed,
-   a decision in the requirements. IDs follow PLANNING_GUIDE.md, "Ongoing Maintenance". Then run
-   the cross-check of PLANNING_GUIDE.md, Step 3.
+   a decision in the requirements. IDs follow planning-guide.md, "Ongoing Maintenance". Then run the
+   cross-check of planning-guide.md, Step 3.
 
 ### Rules
 

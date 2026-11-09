@@ -34,12 +34,12 @@ dropped.
 
    "In the code" means a reader of the new version learns it there, not that it can be worked out.
    A reason, warning, unit, source or promise taken out of the code that now lives only in a test
-   or a document is not lost, but it is not where the reader of the code looks (CLEAN_CODE.md,
+   or a document is not lost, but it is not where the reader of the code looks (clean-code.md,
    "Comments"): name it.
 5. **A second look.** Another agent checks every "lost" and "partly" and every fifth of the rest:
    for a loss it searches hard for the meaning; for a find it opens the place and asks whether a
    reader learns the same thing there. A quote that is not in the file is not a find.
-6. **Report**, as EXECUTION_GUIDE.md, "Reporting to the user", says: the count of entries by
+6. **Report**, as execution-guide.md, "Reporting to the user", says: the count of entries by
    verdict; what is lost or partly lost; what is not where the reader of the code looks; and for
    each of these, what will carry it — a name, a type or a check with its test — or that the line
    goes back.
@@ -55,6 +55,6 @@ finished: the meaning goes where it belongs before the change is shown or commit
 ## Example Usage
 
 ```
-/loss-check standards-before/CLEAN_CODE.md CLEAN_CODE.md
+/loss-check standards-before/clean-code.md clean-code.md
 /loss-check old/src new/src
 ```

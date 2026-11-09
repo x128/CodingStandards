@@ -451,7 +451,7 @@ An outcome that the requirements name is returned, not thrown. When the requirem
 one outcome, the use case returns its own sealed type with one case per outcome. When they name one,
 it returns the value itself. `kotlin.Result` is not used for outcomes, and a feature has no shared
 error type. A refusal that a rule of an entity gives is declared with that rule, and each use case
-carries it in one case (ARCHITECTURE.md, "Use Cases"). A repository answers "there is none" with
+carries it in one case (architecture.md, "Use Cases"). A repository answers "there is none" with
 `null`; the use case turns it into its own named outcome.
 
 A failure that the requirements do not name (disk, database, network) is thrown as a
@@ -576,7 +576,7 @@ the original as the cause. `runCatching` is not used in `suspend` functions: it 
 `CancellationException` too. Programming errors such as `NullPointerException` or
 `IndexOutOfBoundsException` are not caught: they are bugs, and they crash. When common code of a
 multiplatform project cannot name the library's exception type, `storageCall` is an `expect`
-function with an `actual` on each platform (ARCHITECTURE.md, "Named Outcomes and Other Failures").
+function with an `actual` on each platform (architecture.md, "Named Outcomes and Other Failures").
 
 ```kotlin
 // BAD: Catching everything, bugs and CancellationException too;
@@ -902,7 +902,7 @@ fun processIds(items: List<Item>): Set<String> {
 
 ## Comments & Documentation
 
-The rule is the "Comments" section of [CLEAN_CODE.md](CLEAN_CODE.md#comments), as the requirement
+The rule is the "Comments" section of [clean-code.md](clean-code.md#comments), as the requirement
 "Comments in the code" answers it. Where the answer is code without comments: no comments and no
 KDoc, except the test markers (`// Arrange`, `// Act`, `// Assert`, or `// Given`, `// When`,
 `// Then`). An existing comment is never just deleted: a reason, a warning, a unit, an outside
@@ -966,7 +966,7 @@ interface ProjectExporter {
 
 // GOOD: the purpose and the limit are names, the options and the precondition are types;
 // completing and throwing StorageException are what every flow of the project does
-// (ARCHITECTURE.md), pinned by tests that fail when one is broken,
+// (architecture.md), pinned by tests that fail when one is broken,
 // and the test of the limit gives its reason
 val LONGEST_VIDEO_AVFOUNDATION_EXPORTS = 4.hours
 
@@ -1184,7 +1184,7 @@ Before committing code, verify:
 
 ### Functions
 - [ ] Each function does one thing
-- [ ] CRAP score 8 or below, or a recorded exception (see CLEAN_CODE.md, "One Thing per Function")
+- [ ] CRAP score 8 or below, or a recorded exception (see clean-code.md, "One Thing per Function")
 - [ ] Max 3 parameters (use data class for more)
 - [ ] Max 3 nesting levels
 

@@ -6,25 +6,25 @@ Reusable coding standards and agent skills for consistent, clean code across pro
 
 ## Structure
 ```
-PLANNING_GUIDE.md  # FIRST: intake, requirements, plan, task tracker — before any code
-CLEAN_CODE.md      # Language-agnostic principles
-KOTLIN.md          # Kotlin/KMP standards
-SWIFT.md           # Swift/iOS standards
-ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
-TESTING.md         # Testing pyramid, conventions, per-layer strategies
-KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
-EXECUTION_GUIDE.md # Rules for finishing a task — whoever does the work
-TASK_LOOP.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
-MAINTAINER_TRAINING.md # How a correction becomes a rule, and which file it goes in
+planning-guide.md  # FIRST: intake, requirements, plan, task tracker — before any code
+clean-code.md      # Language-agnostic principles
+kotlin.md          # Kotlin/KMP standards
+swift.md           # Swift/iOS standards
+architecture.md    # Clean Architecture, package organization, presentation patterns
+testing.md         # Testing pyramid, conventions, per-layer strategies
+kotlin-multiplatform.md  # KMP project init, test locations, runners, frameworks
+execution-guide.md # Rules for finishing a task — whoever does the work
+task-loop.md       # The machine that runs those rules: gates → executor → reviewer → maintainer
+maintainer-training.md # How a correction becomes a rule, and which file it goes in
 .agents/skills/    # Skills, open Agent Skills format; .claude/skills/ links to them
 templates/         # Copy-and-fill starting points (.review/, .claude/agents/)
 templates/self-improve/ # Tools of /self-improve; never copied into a project that is measured
 tools/mdwrap.py    # Line breaks of the Markdown at 100 columns: check, fill
 ```
 
-Language-specific standards (KOTLIN.md, SWIFT.md) are per-stack. Everything
-else — including the review pipeline — is language-agnostic by design: only
-`templates/review/project/gates.sh` knows what language a project is written in.
+Language-specific standards (kotlin.md, swift.md) are per-stack. Everything else — including the
+review pipeline — is language-agnostic by design: only `templates/review/project/gates.sh` knows
+what language a project is written in.
 
 This repo is consumed as a submodule at `CodingStandards/`. Templates are split by ownership:
 `templates/review/lib/` runs from the submodule and is never copied or edited by host projects;
@@ -48,6 +48,10 @@ own the fix.
 
 ## Contributing Guidelines
 
+### File Names
+- Lower-case words joined by hyphens (`task-loop.md`), except names a tool looks for or custom
+  expects: `README.md`, `AGENTS.md`, `CLAUDE.md`, `SKILL.md`, `LICENSE`, `CODEOWNERS`
+
 ### Standards Documents
 - Use BAD/GOOD code examples for every rule
 - Keep examples concise but realistic
@@ -56,8 +60,8 @@ own the fix.
 
 ## Adding New Standards
 
-When adding a new language standard (e.g., `TYPESCRIPT.md`):
-1. Follow the structure of existing standards (KOTLIN.md, SWIFT.md)
+When adding a new language standard (e.g., `typescript.md`):
+1. Follow the structure of existing standards (kotlin.md, swift.md)
 2. Cover: Naming, Functions, Types, Error Handling, Async, Testing
 3. Include language-specific idioms and best practices
 4. Add Summary Checklist at the end

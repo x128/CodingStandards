@@ -41,7 +41,7 @@
           "rule_violated": {
             "type": "string",
             "description":
-              "Pointer to the rule: REVIEW_POLICY.md R-011, CLEAN_CODE.md#naming, lint rule id"
+              "Pointer to the rule: review-policy.md R-011, clean-code.md#naming, lint rule id"
           },
           "evidence": {
             "type": "string",

@@ -40,7 +40,7 @@ are the ground the answer stands on, and what the user already has is part of th
 ```
 BAD:  "How to make a skill that proposes cutting rules" → hypothesis: a skill is needed (45%).
 GOOD: Goal: the project's rule files stop growing and get shorter, without losing what the rules
-      protect. The user already has a process that adds rules (MAINTAINER_TRAINING.md) and a bench
+      protect. The user already has a process that adds rules (maintainer-training.md) and a bench
       that measures rule changes (/self-improve); there is no process that retires rules.
 ```
 
@@ -85,7 +85,7 @@ Search wide before narrow: several kinds of sources (papers, docs, code and issu
 forums, job ads, patents, grants), the languages the field writes in, older work as well as this
 year's. For the leading answer of each sub-question run at least one search for what would prove it
 wrong. Include at least one practitioner channel: issue trackers, forums, talk transcripts, commit
-logs. SKILL/SOURCES.md says how to reach each channel.
+logs. SKILL/sources.md says how to reach each channel.
 
 Capture every source you cite with `python3 SKILL/capture.py` (pages, PDFs, YouTube captions) or
 `SKILL/transcribe.sh` (local audio), then quote a short phrase verbatim from the capture, in the

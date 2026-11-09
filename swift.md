@@ -396,7 +396,7 @@ let duration: TimeInterval? = firstTrack.flatMap { $0.duration }
 
 ## Error Handling
 
-A function reports a failure according to its kind (CLEAN_CODE.md, Error Handling):
+A function reports a failure according to its kind (clean-code.md, Error Handling):
 
 - A bug (a broken precondition or invariant) stops the program: `precondition`, `fatalError`.
 - An outcome that the requirements name, such as "video not found", is a case of the enum that the

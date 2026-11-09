@@ -5,7 +5,7 @@
 >
 > Language-agnostic — everything stack-specific lives in `.review/gates.sh`.
 >
-> See `MAINTAINER_TRAINING.md` for teaching the maintainer your judgment.
+> See `maintainer-training.md` for teaching the maintainer your judgment.
 
 ---
 
@@ -15,8 +15,8 @@ Three things exist without this loop and are unchanged by it:
 
 | Ingredient | What it is | Defined in |
 |-----------|------------|-----------|
-| **Execution rules** | What doing a task means: one at a time, exit criteria are the definition of done, who decides a task is finished, who owns git | `EXECUTION_GUIDE.md` |
-| **Review** | Reading code for defects, inconsistency, replication | `.agents/skills/code-review/SKILL.md`, `CLEAN_CODE.md`, the language standards |
+| **Execution rules** | What doing a task means: one at a time, exit criteria are the definition of done, who decides a task is finished, who owns git | `execution-guide.md` |
+| **Review** | Reading code for defects, inconsistency, replication | `.agents/skills/code-review/SKILL.md`, `clean-code.md`, the language standards |
 | **Gates** | The project's own build, test, format, lint, and architecture commands | `.review/gates.sh` |
 
 You can execute tasks and review code with none of this document. People do it
@@ -148,11 +148,10 @@ changes between projects.
 | `lint` | Any known-bad patterns? | Yes for errors, no for warnings |
 | `arch` | Do the architecture rules hold? | Yes |
 
-The `arch` slot is the one teams skip and the one that pays for the pipeline.
-Architecture rules written as executable tests ("classes named `*UseCase` live
-in the `usecase` package", "the domain layer imports nothing from the data
-layer") turn architectural review from opinion into a gate. See
-`ARCHITECTURE.md` for the rules worth encoding.
+The `arch` slot is the one teams skip and the one that pays for the pipeline. Architecture rules
+written as executable tests ("classes named `*UseCase` live in the `usecase` package", "the domain
+layer imports nothing from the data layer") turn architectural review from opinion into a gate. See
+`architecture.md` for the rules worth encoding.
 
 ### Wiring a new language
 
@@ -329,7 +328,7 @@ Three jobs, in order. Only the first is a judgment call.
 
 ### Job 1 — Triage the findings
 
-Inputs: `findings.json`, `gates.json`, `REVIEW_POLICY.md`, the architecture context, and the task's
+Inputs: `findings.json`, `gates.json`, `review-policy.md`, the architecture context, and the task's
 exit criteria. One verdict per finding — `accept` / `reject` / `escalate` — against
 `maintainer-verdicts.schema.json`.
 
@@ -425,7 +424,7 @@ failed.
 
 - Never adds findings the reviewer did not report; never rewrites a finding into a different
   problem.
-- Never edits code, tests, or `REVIEW_POLICY.md`. Policy changes are yours.
+- Never edits code, tests, or `review-policy.md`. Policy changes are yours.
 - Never resolves an escalation by guessing. Escalation is a cheap, correct outcome.
 - Never runs git directly, and reads a pull request only with `gh pr view` and `gh pr checks`. Its
   only write paths are `land.sh` and `publish.sh`.
@@ -508,7 +507,7 @@ Then, and only then, it stages **exactly the in-scope files and the loop's own**
 
 The commit is `git commit --only -- <those files>`, not a bare `git commit`. A bare commit writes
 the whole index, so anything the user had staged when the loop ran would ride along inside the
-task's commit without ever being scope-checked — `.review/land.conf` and `.review/REVIEW_POLICY.md`
+task's commit without ever being scope-checked — `.review/land.conf` and `.review/review-policy.md`
 most of all, since they are filtered out of the changed-file list by design. The files that define
 this pipeline's limits must not be able to change inside a commit the pipeline made on its own.
 Whatever the user had staged stays staged, untouched.
@@ -723,8 +722,8 @@ the same way, and `gh alias` and `gh extension` reach any command by another nam
 lines too.
 
 Keep this list in step with the prohibitions in
-[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git): a subcommand that
-is forbidden in prose but absent from the deny list is not forbidden at all.
+[execution-guide.md](./execution-guide.md#who-writes-to-git): a subcommand that is forbidden in
+prose but absent from the deny list is not forbidden at all.
 
 `LANDING=off` in `.review/land.conf` is the kill switch: the pipeline then runs to completion, and
 the maintainer gives you the files and the message instead of committing. `publish.sh` refuses at
@@ -736,7 +735,7 @@ goes further than the requirement, never when it stays behind.
 This delegation is scoped to the pipeline. The requirement "Who writes to git" says how far the loop
 goes, and only that. Outside the loop — in an ordinary chat session, or a project that has not set
 it up — git is read-only for agents at every answer. See
-[EXECUTION_GUIDE.md](./EXECUTION_GUIDE.md#who-writes-to-git). The difference is not the tool, it is
+[execution-guide.md](./execution-guide.md#who-writes-to-git). The difference is not the tool, it is
 that landing is a contract you defined, enabled, and can revoke, and the pipeline reaches it only
 through the eight conditions above.
 
@@ -779,7 +778,7 @@ no score derived from it.
 or the last `publish.sh` after it, ended with `0`. It unlocks per-category, never globally, and
 **only you unlock it**: you name a category in `ADVANCE_CATEGORIES` because you have decided you no
 longer want to see it. Nothing measures its way in. The maintainer may say it thinks a category has
-gone quiet; adding the line is your edit ([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md) § Never
+gone quiet; adding the line is your edit ([maintainer-training.md](./maintainer-training.md) § Never
 decide whether the user looks). Rollback is not a calculation either: one task you should have seen,
 and the category goes back to `ask`.
 
@@ -806,7 +805,7 @@ So the pipeline splits by ownership:
 |------|----------|--------|-----------|
 | `review.sh`, `land.sh`, `publish.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh` and `publish.sh` in particular must not be widened by a project |
 | `gates.sh` | project — `.review/` | Always | Encodes the stack — the one language-specific file |
-| `REVIEW_POLICY.md` | project — `.review/` | Constantly | Your taste, this codebase |
+| `review-policy.md` | project — `.review/` | Constantly | Your taste, this codebase |
 | `land.conf` | project — `.review/` | Rarely | Landing and advancing switches |
 | `agents.conf` | project — `.claude/` | Rarely | The model and effort of each role |
 | `decisions/`, `eval/` | project — `.review/` | Constantly | Your decisions, your golden set |
@@ -829,7 +828,7 @@ my-project/
 ├── .review/                           # yours, versioned in this repo
 │   ├── gates.sh                       # ← the only file you must fill in
 │   ├── land.conf                      # ← LANDING / ADVANCE switches
-│   ├── REVIEW_POLICY.md               # ← grows with every disagreement
+│   ├── review-policy.md               # ← grows with every disagreement
 │   ├── current-task.json              # the task in flight — scope, exit criteria
 │   ├── decisions/{findings,tasks,escalations}.jsonl
 │   ├── eval/golden.jsonl              # your verdicts, for /policy --eval
@@ -876,7 +875,7 @@ commands.
 
 The loop is a **default**, not a rule for the user: any change can be made outside the pipeline, on
 request, without justification
-([EXECUTION_GUIDE.md § Who runs the work](./EXECUTION_GUIDE.md#who-runs-the-work) states this in
+([execution-guide.md § Who runs the work](./execution-guide.md#who-runs-the-work) states this in
 full, and `.agents/skills/maintain/SKILL.md` repeats it to the agents that need to hear it — the one
 duplication in this repo that is on purpose).
 
@@ -889,7 +888,7 @@ overridable — they are the two files with write authority.
 Prefer contributing improvements back to the submodule; an override is a fork you now maintain. An
 overridden schema is updated together with the submodule's prompt that fills it: a decision rule the
 prompt names and the schema lacks fails every run that reaches it (`selftest.sh` checks the shipped
-pair). Project-specific *content* (rules, examples) belongs in `.review/REVIEW_POLICY.md`, which is
+pair). Project-specific *content* (rules, examples) belongs in `.review/review-policy.md`, which is
 already in the maintainer's context.
 
 ### Hooks

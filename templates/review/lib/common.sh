@@ -4,7 +4,7 @@
 #
 # Runs from the submodule; not overridable. Sourced, never executed.
 
-# The files the loop itself keeps as it goes: the tracker at the root (PLANNING_GUIDE.md)
+# The files the loop itself keeps as it goes: the tracker at the root (planning-guide.md)
 # and the test cases of /qa. They are in no task's scope and are written after the
 # review, so neither the reviewer, nor the scope check, nor the fingerprint looks at
 # them. They land with the task: otherwise a line in the tracker would refuse the next

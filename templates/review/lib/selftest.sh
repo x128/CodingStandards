@@ -40,7 +40,7 @@ mkdir -p "$(dirname "$1")"
 echo '{"build":{"status":"pass","blocking":true,"command":"true","output":""}}' >"$1"
 EOF
 chmod +x .review/gates.sh
-printf '# Review Policy\n' >.review/REVIEW_POLICY.md
+printf '# Review Policy\n' >.review/review-policy.md
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 cat >.review/task.json <<'EOF'
 {"id": "T-001", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"],
@@ -103,6 +103,10 @@ review "a verdict given as a list fails closed" 1 "maintainer output is malforme
   "$(finding '"bug"')" "$(verdict '["escalate"]' needs-human-judgment)"
 review "a rejected finding leaves the run clean" 0 "rejected          : 1" \
   "$(finding '"bug"')" "$(verdict '"reject"' contradicts-green-gate)"
+mv .review/review-policy.md .review/REVIEW_POLICY.md
+review "a policy under its old name still works, with a note how to rename it" 0 \
+  "git mv .review/REVIEW_POLICY.md .review/review-policy.md" '{"findings":[]}' '{"verdicts":[]}'
+mv .review/REVIEW_POLICY.md .review/review-policy.md
 
 land "landing off on main prints the commit with a note" 0 "Note: current branch is main" off
 land "landing on on main refuses by condition 8" 3 "condition 8" on
@@ -501,7 +505,7 @@ published_project() {
   git remote add "$remote_name" "$GH_REMOTE" && git push -q "$remote_name" main \
     || fail_setup "published first push"
   cp "$WORK/gates.green" .review/gates.sh
-  printf '# Review Policy\n' >.review/REVIEW_POLICY.md
+  printf '# Review Policy\n' >.review/review-policy.md
   task_with_id T-001
 }
 
@@ -853,7 +857,7 @@ project_with_a_plan() {
   printf '# Tracker\n' >TASK_TRACKER.md
   printf '# Cases\n' >qa/test-cases.md
   printf '{"task": "T-000"}\n' >.review/decisions/tasks.jsonl
-  git add PLAN.md TASK_TRACKER.md qa/test-cases.md .review/REVIEW_POLICY.md \
+  git add PLAN.md TASK_TRACKER.md qa/test-cases.md .review/review-policy.md \
     .review/decisions/tasks.jsonl
   git commit -q -m "the plan" && git push -q origin main
 }
@@ -872,7 +876,7 @@ holds "they do not wait in the tree" test -z "$(git status --porcelain -- TASK_T
 printf '{"task": "T-001"}\n' >>.review/decisions/tasks.jsonl
 printf 'T-002: what T-001 hands it\n' >>TASK_TRACKER.md
 printf 'the epic, groomed\n' >>PLAN.md
-printf 'a rule\n' >>.review/REVIEW_POLICY.md
+printf 'a rule\n' >>.review/review-policy.md
 task_with_id T-002
 reviewed_change
 holds "the reviewer is not shown the plan or the tracker" \
@@ -884,8 +888,8 @@ holds "that plan is still in the tree" grep -q "the epic, groomed" PLAN.md
 holds "at merge too the decision logs are the user's to commit" \
   not remote_file_has main .review/decisions/tasks.jsonl '"T-001"'
 holds "a rule of the policy is the user's to commit" \
-  not remote_file_has main .review/REVIEW_POLICY.md "a rule"
-holds "that rule is still in the tree" grep -q "a rule" .review/REVIEW_POLICY.md
+  not remote_file_has main .review/review-policy.md "a rule"
+holds "that rule is still in the tree" grep -q "a rule" .review/review-policy.md
 
 project_with_a_plan
 set_level pr

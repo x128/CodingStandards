@@ -18,7 +18,7 @@ templates/
 │   │   └── schemas/*.json
 │   └── project/    COPY ONCE into <host>/.review/ — yours to edit forever
 │       ├── gates.sh
-│       ├── REVIEW_POLICY.md
+│       ├── review-policy.md
 │       └── decisions/
 └── agents/         COPY into <host>/.claude/ — the roles, and agents.conf with their models
 ```
@@ -29,25 +29,25 @@ out.** Improvements to `lib/` reach every project with
 
 ## Install
 
-Run `/maintain --init`, or follow [TASK_LOOP.md § Install](../TASK_LOOP.md#install) — the commands
+Run `/maintain --init`, or follow [task-loop.md § Install](../task-loop.md#install) — the commands
 live there and only there, so the two lists cannot drift apart or miss the same step twice.
 
 What that gets you, and what still needs your judgment:
 
 1. **Fill in `.review/gates.sh`** — the five slots (`build`, `test`, `format`, `lint`, `arch`). The
    only file that knows what language the project is written in. Per-stack commands:
-   [TASK_LOOP.md](../TASK_LOOP.md#wiring-a-new-language).
+   [task-loop.md](../task-loop.md#wiring-a-new-language).
 2. **Run `.review/gates.sh`** until every slot reports honestly. Do not leave `TODO` stubs — a gate
    that cannot run is worse than no gate.
-3. **Replace the example rules in `.review/REVIEW_POLICY.md`** with your own. `R-001` (perf needs a
+3. **Replace the example rules in `.review/review-policy.md`** with your own. `R-001` (perf needs a
    measurement) is worth keeping; `R-002`–`R-004` are shape examples. Do not restate the built-in
    decision rules as policy — the file explains why.
 4. **Check the agent CLI flags** in `lib/review.sh` against your installed versions. The model and
-   effort of each role are in `.claude/agents.conf` ([TASK_LOOP.md](../TASK_LOOP.md), "Models").
+   effort of each role are in `.claude/agents.conf` ([task-loop.md](../task-loop.md), "Models").
 5. **Deny write-git in `.claude/settings.json`.** The reviewer subagent holds `Bash` so it can
    verify claims, and `Bash` reaches `git commit`. Deny every mutating `git` and `gh` command and
    pre-approve the two scripts that are allowed to write — `land.sh` and `publish.sh`. The block is
-   in [TASK_LOOP.md](../TASK_LOOP.md#landing).
+   in [task-loop.md](../task-loop.md#landing).
 6. **Set `LANDING` in `.review/land.conf`** from the requirement "Who writes to git": (a) `off`,
    (b) `push`, (c) `pr`, (d) `merge`. `/maintain --init` does this, and items 1 and 5.
 
@@ -72,10 +72,9 @@ mkdir -p .review/prompts
 cp CodingStandards/templates/review/lib/prompts/reviewer.md .review/prompts/
 ```
 
-Prefer contributing the fix back here — an override is a fork you now maintain.
-Project-specific *content* (rules, examples) belongs in
-`.review/REVIEW_POLICY.md`, which is already loaded into the maintainer's context
-and needs no override.
+Prefer contributing the fix back here — an override is a fork you now maintain. Project-specific
+*content* (rules, examples) belongs in `.review/review-policy.md`, which is already loaded into the
+maintainer's context and needs no override.
 
 ## What ships here
 
@@ -91,7 +90,7 @@ and needs no override.
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
 | `review/lib/schemas/*.json` | submodule | Findings and verdicts schemas — the enforcement mechanism |
 | `review/project/gates.sh` | project | Layer 0 — the five deterministic gates, per stack |
-| `review/project/REVIEW_POLICY.md` | project | The maintainer's rubric; grows with every disagreement |
+| `review/project/review-policy.md` | project | The maintainer's rubric; grows with every disagreement |
 | `review/project/land.conf` | project | Landing and advancing switches |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
 | `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |

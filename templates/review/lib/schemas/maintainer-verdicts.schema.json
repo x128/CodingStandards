@@ -32,12 +32,12 @@
               "needs-human-judgment",
               "no-rule-fired"
             ],
-            "description": "Which decision rule from TASK_LOOP.md fired. First match wins."
+            "description": "Which decision rule from task-loop.md fired. First match wins."
           },
           "policy_rule": {
             "type": "string",
             "description":
-              "Rule id from REVIEW_POLICY.md when decision_rule is policy-rule, e.g. R-011"
+              "Rule id from review-policy.md when decision_rule is policy-rule, e.g. R-011"
           },
           "reason": {
             "type": "string",

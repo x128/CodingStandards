@@ -15,7 +15,7 @@ FOUND=$(grep -rnE --include='*.kt' '(^|[[:space:]])(//|/[*])' "$ROOT/src" |
 if [ -f "$ROOT/comment-allowed.txt" ] && [ -n "$FOUND" ]; then \
   FOUND=$(echo "$FOUND" | grep -v -f "$ROOT/comment-allowed.txt"); fi
 if [ -n "$FOUND" ]; then echo "$FOUND" | head -40; \
-  echo "COMMENTS: $(echo "$FOUND" | wc -l | tr -d ' ') comment lines (CLEAN_CODE.md, Comments)"; \
+  echo "COMMENTS: $(echo "$FOUND" | wc -l | tr -d ' ') comment lines (clean-code.md, Comments)"; \
   STATUS=1; else echo "COMMENTS: none"; fi
 echo "== CRAP"
 rm -rf "${OUT:?}"; mkdir -p "$OUT/main" "$OUT/test"

@@ -9,7 +9,7 @@ description: >-
 
 Turns a disagreement of the user with the task loop into a rule or a setting of the project, so
 the loop's maintainer learns the user's judgment. It works only in the project's `.review/` and
-follows the two limits of MAINTAINER_TRAINING.md: a "not yet" never becomes a rule, and nothing here
+follows the two limits of maintainer-training.md: a "not yet" never becomes a rule, and nothing here
 counts or scores anything.
 
 ## Instructions
@@ -18,7 +18,7 @@ First work out which kind of disagreement it is:
 
 | The user said | Track | Goes into |
 |---|---|---|
-| "that finding was real", or "this is right here on purpose" | A — findings | `.review/REVIEW_POLICY.md` |
+| "that finding was real", or "this is right here on purpose" | A — findings | `.review/review-policy.md` |
 | "you should have shown me this task" | B — advancing | `.review/land.conf` |
 | a trigger of Track C fired | C — where it entered | wherever it entered |
 
@@ -33,7 +33,7 @@ track, fix both the outcome and what produced it.
    threshold"); ask one question if it is not clear.
 3. **A check first.** If a linter, a type checker or an architecture test could catch it, it is
    not a policy rule: offer to add it to `.review/gates.sh`. Policy is for judgments no tool makes.
-4. **An existing rule.** Search `REVIEW_POLICY.md`; if the case is a special case of a rule,
+4. **An existing rule.** Search `review-policy.md`; if the case is a special case of a rule,
    narrow that rule or add an `Overrides` line instead of adding a rule. A wrong match is usually
    a missing path scope.
 5. **Write the rule:**
@@ -75,9 +75,9 @@ Any one of these starts it:
 
 Write no rule about the symptom itself; fix it where it entered.
 
-1. **The symptom as a fact** someone can go and look at ("every caller re-parses the header
-   because `parse()` returns a borrowed slice"), and the files it lives in. If it cannot be said
-   that concretely, tell the user so and stop.
+1. **The symptom as a fact** someone can go and look at ("every caller re-parses the header because
+   `parse()` returns a borrowed slice"), and the files it lives in. If it cannot be said that
+   concretely, tell the user so and stop.
 2. **Walk back** through `.review/decisions/tasks.jsonl` and the commit trailers (`Task-Id`,
    `Findings:`) of every task that touched those files, newest first; where the user commits by
    hand there are no trailers, so walk the log and the files each task touched.
@@ -86,7 +86,7 @@ Write no rule about the symptom itself; fix it where it entered.
    the maintainer rejected it.
 5. **Fix it where it belongs:** seen and rejected — a Track A rule; seen by nobody — a check in
    `gates.sh` if one can catch it, otherwise a rule that tells the reviewer to look; a task scoped
-   wrong or with weak criteria — a planning fix (PLANNING_GUIDE.md).
+   wrong or with weak criteria — a planning fix (planning-guide.md).
 6. **Append a retraction** for that task (the `type: "retraction"` line of
    `templates/review/project/decisions/tasks.example.jsonl`); never edit the original. Write its
    `cause` for someone who meets this in six months.
@@ -108,11 +108,11 @@ Report the chain walked, where it entered, and what changed.
 - Never write inside `CodingStandards/`.
 - A disagreement that produced no rule will come back: write it down, or record why it is a one-off.
 - Policy changes are the user's to commit: a commit of the loop never holds them, at every answer to
-  "Who writes to git" (TASK_LOOP.md, "Landing").
+  "Who writes to git" (task-loop.md, "Landing").
 
 ## Allowed Prompts
 - Read `.review/**`, the diff and source files
-- Write `.review/REVIEW_POLICY.md`, `.review/land.conf` and the decision logs
+- Write `.review/review-policy.md`, `.review/land.conf` and the decision logs
 - Propose changes to `.review/gates.sh` (ask before editing)
 - Never edit source files; git read-only
 

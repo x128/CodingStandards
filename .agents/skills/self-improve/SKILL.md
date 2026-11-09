@@ -68,7 +68,7 @@ versions names `diff -ru`. Before any project sees the change:
 1. **Nothing is lost:** `/loss-check` on arm A against the changed text, by an agent that did not
    write the change.
 2. **Examples are real code:** a changed Kotlin example compiles with the compiler, a Swift one
-   with `swiftc -typecheck`, against stubs; the pseudocode of CLEAN_CODE.md has no placeholder
+   with `swiftc -typecheck`, against stubs; the pseudocode of clean-code.md has no placeholder
    that is not code (`{ ... }` for a left-out body is allowed), and every name it calls says what
    it does.
 3. **One meaning:** a fresh agent reads every file that names the changed thing and lists what
@@ -91,9 +91,9 @@ blind judges.
 **The project.** A new one each iteration, so the rules are not tuned to one codebase: another
 domain, about 2 500 lines of main code, business rules with numbers, failures of storage and of a
 network service, a background job, a few screens. A spec agent writes what the builders get
-(`REQUIREMENTS.md`, `docs/LIBRARIES.md`, `CLAUDE.md`) and, apart from it, the hidden material:
-`ACCEPTANCE.md` (about 25 scenarios with exact texts and numbers), `RULES.md` (about 30 business
-rules), `CHANGES.md` (two or three changes of rules), and a script that computes the expected
+(`REQUIREMENTS.md`, `docs/libraries.md`, `CLAUDE.md`) and, apart from it, the hidden material:
+`acceptance.md` (about 25 scenarios with exact texts and numbers), `rules.md` (about 30 business
+rules), `changes.md` (two or three changes of rules), and a script that computes the expected
 numbers. A second agent computes them on its own and lists every ambiguity, which is fixed before
 anything is built. `templates/self-improve/example/` is such a spec, with a small platform library
 in `templates/self-improve/platform/`.
@@ -130,7 +130,7 @@ with the same number of rounds.
     or loosened is named; where an item's way breaks the rule it cites, the rule wins; notes on the
     standards go under their own heading; a sitting stops before an item too large for what is left
     of it;
-  - a change of `CHANGES.md`: only the code, its tests and the decisions recorded in the
+  - a change of `changes.md`: only the code, its tests and the decisions recorded in the
     requirements.
 - A run cut off is not resumed when its branches ran in parallel: read where each project stopped
   from its `TASK_TRACKER.md`, or its `REFACTORING.md` in a refactoring, and start a new run of only
@@ -140,14 +140,14 @@ with the same number of rounds.
 - behaviour: testers write the hidden scenarios as tests through the screens; rerun them yourself
   (`run-extra.sh`); when code below the screens changes later, adapt the tests only in how they
   build objects and fakes, and prove with `adapted_checks.py` that no check changed;
-- where the rules are: the rule locator puts each rule of `RULES.md` at a file, line and layer and
+- where the rules are: the rule locator puts each rule of `rules.md` at a file, line and layer and
   lists its copies; `check_locator.py` checks every quote;
 - lint and size: `lint-project.sh` (comments, CRAP), `count_code.py`;
 - nothing lost: every comment a refactoring removed is traced (`removed_comments.py`,
   `loss_parts.py`, `workflows/loss.js`, `loss_report.py`; above about 300, a sample);
   `trace_summary.py` counts where each meaning is now; both arms get the same comments and the
   same prompt;
-- maintenance: a fresh agent makes each change of `CHANGES.md` on A and on B; `change_report.py`
+- maintenance: a fresh agent makes each change of `changes.md` on A and on B; `change_report.py`
   counts files and layers touched and lists the failing scenarios; any but the changed rule's own
   is a regression;
 - blind judges: two per pair, each version read first once, only `src/`; they are the same model
@@ -166,12 +166,12 @@ Run `/reflect` in a fresh agent with the hypothesis, the numbers and the human's
 
 ### 7. Report and record
 
-- To the human, as EXECUTION_GUIDE.md, "Reporting to the user", says: what changed, what the
+- To the human, as execution-guide.md, "Reporting to the user", says: what changed, what the
   numbers say and where each comes from, and what you propose next. The options of a question
   include the move the human would make themselves.
-- Keep or revert by the result. A rule brought in by measurements on one application stays a
-  trial until a second, different application confirms it, is taken out if it does not, and
-  stays a trial while the second is mixed.
+- Keep or revert by the result. A rule brought in by measurements on one application stays a trial
+  until a second, different application confirms it, is taken out if it does not, and stays a trial
+  while the second is mixed.
 - Git as the human decided for this repository; say which files to commit and give the message.
 - Update the state in the work folder: as it is now, not as a diary.
 
@@ -180,7 +180,7 @@ Run `/reflect` in a fresh agent with the hypothesis, the numbers and the human's
 Restate the correction in one sentence with one case before and after; if it reads two ways,
 ask. Write the human's words and what is open into the state at once. Carry it out without losing
 information. Find the line that led to the mistake, and fix it in the file that is read when the
-same situation comes up again (MAINTAINER_TRAINING.md says which), through the edit gates of
+same situation comes up again (maintainer-training.md says which), through the edit gates of
 section 4, once the human agrees with its wording. Then run the same situation again to see that
 it worked.
 

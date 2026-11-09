@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""edit-check.py — checks a research REPORT.md against the writing rules of METHOD.md "The Report".
+"""edit-check.py — checks a research REPORT.md against the writing rules of method.md "The Report".
 
 Usage: python3 edit-check.py <REPORT.md>
 

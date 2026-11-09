@@ -1,10 +1,10 @@
 # Task Execution Guide
 
-> The rules for getting a task from to-do to committed. See `PLANNING_GUIDE.md` for how to create
+> The rules for getting a task from to-do to committed. See `planning-guide.md` for how to create
 > the requirements, the plan and the tracker.
 
 **These rules do not depend on who does the work.** They hold when the user writes the code by hand,
-when Claude writes it on request, and when the automated loop in `TASK_LOOP.md` runs it. That loop
+when Claude writes it on request, and when the automated loop in `task-loop.md` runs it. That loop
 is a machine built *on* these rules — it mechanizes them and adds a way to delegate the commit and,
 as far as the project decided, what follows it. It is not an alternative set of rules, and this
 document does not describe it.
@@ -18,7 +18,7 @@ document does not describe it.
 - **On request** — Claude implements, presents, the user reviews and commits (see "Who writes to
   git").
 - **Through the loop** — where a project has `.review/`, this is the default path for task work,
-  with or without the skill name being typed. See `TASK_LOOP.md`.
+  with or without the skill name being typed. See `task-loop.md`.
 
 Default means default: any change can be made outside the loop on request,
 without a reason. "Just make this change", "skip the review", "I'll write it
@@ -64,12 +64,12 @@ seem small or related, each one goes through the full cycle. No exceptions.
 ### Who writes to git
 
 The project decides, and records it in the requirement "Who writes to git"
-([PLANNING_GUIDE.md](./PLANNING_GUIDE.md)): agents only read git and the user commits; or the loop
+([planning-guide.md](./planning-guide.md)): agents only read git and the user commits; or the loop
 takes a finished task further, through `land.sh` and `publish.sh` (below): it commits and pushes a
 branch, it also opens a pull request, or it also merges that pull request. Those answers are about
 the loop, in a project that has it. Everywhere else, and at every answer, git is read-only for
 agents. It is the user's preference, not a rule of these standards, and the user may change it.
-Before it presents its first finished work, the agent asks that question (PLANNING_GUIDE.md, "Three
+Before it presents its first finished work, the agent asks that question (planning-guide.md, "Three
 questions of every project") if it is not answered, and writes the answer into the requirements.
 When the user asks in chat for a commit, give the files and the message; the user makes it.
 
@@ -110,7 +110,7 @@ stages *and commits* only the task's declared files and the files the loop keeps
 tracker, the test cases), and has no code path for push, amend or force; the only branch it may
 create or move to is `task/<id>`. `publish.sh` has no code path for commit, amend or force, and
 publishes only what landings made. The loop reaches main only through a pull request, never a direct
-commit ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
+commit ([task-loop.md § Landing](./task-loop.md#landing)).
 
 Everything about the loop's landing is what makes it different from an agent running `git commit`:
 it is delegated in advance, narrow in what it can do, revocable, and auditable in the commit
@@ -127,13 +127,13 @@ maintainer commits it where the requirement lets the loop commit; otherwise the 
 The unit of review differs; the authority does not. The user, never the agent, decides that a task
 is genuinely done and that work may continue. The maintainer may only stop asking for a category of
 task when the user has said so — nothing measures its way out of asking
-([MAINTAINER_TRAINING.md](./MAINTAINER_TRAINING.md)).
+([maintainer-training.md](./maintainer-training.md)).
 
 ### Reporting to the user
 
 Every message to the user is written by [.agents/skills/write](./.agents/skills/write/SKILL.md). The
 points below are about the work, not the text; rules for the text were measured to make messages
-worse next to the skill ([MEASURED.md](./.agents/skills/write/MEASURED.md)).
+worse next to the skill ([measured.md](./.agents/skills/write/measured.md)).
 
 - **During long work, say what runs and what comes next** when a step starts or ends, in the user's
   terms: what it does to their product, not a step name. Never leave the user without word.
@@ -141,7 +141,7 @@ worse next to the skill ([MEASURED.md](./.agents/skills/write/MEASURED.md)).
   stop to ask whether to run the next step of the work they asked for, or whether it is worth its
   tokens.
 - **Ask in the chat, one thing at a time**, except where a guide or skill gathers them: the planning
-  questions come a block at a time (PLANNING_GUIDE.md, Step 0); review findings go where
+  questions come a block at a time (planning-guide.md, Step 0); review findings go where
   `/code-review` sends them; books are asked for in one list. A long file does not replace the
   questions; it is named by its absolute path for the rest.
 - **Each option says something the others do not, and its label keeps it**: who does what, as a
@@ -156,7 +156,7 @@ standards lack goes to the user first. The one exception is a measurement of the
 skill lists the rules its assignments add.
 
 In a project with the task loop, each agent runs on the model and effort of its role in
-`.claude/agents.conf` (TASK_LOOP.md, "Models"), passed when it starts. Before agents start, the user
+`.claude/agents.conf` (task-loop.md, "Models"), passed when it starts. Before agents start, the user
 reads in one line how many, on which model, and roughly how many tokens they will take; after they
 finish, how many they took.
 

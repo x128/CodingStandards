@@ -11,7 +11,7 @@ description: >-
 Looks at code and reports what is wrong with it, each finding with the options for what to do;
 the user chooses, and the skill carries out the choice. A review finds something only when it is
 told what to hunt for, so it always runs the same four hunts. The task loop has its own reviewer
-(TASK_LOOP.md); this skill is review on request.
+(task-loop.md); this skill is review on request.
 
 ## Instructions
 
@@ -35,14 +35,14 @@ told what to hunt for, so it always runs the same four hunts. The task loop has 
    unclear, ask; never review the whole repository unasked. A diff or a named path carries its
    own intent. A whole feature or codebase does not: it needs exit criteria, a task or a plan,
    because without one a defect and unbuilt work look the same. With none, say so and offer two
-   things: reconstruct the intent first (PLANNING_GUIDE.md, Steps 1-2), or run only hunts 1 and 4
+   things: reconstruct the intent first (planning-guide.md, Steps 1-2), or run only hunts 1 and 4
    and call the result an inventory, not findings. Unbuilt work is never a finding, and an
    `AGENTS.md` that lists features not built yet states intent, not a false claim.
 2. **Read the surroundings** — the module's other functions, its conventions, how similar cases
    are handled — before judging.
-3. **Run the four hunts**, then check against CLEAN_CODE.md and the language standard for what the
+3. **Run the four hunts**, then check against clean-code.md and the language standard for what the
    hunts missed, including a reason, warning, unit, source or promise that only a test name or the
-   requirements give (CLEAN_CODE.md, "Comments"). With `--strict`, include minor style issues;
+   requirements give (clean-code.md, "Comments"). With `--strict`, include minor style issues;
    with `--hunt`, run only that hunt.
 4. **Prove or mark each finding**: a concrete case where it goes wrong (input and wrong output, a
    sequence of calls), or the plain word that it is unproven.
@@ -121,7 +121,7 @@ different schema; this skill does not triage it.
 
 ### Options
 
-Options follow EXECUTION_GUIDE.md, "Reporting to the user", and:
+Options follow execution-guide.md, "Reporting to the user", and:
 - `do` says what happens, in this finding's own words — an act, never a bucket such as "defer";
 - "A, or else B" is two options;
 - two or three options; fixing now, fixing later, writing it down, and deciding against it on
@@ -151,9 +151,9 @@ An option that changes a task edits the task itself: its description gains what 
 and its exit criteria gain a checkable line, written like the others. No date, no finding id, no
 mention of the review.
 
-Then write the commit message: one line, imperative, no period, plain text, saying what the
-change does; unrelated changes are separate commits. It is committed as EXECUTION_GUIDE.md, "Who
-writes to git", says. In the loop, `land.sh` writes it.
+Then write the commit message: one line, imperative, no period, plain text, saying what the change
+does; unrelated changes are separate commits. It is committed as execution-guide.md, "Who writes to
+git", says. In the loop, `land.sh` writes it.
 
 ### Rules
 

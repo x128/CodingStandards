@@ -264,7 +264,7 @@ as an exception. Where Swift calls the use case, `invoke` is marked
 `@Throws(StorageException::class, CancellationException::class)`: then a storage failure and a
 cancellation reach Swift as errors, and a bug still ends the app. The compiler requires
 `CancellationException` in the list of a `suspend` function. In Swift both arrive as an `NSError`
-that holds the Kotlin exception in `userInfo["KotlinException"]`; SWIFT.md, "Error Handling", shows
+that holds the Kotlin exception in `userInfo["KotlinException"]`; swift.md, "Error Handling", shows
 the one function that catches them.
 
 A refusal that a rule of an entity gives, the same for every use case that asks, is declared once,

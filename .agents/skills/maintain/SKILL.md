@@ -7,7 +7,7 @@ description: >-
 
 # Maintain Skill
 
-Runs the task loop of TASK_LOOP.md on one task at a time — the work, the checks, the review, the
+Runs the task loop of task-loop.md on one task at a time — the work, the checks, the review, the
 fixes, the landing — and shows the finished task to the user; or sets the loop up in a project that
 has none. It needs the project's requirements, plan and tracker. The steps that need judgment live
 here; the fixed ones are scripts: `gates.sh` for the checks, `review.sh` for review and triage,
@@ -21,22 +21,22 @@ them and never does their work by hand.
 Every step below, when `.review/gates.sh` does not exist.
 
 1. **Who writes to git.** Read the requirement "Who writes to git". With no answer, ask its question
-   in the words of PLANNING_GUIDE.md, "Three questions of every project", and write the answer into
-   the requirements. With no requirements, stop and point to PLANNING_GUIDE.md, Steps 0-4.
+   in the words of planning-guide.md, "Three questions of every project", and write the answer into
+   the requirements. With no requirements, stop and point to planning-guide.md, Steps 0-4.
 2. **The stack.** Read the build files and the Tech Stack of the requirements; ask only what they do
-   not say. Read the stack's own setup section (KOTLIN_MULTIPLATFORM.md for KMP) before touching any
+   not say. Read the stack's own setup section (kotlin-multiplatform.md for KMP) before touching any
    toolchain. When a check does not run, look for a setup step this project skipped — in the
    standard, then in a sibling project on the same machine — before installing anything.
-3. **Copy the project's templates:** run the commands of TASK_LOOP.md, "Install", except
+3. **Copy the project's templates:** run the commands of task-loop.md, "Install", except
    `git submodule add`, which is the user's. Never copy `review/lib/`: it runs from the submodule.
    Never write inside `CodingStandards/`.
 4. **Fill `.review/gates.sh`:** `build`, `test`, `format`, `lint`, `arch`, with the project's own
    tools. Where one is missing, propose the usual tool of the stack and ask before adding a
-   dependency; `arch` becomes architecture rules written as unit tests (ARCHITECTURE.md). Run it
+   dependency; `arch` becomes architecture rules written as unit tests (architecture.md). Run it
    until every check reports honestly; never leave a stub — a check is working, or reported as
    unfilled and why.
 5. **Permissions and hooks:** the deny, `ask` and allow lists of `.claude/settings.json`
-   (TASK_LOOP.md, "Landing"); format and lint on `PostToolUse`.
+   (task-loop.md, "Landing"); format and lint on `PostToolUse`.
 6. **`.review/land.conf`:** `LANDING` from the answer to "Who writes to git", its options in order:
    (a) `off`, (b) `push`, (c) `pr`, (d) `merge`. The answer is the permission; nothing is switched
    on by hand. `ADVANCE=ask`, at (d) too: it says whether the next task waits, and only the user
@@ -57,20 +57,20 @@ With `.review/` present this is the way task work is done, named or not: "next t
 done directly.
 
 1. **The task.** The one named, or the next unblocked `💡 to-do`; ask if the tracker is unclear.
-   No tracker is a stop: say so and point to PLANNING_GUIDE.md, Steps 1-2. When no task of its
-   epic has started yet, run `/groom` on the epic first, which can change its tasks, and take the
-   task again from the groomed tracker; if `/groom` is not among the skills of the session, link
-   it (.agents/skills/README.md, "Setup") and tell the user. On the branch of an earlier task the
-   work will stack on it (TASK_LOOP.md, "Branches"), and only the user can move the checkout: if
-   that task is merged, ask them to go back to the base branch and update it first; at
-   `LANDING=merge`, say that this task will wait for the earlier one.
+   No tracker is a stop: say so and point to planning-guide.md, Steps 1-2. When no task of its epic
+   has started yet, run `/groom` on the epic first, which can change its tasks, and take the task
+   again from the groomed tracker; if `/groom` is not among the skills of the session, link it
+   (.agents/skills/README.md, "Setup") and tell the user. On the branch of an earlier task the work
+   will stack on it (task-loop.md, "Branches"), and only the user can move the checkout: if that
+   task is merged, ask them to go back to the base branch and update it first; at `LANDING=merge`,
+   say that this task will wait for the earlier one.
 2. **Write `.review/current-task.json`** from the tracker entry: `id`, `title`, `category`, `scope`
    (path globs the work may touch), `exit_criteria` (format:
    `templates/review/project/task.example.json`). `land.sh` refuses anything outside the scope,
    apart from the tracker and `qa/test-cases.md`, which land with every task, and the requirements
    and the plan, which stay for the user; none of them is named in it. Where the tracker gives no
    `category` or `scope`, propose them and ask the user. The exit criteria are the ones the task has
-   gathered in the tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md,
+   gathered in the tracker, and none is a valid answer; none is written now (planning-guide.md,
    "Task Rules").
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
    and decide in the open with the user: extend (the shape is right), refactor first (as its own
@@ -99,7 +99,7 @@ done directly.
    when the count is wrong — runs of another task under the same id — and the report says which.
    Runs that ended with `2`, `5` or `1` count by design; they never make the count wrong.
 6. **Fix round.** Work through the accepted findings and run again, as long as each run accepts
-   fewer findings than the one before (TASK_LOOP.md, "Job 2"); the count is the
+   fewer findings than the one before (task-loop.md, "Job 2"); the count is the
    `accepted (>= threshold)` line, and a run that ended with `2`, `5` or `1` is not compared. A
    finding accepted in two runs in a row, or a run that accepts as many as the one before or more,
    is escalated. The same failure twice in a row — checks red for the same reason, `5` or `1` again,
@@ -131,7 +131,7 @@ done directly.
    reach. Once `/qa` passes, whoever does the work decides which of the cases `/qa` added or changed
    an end-to-end test takes, writes those tests and marks the cases `e2e: <test>` in
    `qa/test-cases.md`. A defect `/qa` finds that the change did not bring is fixed now or written
-   into the task it belongs to as an exit criterion (PLANNING_GUIDE.md, "Ongoing Maintenance"). A
+   into the task it belongs to as an exit criterion (planning-guide.md, "Ongoing Maintenance"). A
    defect the user finds later that `/qa` passed goes to `/qa` as a defect of that skill too. If
    `/qa` is not among the skills of the session, link it (.agents/skills/README.md, "Setup") and
    tell the user; the step is never skipped silently.
@@ -145,7 +145,7 @@ done directly.
     changed something the plan rests on — a decision, a use case, the architecture, what a later
     task was to get — run `/groom --change`. All of this comes before the landing, because the
     tracker lands with the task; the requirements and the plan stay for the user to commit
-    (TASK_LOOP.md, "Landing").
+    (task-loop.md, "Landing").
 11. **Land:**
 
    ```bash
@@ -214,9 +214,9 @@ done directly.
 - `--dry-run` runs every step with `land.sh --dry-run`, to show the files and the message that
   would land.
 - Only `land.sh` and `publish.sh` write to git, and only as far as the answer to "Who writes to git"
-  allows; nothing else here does (EXECUTION_GUIDE.md, "Who writes to git").
+  allows; nothing else here does (execution-guide.md, "Who writes to git").
 - Only accepted findings reach whoever does the work.
-- Reviewer and maintainer each work in a fresh session (TASK_LOOP.md, "Role separation").
+- Reviewer and maintainer each work in a fresh session (task-loop.md, "Role separation").
 - An objection of the user at a task boundary goes to `/policy`.
 - When in doubt about advancing, ask.
 

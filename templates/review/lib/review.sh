@@ -9,7 +9,7 @@
 # projects and updates with `git submodule update --remote`.
 #
 # What it reads from your project (.review/ — yours to edit):
-#   gates.sh, REVIEW_POLICY.md, land.conf, and any prompts/ or schemas/ you
+#   gates.sh, review-policy.md, land.conf, and any prompts/ or schemas/ you
 #   choose to override.
 # What it reads from the submodule (shared defaults):
 #   prompts/, schemas/ — used whenever .review/ has no override.
@@ -69,7 +69,7 @@ PROJECT_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 
 # Running from inside the CodingStandards checkout resolves PROJECT_ROOT to the
 # standards repo itself, which has no .review/ and no diff worth reviewing.
-if [ -f "$PROJECT_ROOT/TASK_LOOP.md" ] && \
+if [ -f "$PROJECT_ROOT/task-loop.md" ] && \
   [ -f "$PROJECT_ROOT/templates/review/lib/review.sh" ]; then
   echo "run this from your project root, not from inside the CodingStandards checkout" >&2
   exit 1
@@ -79,8 +79,16 @@ cd "$PROJECT_ROOT" || exit 1
 
 REVIEW_DIR=".review"
 
+# The policy was REVIEW_POLICY.md before the standards took lower-case names; a project that still
+# has the old name keeps working, and is told how to rename it.
+POLICY_FILE="$REVIEW_DIR/review-policy.md"
+if [ ! -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
+  POLICY_FILE="$REVIEW_DIR/REVIEW_POLICY.md"
+  echo "note: the policy has a new name — git mv $REVIEW_DIR/REVIEW_POLICY.md $REVIEW_DIR/review-policy.md" >&2
+fi
+
 # Project-owned. No sensible default exists — these encode the stack and the taste.
-for required in gates.sh REVIEW_POLICY.md; do
+for required in gates.sh "$(basename "$POLICY_FILE")"; do
   if [ ! -f "$REVIEW_DIR/$required" ]; then
     echo "missing $REVIEW_DIR/$required — run /maintain --init, or copy" >&2
     echo "  $(cd "$LIB_DIR/../project" 2>/dev/null && pwd)/. into $REVIEW_DIR/" >&2
@@ -678,8 +686,8 @@ fi
   echo "## Output schema (JSON only, one verdict per finding)"
   cat "$(lib_file schemas/maintainer-verdicts.schema.json)"
   echo
-  echo "## REVIEW_POLICY.md"
-  cat "$REVIEW_DIR/REVIEW_POLICY.md"
+  echo "## review-policy.md"
+  cat "$POLICY_FILE"
   echo
   if [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ]; then
     echo "## The task: scope and exit criteria"

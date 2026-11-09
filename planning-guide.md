@@ -182,7 +182,7 @@ NOT implementation classes.
 
 (Every use case has this form: a name, an input, an output that names
 every outcome, and rules, in the words of the product's subject. A filled
-example is in `ARCHITECTURE.md`, "Use Cases".)
+example is in `architecture.md`, "Use Cases".)
 
 ---
 
@@ -431,9 +431,9 @@ prototype task follows the same standards as any other code.
 
 **No week or time estimates.** Epics provide sequencing, not scheduling.
 
-**T-001 is always project initialization.** Its description should reference
-the relevant platform-specific guide from CodingStandards for setup
-instructions (e.g., `KOTLIN_MULTIPLATFORM.md` for KMP projects).
+**T-001 is always project initialization.** Its description should reference the relevant
+platform-specific guide from CodingStandards for setup instructions (e.g., `kotlin-multiplatform.md`
+for KMP projects).
 
 ### Epic Rules
 
@@ -565,7 +565,7 @@ Create the project-level artifacts that complete the planning process.
    treat that file's feature list as the surviving evidence of what was intended.
 
 **Planning is now complete.** The artifacts are: requirements, plan, task tracker, AGENTS.md, and
-CodingStandards submodule. Task execution starts with T-001. See `EXECUTION_GUIDE.md` for the task
+CodingStandards submodule. Task execution starts with T-001. See `execution-guide.md` for the task
 execution workflow.
 
 ---

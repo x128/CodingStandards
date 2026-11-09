@@ -18,7 +18,7 @@
 # finish what stopped, a push that failed or a pull request that was waiting,
 # without another commit. Run again, it does nothing twice: an open pull request is
 # left as it is, a merged one is not pushed back, and a closed one is not replaced.
-# See TASK_LOOP.md § Publishing.
+# See task-loop.md § Publishing.
 #
 # Usage, from the project root:
 #   publish.sh --task-file <task.json>

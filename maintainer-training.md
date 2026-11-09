@@ -37,7 +37,7 @@ never offer to.
 3. **Put the rule in the file that gets read at that point.**
 
 4. **Have it committed**, by the user: a commit of the loop never holds a rule of `.review/` or of
-   these standards, whatever the requirement "Who writes to git" says (TASK_LOOP.md, "Landing"). A
+   these standards, whatever the requirement "Who writes to git" says (task-loop.md, "Landing"). A
    rule that is not committed lasted one session.
 
 Step 2 is the one that goes wrong. A rule about writing reports, put into the
@@ -45,15 +45,15 @@ document about reviewing code, will never be read while writing a report.
 
 | It happened while | The rule goes in |
 |---|---|
-| installing or configuring a build | the language document (`KOTLIN_MULTIPLATFORM.md`, …) |
-| planning, before any code exists | `PLANNING_GUIDE.md` |
-| doing a task | `EXECUTION_GUIDE.md` |
+| installing or configuring a build | the language document (`kotlin-multiplatform.md`, …) |
+| planning, before any code exists | `planning-guide.md` |
+| doing a task | `execution-guide.md` |
 | checking a finished change before it is shown as done | `.agents/skills/qa/SKILL.md` |
-| giving work to another agent | `EXECUTION_GUIDE.md`, "Work given to other agents" |
-| writing the report back to the user | `.agents/skills/write/SKILL.md`; `EXECUTION_GUIDE.md`, the reporting section |
+| giving work to another agent | `execution-guide.md`, "Work given to other agents" |
+| writing the report back to the user | `.agents/skills/write/SKILL.md`; `execution-guide.md`, the reporting section |
 | looking for bugs in the code | `.agents/skills/code-review/SKILL.md` |
 | refactoring code to the standards | the requirements of this project; `.agents/skills/refactor/SKILL.md` for how a refactoring runs |
-| running the automatic loop | `TASK_LOOP.md` |
+| running the automatic loop | `task-loop.md` |
 | measuring these standards | `.agents/skills/self-improve/SKILL.md` |
 | editing these standards | `AGENTS.md` of this repo, "Contributing Guidelines" |
 

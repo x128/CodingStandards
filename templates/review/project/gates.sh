@@ -71,7 +71,7 @@ run_gate() {
 
 # ---------------------------------------------------------------------------
 # The five slots. Replace the commands; keep the slot names.
-# See TASK_LOOP.md § "Wiring a new language" for per-stack commands.
+# See task-loop.md § "Wiring a new language" for per-stack commands.
 # ---------------------------------------------------------------------------
 
 # 1. build — does it compile / typecheck?
@@ -88,12 +88,12 @@ run_gate format yes "echo 'TODO: format check command' && false"
 run_gate lint yes "echo 'TODO: lint command' && false"
 
 # 5. arch — do the architecture rules hold? Write these as ordinary unit tests
-#    if the stack has no dedicated tool. See ARCHITECTURE.md.
+#    if the stack has no dedicated tool. See architecture.md.
 run_gate arch yes "echo 'TODO: architecture rule tests' && false"
 
 # Examples (delete the stubs above and uncomment what fits):
 #
-# Kotlin / KMP (modules composeApp and androidApp, KOTLIN_MULTIPLATFORM.md)
+# Kotlin / KMP (modules composeApp and androidApp, kotlin-multiplatform.md)
 #   run_gate build yes  "./gradlew :composeApp:compileKotlinMetadata "\
 # ":composeApp:linkDebugFrameworkIosSimulatorArm64 :androidApp:assembleDebug"
 #   run_gate test  yes  "./gradlew :composeApp:allTests :androidApp:testDebugUnitTest"
@@ -101,7 +101,7 @@ run_gate arch yes "echo 'TODO: architecture rule tests' && false"
 #   run_gate lint  yes  "./gradlew detekt && "\
 # "! grep -rnE --include='*.kt' --exclude-dir=build '(^|[[:space:]])(//|/[*])' . "\
 # "| grep -viE '// (arrange|act|assert|given|when|then)\$'"
-#     (the grep fails the gate on any comment but the test markers, CLEAN_CODE.md "Comments";
+#     (the grep fails the gate on any comment but the test markers, clean-code.md "Comments";
 #      add "| grep -v '<pattern>'" for a license header the license requires and for each kind of
 #      comment that the requirements allow; where they allow comments, drop the grep)
 #   run_gate arch  yes  "./gradlew :architecture:test"
