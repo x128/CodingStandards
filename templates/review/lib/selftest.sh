@@ -106,7 +106,10 @@ review "a rejected finding leaves the run clean" 0 "rejected          : 1" \
 mv .review/review-policy.md .review/REVIEW_POLICY.md
 review "a policy under its old name still works, with a note how to rename it" 0 \
   "git mv .review/REVIEW_POLICY.md .review/review-policy.md" '{"findings":[]}' '{"verdicts":[]}'
-mv .review/REVIEW_POLICY.md .review/review-policy.md
+cp .review/REVIEW_POLICY.md .review/review-policy.md
+review "two policy files stop the review, so no rule is missed" 1 "two policy files" \
+  '{"findings":[]}' '{"verdicts":[]}'
+rm .review/REVIEW_POLICY.md
 
 land "landing off on main prints the commit with a note" 0 "Note: current branch is main" off
 land "landing on on main refuses by condition 8" 3 "condition 8" on

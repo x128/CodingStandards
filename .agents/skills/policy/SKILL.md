@@ -49,7 +49,9 @@ track, fix both the outcome and what produced it.
    - **Added**: <date>, after <task> / <finding id>
    ```
 
-   Ids are never reused. MUST is a blocker, SHOULD major, MAY minor.
+   Ids are never reused. MUST is a blocker, SHOULD major, MAY minor. A project set up before the
+   standards took lower-case names keeps its rules in `.review/REVIEW_POLICY.md`: rename it first,
+   `git mv .review/REVIEW_POLICY.md .review/review-policy.md`, so that no rule stays behind.
 6. **Log it:** one line in `.review/decisions/findings.jsonl` with the rule id (format:
    `templates/review/project/decisions/findings.example.jsonl`).
 

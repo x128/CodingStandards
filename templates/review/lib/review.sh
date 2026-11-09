@@ -82,6 +82,11 @@ REVIEW_DIR=".review"
 # The policy was REVIEW_POLICY.md before the standards took lower-case names; a project that still
 # has the old name keeps working, and is told how to rename it.
 POLICY_FILE="$REVIEW_DIR/review-policy.md"
+if [ -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
+  echo "two policy files: $REVIEW_DIR/REVIEW_POLICY.md and $POLICY_FILE — move the rules of the" >&2
+  echo "  old one into $POLICY_FILE and delete it; until then the review would miss them" >&2
+  exit 1
+fi
 if [ ! -f "$POLICY_FILE" ] && [ -f "$REVIEW_DIR/REVIEW_POLICY.md" ]; then
   POLICY_FILE="$REVIEW_DIR/REVIEW_POLICY.md"
   echo "note: the policy has a new name — git mv $REVIEW_DIR/REVIEW_POLICY.md $REVIEW_DIR/review-policy.md" >&2
