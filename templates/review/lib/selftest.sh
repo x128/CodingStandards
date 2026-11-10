@@ -2,11 +2,12 @@
 #
 # selftest.sh — runs review.sh, land.sh and publish.sh end to end on throwaway
 # repositories, with the reviewer, the maintainer and gh replaced by fixed
-# answers, and checks the exit code and the line each case must print. The
-# validation of agent output in review.sh is exactly the code no real run
-# exercises until a model answers with findings — and it once refused every
-# non-empty answer for two months unnoticed. Run it after any change to review.sh,
-# land.sh, publish.sh, the schemas or the decision rules of prompts/maintainer.md.
+# answers and the end-to-end harness by a fake one, and checks the exit code and
+# the line each case must print. The validation of agent output in review.sh is
+# exactly the code no real run exercises until a model answers with findings —
+# and it once refused every non-empty answer for two months unnoticed. Run it
+# after any change to review.sh, land.sh, publish.sh, e2e-gate.sh, the schemas or
+# the decision rules of prompts/maintainer.md.
 #
 # The repositories it builds, and the bare ones that stand in for a remote, live
 # in a temporary folder and are deleted at the end; the project's own repository
@@ -25,13 +26,51 @@ FAILURES=0
 fail_setup() { echo "setup failed: $1"; exit 1; }
 
 repository="$WORK/project"
-mkdir -p "$repository/.review" "$repository/src" || fail_setup "folders"
+mkdir -p "$repository/.review" "$repository/src" "$repository/qa" || fail_setup "folders"
 cd "$repository" || fail_setup "cd"
 git init -q -b main || fail_setup "git init"
 git config user.email selftest@example.com && git config user.name selftest \
   || fail_setup "git config"
 printf 'fun answer() = 41\n' >src/answer.kt
-git add src/answer.kt && git commit -q -m start || fail_setup "first commit"
+# The cases and the end-to-end harness are committed with the code, as land.sh
+# requires of the harness. The fake harness leaves one JUnit report per platform
+# in which the tests of both cases pass, unless a case sets another report
+# (E2E_XML, or E2E_XML_<platform> for one platform, or E2E_REPORT, a file to
+# copy), where it goes inside the report folder (E2E_NAME), a second place it is
+# copied to (E2E_ALSO), another exit code (E2E_EXIT), the one platform it runs on
+# (E2E_ONLY) or a file it appends to (E2E_TOUCH). Each published project below
+# commits the same harness.
+cat >qa/test-cases.md <<'EOF'
+# Test cases
+
+## Answer
+
+- **TC-001 Answer.** Open the app: it shows 42. — e2e: `AnswerE2E.shows42`
+- **TC-002 Start.** Start the app: it opens with no error. — e2e:
+  `AnswerE2E.starts`
+EOF
+cat >.review/e2e.sh <<'EOF'
+#!/usr/bin/env bash
+report="$2/${E2E_NAME:-r.xml}"
+mkdir -p "$(dirname "$report")"
+[ -z "${E2E_TOUCH:-}" ] || printf 'touched\n' >>"$E2E_TOUCH"
+platform_xml="E2E_XML_$1"
+if [ -n "${E2E_REPORT:-}" ]; then
+  cp "$E2E_REPORT" "$report"
+elif [ "$1" = "${E2E_ONLY:-$1}" ]; then
+  passing="<testsuite hostname=\"$1\"><testcase classname=\"AnswerE2E\" name=\"shows42\"/>"\
+"<testcase classname=\"AnswerE2E\" name=\"starts\"/></testsuite>"
+  printf '%s' "${!platform_xml:-${E2E_XML:-$passing}}" >"$report"
+fi
+if [ -n "${E2E_ALSO:-}" ] && [ -f "$report" ]; then
+  mkdir -p "$(dirname "$2/$E2E_ALSO")" && cp "$report" "$2/$E2E_ALSO"
+fi
+exit "${E2E_EXIT:-0}"
+EOF
+chmod +x .review/e2e.sh
+cp .review/e2e.sh "$WORK/e2e.green"
+git add src/answer.kt qa/test-cases.md .review/e2e.sh && git commit -q -m start \
+  || fail_setup "first commit"
 printf 'fun answer() = 42\n' >src/answer.kt
 
 cat >.review/gates.sh <<'EOF'
@@ -46,6 +85,12 @@ cat >.review/task.json <<'EOF'
 {"id": "T-001", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"],
  "exit_criteria": [{"text": "answer() returns 42", "verified_by": "manual: read src/answer.kt"}]}
 EOF
+# /qa's records of the tasks that land, in folders that sort before every
+# timestamped run, so that land() still takes the newest run.
+for task_id in T-001 T-004; do
+  mkdir -p ".review/runs/0-qa-$task_id"
+  printf '{"task": "%s", "failures": []}' "$task_id" >".review/runs/0-qa-$task_id/qa.json"
+done
 
 finding() {
   printf '{"findings":[{"id":"F-001","file":"src/answer.kt","line":1,'\
@@ -87,8 +132,28 @@ land() {
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
 }
 
+# The hook of /qa: `check` reads the newest e2e.json and runs nothing.
+e2e_check() {
+  local name="$1" expected_exit="$2" expected_line="$3" actual_exit
+  "$LIB_DIR/e2e-gate.sh" check >"$WORK/check.log" 2>&1
+  actual_exit=$?
+  echo "check exited $actual_exit" >>"$WORK/check.log"
+  check "$name" "$expected_exit" "$expected_line" "$actual_exit" "$WORK/check.log"
+}
+
+e2e_check "with no end-to-end run recorded /qa is held back" 2 "no end-to-end run is recorded"
+e2e_check "holding /qa back, the hook says it is the /qa skill's" 2 \
+  "This is the hook of the /qa skill"
+mkdir -p "$WORK/no-repository"
+(cd "$WORK/no-repository" && GIT_CEILING_DIRECTORIES="$WORK" "$LIB_DIR/e2e-gate.sh" check) \
+  >"$WORK/check.log" 2>&1
+check_exit=$?
+echo "check exited $check_exit" >>"$WORK/check.log"
+check "outside a git repository /qa is held back, not let through" 2 \
+  "is not inside a git repository" "$check_exit" "$WORK/check.log"
 review "no findings is clean" 0 "CLEAN — gates green, no verified findings." \
   '{"findings":[]}' '{"verdicts":[]}'
+e2e_check "after a passing end-to-end run /qa may go on" 0 "check exited 0"
 review "an accepted finding goes to the executor" 3 "accepted (>= major): 1" \
   "$(finding '"bug"')" "$(verdict '"accept"' no-rule-fired)"
 review "an escalated finding goes to the user" 4 "escalated         : 1" \
@@ -294,6 +359,457 @@ check "a commit that failed twice sends the work back to review.sh" 3 \
   "failed at or after its gates twice" $? "$WORK/land.log"
 rm .git/hooks/pre-commit
 
+# The end-to-end tests. Each review here has no findings, so it ends CLEAN
+# unless the end-to-end tests stop it; the run it made is $last_run.
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+printf '{"findings":[]}' >"$WORK/reviewer.json"
+printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+e2e_review() {
+  local name="$1" expected_exit="$2" expected_line="$3" task_file="$4" runs_listed
+  runs_listed="$(ls .review/runs)"
+  REVIEWER_CMD="touch $WORK/reviewer-ran; cat $WORK/reviewer.json #" \
+    MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    "$LIB_DIR/review.sh" --task-file "$task_file" >"$WORK/run.log" 2>&1
+  review_exit=$?
+  check "$name" "$expected_exit" "$expected_line" "$review_exit" "$WORK/run.log"
+  last_run=".review/runs/$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs))"
+}
+e2e_land() {
+  local name="$1" expected_exit="$2" expected_line="$3" task_file="$4" run="$5"
+  "$LIB_DIR/land.sh" --task-file "$task_file" --run "$run" >"$WORK/land.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
+}
+xml() {
+  local testcase
+  printf '<testsuite>'
+  for testcase in "$@"; do
+    case "$testcase" in
+      *=failed)
+        printf '<testcase classname="AnswerE2E" name="%s"><failure message="41"/></testcase>' \
+          "${testcase%=*}" ;;
+      *=skipped)
+        printf '<testcase classname="AnswerE2E" name="%s"><skipped/></testcase>' \
+          "${testcase%=*}" ;;
+      *)         printf '<testcase classname="AnswerE2E" name="%s"/>' "$testcase" ;;
+    esac
+  done
+  printf '</testsuite>'
+}
+
+printf '{"id": "T-006", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' >.review/T-006.json
+mv .review/e2e.sh "$WORK/e2e.sh"
+e2e_review "no end-to-end harness stops the review" 1 \
+  "NO E2E HARNESS — copy CodingStandards/templates/review/project/e2e.sh" .review/T-006.json
+e2e_check "after a run with no harness /qa is held back" 2 "found no working harness"
+mv "$WORK/e2e.sh" .review/e2e.sh
+E2E_XML='<testsuite tests="0"/>' \
+  e2e_review "a harness that runs no test is no harness" 1 "app: the e2e run ran no test" \
+  .review/T-006.json
+E2E_ONLY=none E2E_EXIT=143 \
+  e2e_review "a harness killed before any test is no harness" 1 \
+  "app: the e2e run ran no test (exit 143)" .review/T-006.json
+cp qa/test-cases.md "$WORK/test-cases.md"
+printf '# Test cases\n\n- **TC-001 Answer.** Open the app: it shows 42. — manual\n' \
+  >qa/test-cases.md
+e2e_review "tests that no case names are no harness" 1 \
+  "app: no case of qa/test-cases.md names an e2e test that ran" .review/T-006.json
+cp "$WORK/test-cases.md" qa/test-cases.md
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a named test that is skipped is red" 2 "named but did not pass: AnswerE2E.shows42" \
+  .review/T-006.json
+rm -f "$WORK/reviewer-ran"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "a failing end-to-end test is red" 2 "app: failed: AnswerE2E.shows42" \
+  .review/T-006.json
+if [ ! -e "$WORK/reviewer-ran" ]; then
+  echo "ok    red end-to-end tests never reach the reviewer"
+else
+  echo "FAIL  red end-to-end tests reached the reviewer"
+  FAILURES=$((FAILURES + 1))
+fi
+mkdir -p app/src/main app/App.xcodeproj
+printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
+  >app/src/main/AndroidManifest.xml
+printf 'SDKROOT = iphoneos;\nproductType = "com.apple.product-type.application";\n' \
+  >app/App.xcodeproj/project.pbxproj
+E2E_ONLY=app \
+  e2e_review "an Android app in the tree needs its tests run on Android" 1 \
+  "android: the e2e run ran no test" .review/T-006.json
+check "an iOS app in the tree needs its tests run on iOS" 1 "ios: the e2e run ran no test" \
+  "$review_exit" "$WORK/run.log"
+rm -rf app
+E2E_TOUCH=src/x \
+  e2e_review "an end-to-end run that changes the tree stops the review" 1 \
+  "the e2e run modified the working tree" .review/T-006.json
+rm -f src/x
+printf 'v1\n' >"src/Отчёт.kt"
+E2E_TOUCH="src/Отчёт.kt" \
+  e2e_review "an end-to-end run that changes a file with a non-ASCII name stops the review" 1 \
+  "the e2e run modified the working tree" .review/T-006.json
+rm -f "src/Отчёт.kt"
+# The loop's and the owner's files are outside the fingerprint; the run changes them
+# no more than the rest. A harness that rewrites the cases would choose its own tests.
+for touched in qa/test-cases.md TASK_TRACKER.md REQUIREMENTS.md; do
+  E2E_TOUCH="$touched" E2E_XML="$(xml starts)" \
+    e2e_review "an end-to-end run that changes $touched stops the review" 1 \
+    "the e2e run modified the working tree" .review/T-006.json
+done
+cp "$WORK/test-cases.md" qa/test-cases.md
+rm -f TASK_TRACKER.md REQUIREMENTS.md
+
+# The platforms the tree ships, from its files.
+mkdir -p "app/Диск.xcodeproj"
+printf 'SDKROOT = iphoneos;\nproductType = "com.apple.product-type.application";\n' \
+  >"app/Диск.xcodeproj/project.pbxproj"
+E2E_ONLY=app \
+  e2e_review "an iOS app whose project has a non-ASCII name needs its tests run on iOS" 1 \
+  "ios: the e2e run ran no test" .review/T-006.json
+rm -rf app
+mkdir -p app/App.xcodeproj
+printf 'SDKROOT = auto;\nSUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";\n'\
+'productType = "com.apple.product-type.application";\n' >app/App.xcodeproj/project.pbxproj
+E2E_ONLY=app \
+  e2e_review "a multiplatform Xcode app that runs on iOS needs its tests run on iOS" 1 \
+  "ios: the e2e run ran no test" .review/T-006.json
+rm -rf app
+mkdir -p app/src/main
+printf '<category android:name="android.intent.category.LEANBACK_LAUNCHER"/>\n' \
+  >app/src/main/AndroidManifest.xml
+E2E_ONLY=app \
+  e2e_review "an Android TV app needs its tests run on Android" 1 \
+  "android: the e2e run ran no test" .review/T-006.json
+rm -rf app
+mkdir -p third_party/pdfkit/sample/src/main
+printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
+  >third_party/pdfkit/sample/src/main/AndroidManifest.xml
+e2e_review "the sample app of a vendored library ships no platform" 0 "── e2e: pass on app " \
+  .review/T-006.json
+rm -rf third_party
+
+# Android and iOS together: each platform's report is its own, and a test a
+# case names counts on each platform by itself.
+mkdir -p app/src/main app/App.xcodeproj
+printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
+  >app/src/main/AndroidManifest.xml
+printf 'SDKROOT = iphoneos;\nproductType = "com.apple.product-type.application";\n' \
+  >app/App.xcodeproj/project.pbxproj
+e2e_review "passing end-to-end tests on Android and iOS let the review go on" 0 \
+  "── e2e: pass on android ios " .review/T-006.json
+E2E_ONLY=android E2E_ALSO=../ios/r.xml \
+  e2e_review "a report another platform's run left is not the platform's own" 1 \
+  "ios: the e2e run ran no test" .review/T-006.json
+E2E_XML="$(xml shows42 starts)" \
+  e2e_review "the same report for two platforms is no harness" 1 \
+  "ios: a report is the same file as one of android" .review/T-006.json
+E2E_XML_ios="$(xml shows42=skipped starts)" \
+  e2e_review "a named test skipped on one platform is red" 2 \
+  "ios: named but did not pass: AnswerE2E.shows42" .review/T-006.json
+E2E_XML_ios="$(xml starts)" \
+  e2e_review "a named test missing on a platform that runs its class is red" 2 \
+  "ios: named but did not run: AnswerE2E.shows42" .review/T-006.json
+cp qa/test-cases.md "$WORK/test-cases.md"
+printf -- '- **TC-003 Empty folder.** — e2e: `com.disk.FileListE2E.emptyFolder`, %s\n' \
+  '`FileListE2E.testEmptyFolder`' >>qa/test-cases.md
+E2E_XML_android='<testsuite hostname="android"><testcase classname="AnswerE2E" name="shows42"/>'\
+'<testcase classname="AnswerE2E" name="starts"/>'\
+'<testcase classname="com.disk.FileListE2E" name="emptyFolder"/></testsuite>' \
+E2E_XML_ios='<testsuite hostname="ios"><testcase classname="AnswerE2E" name="shows42"/>'\
+'<testcase classname="AnswerE2E" name="starts"/>'\
+'<testcase classname="FileListE2E" name="testEmptyFolder"/></testsuite>' \
+  e2e_review "each platform's own test of a case, in classes of one short name, passes" 0 \
+  "── e2e: pass on android ios " .review/T-006.json
+cp "$WORK/test-cases.md" qa/test-cases.md
+rm -rf app
+
+# Reading the JUnit XML.
+E2E_XML="$(printf '<testsuite>\r\n<testcase\r\n classname="AnswerE2E" name="shows42">'\
+'<failure/></testcase>\r\n<testcase classname="AnswerE2E" name="starts"/>\r\n</testsuite>')" \
+  e2e_review "a failure in a report with CRLF line ends is red" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-006.json
+E2E_XML='<testsuite><!-- <testcase classname="AnswerE2E" name="shows42"/> -->'\
+'<testcase classname="AnswerE2E" name="starts"/></testsuite>' \
+  e2e_review "a testcase in a comment never ran" 2 "named but did not pass: AnswerE2E.shows42" \
+  .review/T-006.json
+E2E_XML='<testsuite><testcase classname="AnswerE2E" name="shows42"><system-out>'\
+'<![CDATA[log: </testcase> <done>]]></system-out><failure/></testcase>'\
+'<testcase classname="AnswerE2E" name="starts"/></testsuite>' \
+  e2e_review "a failure after output that holds </testcase> is red" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-006.json
+cp qa/test-cases.md "$WORK/test-cases.md"
+cat >>qa/test-cases.md <<'EOF'
+- **TC-003 Spellings.** — e2e: `Spaces.eq`, `AnswerE2E.save & quit`, `SizeTests.size > 0`,
+  `AnswerUITests.testShows42()`, `Param.shows42`
+EOF
+E2E_XML='<testsuite><testcase classname="AnswerE2E" name="shows42"/>'\
+'<testcase classname="AnswerE2E" name="starts"/><testcase classname = "Spaces" name = "eq"/>'\
+'<testcase classname="AnswerE2E" name="save &amp; quit"/>'\
+'<testcase classname="SizeTests" name="size > 0"/>'\
+'<testcase classname="AnswerUITests" name="testShows42()"/>'\
+'<testcase classname="Param" name="shows42(int)[1]"/>'\
+'<testcase classname="Param" name="shows42(int)[2]"/></testsuite>' \
+  e2e_review "a report and marks spelled in other valid ways pass" 0 "── e2e: pass on app " \
+  .review/T-006.json
+cp "$WORK/test-cases.md" qa/test-cases.md
+E2E_NAME=connected/debug/TEST-Pixel.XML \
+  e2e_review "a report in a subfolder, named .XML, is read" 0 "── e2e: pass on app " \
+  .review/T-006.json
+E2E_XML='<testsuite timestamp="2026-01-01T00:00:00">'\
+'<testcase classname="AnswerE2E" name="shows42"/>'\
+'<testcase classname="AnswerE2E" name="starts"/></testsuite>' \
+  e2e_review "a report older than the run is no harness" 1 "app: a report is older than this run" \
+  .review/T-006.json
+awk 'BEGIN {
+  line = sprintf("%-100s", "I/TestRunner: <step> done"); gsub(/ /, "x", line)
+  print "<testsuite><testcase classname=\"AnswerE2E\" name=\"starts\"/>"
+  for (i = 1; i <= 500; i++) {
+    print "<testcase classname=\"Bulk\" name=\"t" i "\"><system-out><![CDATA["
+    for (j = 1; j <= 100; j++) print line
+    print "]]></system-out></testcase>"
+  }
+  print "<testcase classname=\"AnswerE2E\" name=\"shows42\"><failure/></testcase></testsuite>" }' \
+  >"$WORK/big.xml"
+started=$SECONDS
+E2E_REPORT="$WORK/big.xml" \
+  e2e_review "a report with megabytes of output is read whole" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-006.json
+if [ $((SECONDS - started)) -le 20 ]; then
+  echo "ok    a report of $(wc -c <"$WORK/big.xml" | tr -d ' ') bytes is read in "\
+"$((SECONDS - started)) s"
+else
+  echo "FAIL  a report of $(wc -c <"$WORK/big.xml" | tr -d ' ') bytes took "\
+"$((SECONDS - started)) s"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# The marks of the cases.
+printf '# Test cases\n\n1. **TC-001 Answer.** It shows 42. — e2e: `AnswerE2E.shows42`\n'\
+'2. **TC-002 Start.** — e2e: `AnswerE2E.starts`\n' >qa/test-cases.md
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a case in a numbered list is a case" 2 "named but did not pass: AnswerE2E.shows42" \
+  .review/T-006.json
+printf '# Test cases\n\n- **TC-001 Answer.** It shows 42. — e2e: AnswerE2E.shows42\n'\
+'- **TC-002 Start.** — e2e: AnswerE2E.starts\n' >qa/test-cases.md
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a mark without backticks names its test" 2 \
+  "named but did not pass: AnswerE2E.shows42" .review/T-006.json
+printf '# Test cases\n\n- **TC-001 Answer.** It shows 42. — e2e: `AnswerE2E.shows42` and %s\n' \
+  '`AnswerE2E.starts`' >qa/test-cases.md
+E2E_XML="$(xml shows42 starts=skipped)" \
+  e2e_review "every test of a mark joined by and is named" 2 \
+  "named but did not pass: AnswerE2E.starts" .review/T-006.json
+printf '# Test cases\n\n- **TC-001 Answer.** It shows 42. — e2e: `AnswerE2E.\n  shows42`\n' \
+  >qa/test-cases.md
+e2e_review "a mark wrapped inside its backticks names its test" 0 "── e2e: pass on app " \
+  .review/T-006.json
+printf '# Test cases\n\nNo case yet.\n' >qa/test-cases.md
+e2e_review "before the first case, a test that ran is a harness" 0 "── e2e: pass on app " \
+  .review/T-006.json
+cp "$WORK/test-cases.md" qa/test-cases.md
+
+# Skip tags: one counts only where it sits on the test, and the test is still
+# in the run to be skipped.
+printf '// see "T-999: TC-001"\n' >src/notes.kt
+E2E_XML="$(xml starts)" \
+  e2e_review "a skip tag that sits on no test skips nothing" 2 \
+  "named but did not pass: AnswerE2E.shows42" .review/T-006.json
+rm src/notes.kt
+printf 'class AnswerE2E { @Ignore("T-017: TC-001") fun shows42() {} }\n' >src/AnswerE2E.kt
+E2E_XML="$(xml starts)" \
+  e2e_review "a test skipped for a task is still in the run" 2 \
+  "named but did not pass: AnswerE2E.shows42" .review/T-006.json
+printf 'class AnswerE2E { @Ignore("T-017:TC-001 Android shows filesDir") fun shows42() {} }\n' \
+  >src/AnswerE2E.kt
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a skip tag with more words and no space after the colon counts" 0 \
+  "── e2e: pass on app " .review/T-006.json
+printf "def shows42(): pytest.skip(reason='T-016+T-004: TC-001')\n" >src/AnswerE2E.kt
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a skip tag in single quotes, for a task of two ids, counts" 0 \
+  "── e2e: pass on app " .review/T-006.json
+rm src/AnswerE2E.kt
+mkdir -p CodingStandards/templates/review
+cp -R "$LIB_DIR" CodingStandards/templates/review/lib
+(. CodingStandards/templates/review/lib/common.sh && skip_tags) >"$WORK/tags.log" 2>&1
+tags_exit=$?
+if [ "$tags_exit" -eq 1 ] && [ ! -s "$WORK/tags.log" ]; then
+  echo "ok    a plain copy of the standards in the project holds no skip tag"
+else
+  echo "FAIL  a plain copy of the standards in the project holds skip tags (exit $tags_exit):"
+  sed 's/^/      /' "$WORK/tags.log"
+  FAILURES=$((FAILURES + 1))
+fi
+rm -rf CodingStandards
+
+# Landing. The work marks a case with the test that reproduces a failure of /qa;
+# the cases are one of the loop's own files, so no task names them in its scope.
+printf '{"id": "T-007", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' >.review/T-007.json
+mkdir -p .review/runs/0-qa-T-007
+printf '{"task": "T-007", "failures": []}' >.review/runs/0-qa-T-007/qa.json
+e2e_review "passing end-to-end tests let the review go on" 0 "CLEAN — gates green" \
+  .review/T-007.json
+run_of_t007="$last_run"
+mkdir -p app/src/main
+printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
+  >app/src/main/AndroidManifest.xml
+e2e_check "a platform the newest end-to-end run never ran on holds /qa back" 2 \
+  "never ran on: android"
+rm -rf app
+e2e_land "a run with passing end-to-end tests lands" 0 "For the user to commit" \
+  .review/T-007.json "$run_of_t007"
+printf -- '- **TC-003 Never.** It never runs. — e2e: `AnswerE2E.doesNotExist`\n' \
+  >>qa/test-cases.md
+e2e_land "a case marked after the run with a test the run never saw refuses" 3 \
+  "was not checked against: TC-003 AnswerE2E.doesNotExist" .review/T-007.json "$run_of_t007"
+sed 's/`AnswerE2E.starts`/`AnswerE2E.shows42`/' "$WORK/test-cases.md" >qa/test-cases.md
+e2e_land "a test moved to another case after the run refuses" 3 \
+  "was not checked against: TC-002 AnswerE2E.shows42" .review/T-007.json "$run_of_t007"
+grep -v -e 'TC-002' -e 'AnswerE2E.starts' "$WORK/test-cases.md" >qa/test-cases.md
+e2e_land "a case unmarked after the run lands: the run saw more than it needs" 0 \
+  "For the user to commit" .review/T-007.json "$run_of_t007"
+cp "$WORK/test-cases.md" qa/test-cases.md
+mv "$run_of_t007/e2e.json" "$WORK/e2e.json"
+e2e_land "a run without end-to-end tests is not a completed run" 3 "condition 1: " \
+  .review/T-007.json "$run_of_t007"
+mv "$WORK/e2e.json" "$run_of_t007/e2e.json"
+printf '# changed\n' >>.review/e2e.sh
+e2e_land "a harness changed after its commit refuses" 3 "not committed as it ran" \
+  .review/T-007.json "$run_of_t007"
+e2e_review "a run on a changed harness goes on" 0 "CLEAN — gates green" .review/T-007.json
+git checkout -q -- .review/e2e.sh
+e2e_land "a run on a harness changed back since refuses" 3 "not committed as it ran" \
+  .review/T-007.json "$last_run"
+mv .review/runs/0-qa-T-007 "$WORK/0-qa-T-007"
+e2e_land "a task /qa never checked refuses" 3 "no /qa record (qa.json) for T-007" \
+  .review/T-007.json "$run_of_t007"
+mv "$WORK/0-qa-T-007" .review/runs/0-qa-T-007
+printf '{"task": "T-007", "failures": [{"case": "the answer is 41"}]}' \
+  >.review/runs/0-qa-T-007/qa.json
+e2e_land "a /qa failure with no case refuses" 3 "not {task, failures: [{case: TC-nnn}]}" \
+  .review/T-007.json "$run_of_t007"
+printf '{"task": "T-007", "failures": [{"case": "TC-001"}]}' >.review/runs/0-qa-T-007/qa.json
+e2e_land "a /qa failure whose test never failed refuses" 3 "seen red, then green: TC-001" \
+  .review/T-007.json "$run_of_t007"
+printf '[{"finding_id": "TC-001", "resolution": "accepted-as-is", "by": "human"}]' \
+  >"$run_of_t007/escalations-answered.json"
+e2e_land "a /qa failure the user answered lands" 0 "For the user to commit" \
+  .review/T-007.json "$run_of_t007"
+rm "$run_of_t007/escalations-answered.json"
+sed 's/`AnswerE2E.shows42`/`AnswerE2E.shows42`, `AnswerE2E.shows43`/' "$WORK/test-cases.md" \
+  >qa/test-cases.md
+E2E_XML="$(xml shows42 starts shows43=failed)" \
+  e2e_review "the test of a /qa failure fails before the fix" 2 \
+  "app: failed: AnswerE2E.shows43" .review/T-007.json
+E2E_XML="$(xml shows42 starts shows43)" \
+  e2e_review "the test of a /qa failure passes after the fix" 0 "CLEAN — gates green" \
+  .review/T-007.json
+e2e_land "a /qa failure seen red, then green lands" 0 "For the user to commit" \
+  .review/T-007.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+printf '{"task": "T-007", "failures": []}' >.review/runs/0-qa-T-007/qa.json
+
+printf 'class AnswerE2E { @Ignore("T-007: TC-001") fun shows42() {} }\n' >src/AnswerE2E.kt
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a test skipped for the task its defect belongs to is not red" 0 \
+  "CLEAN — gates green" .review/T-007.json
+e2e_land "a test still skipped for the task refuses its landing" 3 \
+  "the end-to-end test of TC-001 is still skipped for T-007" .review/T-007.json "$last_run"
+printf '{"task": "T-004", "failures": [{"case": "TC-001"}]}' >.review/runs/0-qa-T-004/qa.json
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "a deferred test lets the review of another task go on" 0 "CLEAN — gates green" \
+  .review/T-004.json
+e2e_land "a deferred /qa failure never seen red refuses" 3 "seen red, then green: TC-001" \
+  .review/T-004.json "$last_run"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a deferred /qa failure fails" 2 "app: failed: AnswerE2E.shows42" \
+  .review/T-004.json
+E2E_XML="$(xml shows42=skipped starts)" \
+  e2e_review "the test of a deferred /qa failure is skipped" 0 "CLEAN — gates green" \
+  .review/T-004.json
+e2e_land "a /qa failure seen red and skipped for its own task lands" 0 \
+  "For the user to commit" .review/T-004.json "$last_run"
+rm src/AnswerE2E.kt
+printf '{"task": "T-004", "failures": []}' >.review/runs/0-qa-T-004/qa.json
+
+# More landings, each on a task of its own, so that no earlier run of another
+# task counts for it. new_task <id> [failures] writes the task and /qa's record.
+new_task() {
+  printf '{"id": "%s", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' "$1" >".review/$1.json"
+  mkdir -p ".review/runs/0-qa-$1"
+  printf '{"task": "%s", "failures": %s}' "$1" "${2:-[]}" >".review/runs/0-qa-$1/qa.json"
+}
+new_task T-008
+cp .review/e2e.sh "$WORK/e2e.committed"
+cat >.review/e2e.sh <<EOF
+#!/usr/bin/env bash
+mkdir -p "\$2"
+printf '%s' '$(xml shows42 starts)' >"\$2/r.xml"
+cp "$WORK/e2e.committed" "\$0.new" && mv "\$0.new" "\$0"
+EOF
+e2e_review "a harness that puts the committed one back while it runs stops the review" 1 \
+  "the harness changed while it ran" .review/T-008.json
+git checkout -q -- .review/e2e.sh
+printf '#!/usr/bin/env bash\nexit 0\n' >.review/e2e-app.sh
+chmod +x .review/e2e-app.sh
+e2e_review "a run beside an uncommitted .review/e2e-* goes on" 0 "CLEAN — gates green" \
+  .review/T-008.json
+e2e_land "an uncommitted .review/e2e-* beside the harness refuses" 3 "not committed as it ran" \
+  .review/T-008.json "$last_run"
+rm .review/e2e-app.sh
+
+new_task T-009 '[{"case": "TC-001"}]'
+e2e_review "a run with a /qa failure recorded goes on" 0 "CLEAN — gates green" .review/T-009.json
+printf '[{"finding_id": "TC-001", "resolution": "accepted-as-is", "by": "maintainer"}]' \
+  >"$last_run/escalations-answered.json"
+e2e_land "an answer to a /qa failure that is not the user's refuses" 3 \
+  "seen red, then green: TC-001" .review/T-009.json "$last_run"
+printf '[{"finding_id": "TC-001", "resolution": "fixed", "by": "human"}]' \
+  >"$last_run/escalations-answered.json"
+e2e_land "an answer that a /qa failure is fixed proves nothing" 3 \
+  "seen red, then green: TC-001" .review/T-009.json "$last_run"
+rm "$last_run/escalations-answered.json"
+
+new_task T-010
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "a test of a case fails before /qa has checked the task" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-010.json
+e2e_review "and passes after its fix" 0 "CLEAN — gates green" .review/T-010.json
+printf '{"task": "T-010", "failures": [{"case": "TC-001"}]}' >.review/runs/0-qa-T-010/qa.json
+e2e_land "a test seen red only before /qa recorded the failure proves nothing" 3 \
+  "seen red, then green: TC-001" .review/T-010.json "$last_run"
+
+new_task T-011 '[{"case": "TC-001"}]'
+e2e_review "a run after /qa recorded a failure goes on" 0 "CLEAN — gates green" \
+  .review/T-011.json
+printf '{"task": "T-011", "failures": []}' >.review/runs/0-qa-T-011/qa.json
+e2e_land "a /qa failure stays recorded when its qa.json is rewritten" 3 \
+  "seen red, then green: TC-001" .review/T-011.json "$last_run"
+
+new_task T-012
+printf 'fun report() = 1\n' >"src/Отчёт.kt"
+e2e_review "a run with a new file of a non-ASCII name goes on" 0 "CLEAN — gates green" \
+  .review/T-012.json
+e2e_land "a file with a non-ASCII name inside the scope lands" 0 "src/Отчёт.kt" \
+  .review/T-012.json "$last_run"
+rm "src/Отчёт.kt"
+
+# Last in this repository, since it commits: the harness as a link to a file in
+# the reviewed tree.
+new_task T-013
+mkdir -p scripts
+cp .review/e2e.sh scripts/e2e.sh
+rm .review/e2e.sh
+ln -s ../scripts/e2e.sh .review/e2e.sh
+git add scripts/e2e.sh .review/e2e.sh \
+  && git commit -q -m "the harness behind a link" -- scripts/e2e.sh .review/e2e.sh \
+  || fail_setup "link commit"
+e2e_review "a run through a harness committed as a link goes on" 0 "CLEAN — gates green" \
+  .review/T-013.json
+e2e_land "a harness committed as a link lands" 0 "For the user to commit" .review/T-013.json \
+  "$last_run"
+
 # ---------------------------------------------------------------------------
 # Publishing. Each project has a bare repository as its remote; gh is a stand-in
 # that logs its calls to calls, keeps the pull requests as JSON in prs.json, and
@@ -497,7 +1013,9 @@ published_project() {
   git config user.email selftest@example.com && git config user.name selftest \
     || fail_setup "published git config"
   printf 'fun answer() = 0\n' >src/answer.kt
-  git add src/answer.kt && git commit -q -m start || fail_setup "published first commit"
+  cp "$WORK/e2e.green" .review/e2e.sh
+  git add src/answer.kt .review/e2e.sh && git commit -q -m start \
+    || fail_setup "published first commit"
   git remote add "$remote_name" "$GH_REMOTE" && git push -q "$remote_name" main \
     || fail_setup "published first push"
   cp "$WORK/gates.green" .review/gates.sh
@@ -506,9 +1024,13 @@ published_project() {
 }
 
 task_with_id() {
+  local record
   printf '{"id": "%s", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
 '"exit_criteria": []}' \
     "$1" >.review/task.json
+  # /qa's record of the task, without which no landing of it goes through.
+  record=".review/runs/0-qa-$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' _)"
+  mkdir -p "$record" && jq -n --arg id "$1" '{task: $id, failures: []}' >"$record/qa.json"
 }
 
 set_level() {
@@ -641,6 +1163,18 @@ land_run "gates that change the tree refuse a landing at push" 3 \
   "the tree changed while the gates ran"
 holds "that refusal creates no branch" not local_has task/T-001
 holds "that refusal stays on main" on_branch main
+
+published_project origin
+set_level push
+reviewed_change
+cat >.review/gates.sh <<'EOF'
+#!/usr/bin/env bash
+mkdir -p qa && printf -- '- **TC-001 Answer.** — e2e: `AnswerE2E.never`\n' >>qa/test-cases.md
+echo '{"build":{"status":"pass","blocking":true,"command":"true","output":""}}' >"$1"
+EOF
+land_run "gates that mark a case refuse a landing at push" 3 \
+  "was not checked against: TC-001 AnswerE2E.never"
+holds "a mark refused after the gates creates no branch" not local_has task/T-001
 
 published_project origin
 set_level push

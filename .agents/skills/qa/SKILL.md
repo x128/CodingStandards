@@ -6,6 +6,12 @@ description: >-
   every touched transition recorded and read frame by frame, edge states, budgets and regressions —
   each check by its own agent, each pass challenged by another. Use before a task is shown as done,
   when asked to test, check or verify a change, and when a defect got past an earlier check.
+hooks:
+  PreToolUse:
+    - matcher: "Workflow|Agent|Task|mcp__Claude_Code_iOS_Simulator__.*"
+      hooks:
+        - type: command
+          command: '"$CLAUDE_PROJECT_DIR"/CodingStandards/templates/review/lib/e2e-gate.sh check'
 ---
 
 # QA Skill
@@ -87,10 +93,10 @@ user saw on the way.
 
 - iOS: `xcrun simctl io <device> recordVideo --codec=h264 <file> &`, wait for `Recording started`,
   touch, wait until nothing moves, then `kill -INT` the recorder and `wait` for it. Touch with the
-  session's simulator control tool where there is one, or with a UI test in a copy of the tree. Stop
-  a recorder only with `INT`: one whose client is killed any other way keeps recording inside the
-  simulator, and every later recording fails with "Host recording is already in progress" until the
-  simulator is shut down and booted again.
+  session's simulator control tool where there is one, or with the project's end-to-end harness.
+  Stop a recorder only with `INT`: one whose client is killed any other way keeps recording inside
+  the simulator, and every later recording fails with "Host recording is already in progress" until
+  the simulator is shut down and booted again.
 - Android: `adb shell settings put system show_touches 1`, so the touch is visible in the frames;
   `adb shell screenrecord /sdcard/<file>.mp4 &`, `adb shell input tap <x> <y>`, then
   `adb shell pkill -INT screenrecord` and `adb pull`.
@@ -126,10 +132,12 @@ or unproven when the evidence settles nothing.
 ### 4. Report
 
 As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
-user sees, how to reproduce it and the evidence by path; with each, the test that pins it — a unit
-test, a UI test, or "no test catches it, because …"; then what is unproven and why — it does not
-count as passed; then what passed, with its evidence; then what was not checked and why. Never
-"everything works": the report says what was checked.
+user sees, how to reproduce it and the evidence by path; with each, the case of `qa/test-cases.md`
+that reproduces it, and the record of the run in a folder of its own,
+`.review/runs/qa-<time>/qa.json`: `{"task": "<id>", "failures": [{"case": "TC-nnn"}]}`, written when
+nothing failed too; then what is unproven and why — it does not count as passed; then what passed,
+with its evidence; then what was not checked and why. Never "everything works": the report says what
+was checked.
 
 ### 5. When a defect got past
 

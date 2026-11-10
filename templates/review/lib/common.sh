@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# common.sh — helpers shared by review.sh, land.sh and publish.sh.
+# common.sh — helpers shared by review.sh, land.sh, publish.sh and e2e-gate.sh.
 #
 # Runs from the submodule; not overridable. Sourced, never executed.
 
@@ -57,8 +57,13 @@ only_task_work() {
 # The tree goes through a throwaway copy of the index, so every change reads the
 # same, tracked or new, staged or not: a landing whose commit failed leaves its new
 # files staged, and that must not read as a tree that changed.
+#
+# With --whole, the loop's and the owner's files count too: the whole tree outside
+# `.review/`. e2e-gate.sh checks with it that the end-to-end tests left the tree as
+# they found it, qa/test-cases.md included, whose marks name the tests a run must pass.
 tree_fingerprint() {
-  local scratch
+  local scratch outside=("${NOT_TASK_WORK[@]}")
+  [ "${1:-}" != --whole ] || outside=(':(exclude).review')
   scratch="$(mktemp -d)" || return 1
   # -p: git trusts an entry whose file is older than the index, so a copy that looks
   # newer than the real one would hide an edit made in the second of the last `git add`.
@@ -68,8 +73,8 @@ tree_fingerprint() {
     # `.review/` is pipeline bookkeeping and is excluded on BOTH sides: the task
     # file is tracked and is filled in (verified_by) after the review by design,
     # so including it here would invalidate every run before it could land.
-    GIT_INDEX_FILE="$scratch/index" git add -A -- . "${NOT_TASK_WORK[@]}" 2>/dev/null
-    GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- . "${NOT_TASK_WORK[@]}"
+    GIT_INDEX_FILE="$scratch/index" git add -A -- . "${outside[@]}" 2>/dev/null
+    GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- . "${outside[@]}"
   } | sha256_stdin
   rm -rf "$scratch"
 }
@@ -344,4 +349,151 @@ require_array_length() {
     return 1
   }
   printf '%s' "$length"
+}
+
+# The platforms the tree ships, one per line: `android` for an Android app with a
+# launcher activity (a phone's or a TV's), `ios` for an iOS application target
+# (built for iphoneos alone or among other platforms), `app` for anything else.
+# Read from the files under review, never from a setting: a platform a project
+# could drop by editing `.review/` would be a platform nothing tests. Vendored
+# code is passed over: the sample app of a library is not an app the project
+# ships.
+platforms() {
+  local file android=0 ios=0
+  while IFS= read -r -d '' file; do
+    case "/$file" in
+      /.review/*|*/third_party/*|*/third-party/*|*/vendor/*|*/Pods/*|*/Carthage/*) ;;
+      */node_modules/*) ;;
+      */AndroidManifest.xml)
+        grep -qE 'android\.intent\.category\.(LEANBACK_)?LAUNCHER' "$file" 2>/dev/null \
+          && android=1 ;;
+      *.pbxproj)
+        grep -qE 'SDKROOT = iphoneos|SUPPORTED_PLATFORMS = "[^"]*iphoneos' "$file" 2>/dev/null \
+          && grep -q 'com.apple.product-type.application' "$file" 2>/dev/null && ios=1 ;;
+    esac
+  done < <(git ls-files -z -co --exclude-standard)
+  [ "$android" -eq 0 ] || echo android
+  [ "$ios" -eq 0 ] || echo ios
+  [ "$android$ios" != 00 ] || echo app
+}
+
+# The cases of qa/test-cases.md and the end-to-end tests their marks name, one
+# `TC-nnn` TAB `<test>` per line, and `TC-nnn` TAB nothing for a case with no
+# mark. A case is a list item that starts with its id (`- **TC-001`, `1. **TC-001`,
+# `* TC-001`) and runs to the next case or heading, its lines joined as Markdown
+# joins them. The mark is `e2e:` and the ids after it, all in backticks or all
+# bare (a bare id has a dot: `Class.method`), separated by commas, semicolons or
+# "and". A trailing `()` is dropped, and so is the space a line wrapped inside
+# an id leaves next to a dot.
+case_marks() {
+  [ -f qa/test-cases.md ] || return 0
+  awk '
+    function flush(   text, rest, at, stop, id, quoted, marked) {
+      if (current == "") return
+      text = block
+      while ((at = index(text, "e2e:")) > 0) {
+        rest = substr(text, at + 4)
+        quoted = ""
+        for (;;) {
+          sub(/^[ \t]+/, "", rest)
+          if (substr(rest, 1, 1) == "`" && quoted != "no") {
+            stop = index(substr(rest, 2), "`")
+            if (stop == 0) break
+            id = substr(rest, 2, stop - 1)
+            rest = substr(rest, stop + 2)
+            quoted = "yes"
+          } else if (quoted != "yes" &&
+                     match(rest, /^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z0-9_$]+)+(\(\))?/)) {
+            id = substr(rest, 1, RLENGTH)
+            rest = substr(rest, RLENGTH + 1)
+            quoted = "no"
+          } else break
+          gsub(/[ \t]+/, " ", id); gsub(/ ?\. ?/, ".", id)
+          sub(/^ /, "", id); sub(/ $/, "", id); sub(/\(\)$/, "", id)
+          if (id != "") { print current "\t" id; marked = 1 }
+          if (!sub(/^[ \t]*(,[ \t]*(and[ \t]+)?|;[ \t]*|and[ \t]+)/, "", rest)) break
+        }
+        text = rest
+      }
+      if (!marked) print current "\t"
+      current = ""
+    }
+    /^#/ { flush(); next }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]+(\*\*)?TC-[0-9]+/ {
+      flush()
+      match($0, /TC-[0-9]+/)
+      current = substr($0, RSTART, RLENGTH)
+      block = ""
+    }
+    current != "" { block = block " " $0 }
+    END { flush() }' qa/test-cases.md
+}
+
+# How a row of a JUnit report answers to a test a case names, as jq: the same
+# id, or its end after a dot (the package left out) — also with the parameters
+# of a parameterized row (shows42(int)[1], shows42[0]) left out.
+JQ_HIT='def base: sub("(\\([^()]*\\))?(\\[[^\\[\\]]*\\])*$"; "");
+def hit($id): . == $id or endswith("." + $id) or (base | . == $id or endswith("." + $id));
+'
+
+# The end-to-end tests named in qa/test-cases.md, one per line; with a case id,
+# only that case's.
+case_tests() {
+  case_marks \
+    | awk -F'\t' -v wanted="${1:-}" '$2 != "" && (wanted == "" || $1 == wanted) { print $2 }'
+}
+
+# The lines of case_marks on stdin as a JSON array of {case, test}, each mark once and
+# in order. A run of the end-to-end tests records the marks it was checked against
+# this way; land.sh reads the file now the same way and compares.
+marks_json() {
+  awk -F'\t' '$2 != ""' | jq -R 'split("\t") | {case: .[0], test: .[1]}' | jq -sc 'unique'
+}
+
+# Where these standards are. A plain copy of them inside a project, rather than
+# a submodule, is searched like any other folder, and its examples are no skips.
+STANDARDS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
+
+# The end-to-end tests skipped for a task, one `T-nnn: TC-nnn` TAB file per line:
+# the reason of the skip names the task the defect belongs to and the case it
+# breaks, quoted or not, with more words after it or none, and a task of several
+# ids as T-016+T-004 — @Ignore("T-017: TC-009"), XCTSkip("T-017: TC-009"),
+# skip(reason='T-017: TC-009 Android shows filesDir'). Markdown, `.review/` and
+# the standards are left out: a plan, a report or an example that names a skip
+# is not one. Exits 1 when there is none, and above 1 when the search failed.
+skip_tags() {
+  local root outside=()
+  root="$(pwd -P)"
+  case "$STANDARDS_DIR" in "$root"/*) outside=(":(exclude)${STANDARDS_DIR#"$root"/}") ;; esac
+  git grep -z -I -o --untracked -E 'T-[0-9]+(\+T-[0-9]+)*:[[:space:]]*TC-[0-9]+' \
+      -- . ':(exclude)*.md' ':(exclude).review' ${outside[@]+"${outside[@]}"} \
+    | tr '\0' '\t' \
+    | awk -F'\t' '{ tag = $2; sub(/:[ \t]*/, ": ", tag); print tag "\t" $1 }' | sort -u
+}
+
+# Whether a test is skipped for a case with a tag that sits on it: a tag of the
+# case in a file that also names the test. A tag anywhere else — a note, a
+# comment on another test — skips nothing.
+skip_tag_on() {
+  local tags="$1" case_id="$2" test_id="$3" file
+  while IFS= read -r file; do
+    [ -n "$file" ] && grep -qF -- "${test_id##*.}" "$file" 2>/dev/null && return 0
+  done < <(printf '%s\n' "$tags" \
+             | awk -F'\t' -v wanted="$case_id" '$1 ~ (": " wanted "$") { print $2 }')
+  return 1
+}
+
+# The files of the end-to-end harness — `.review/e2e.sh` and any
+# `.review/e2e-*` it calls — one `<blob> <path>` per line, each as git stores
+# it: a symbolic link as its target's name. e2e-gate.sh records them before the
+# run; land.sh compares them with HEAD.
+harness_blobs() {
+  local file
+  for file in .review/e2e.sh .review/e2e-*; do
+    if [ -L "$file" ]; then
+      printf '%s %s\n' "$(printf '%s' "$(readlink "$file")" | git hash-object --stdin)" "$file"
+    elif [ -f "$file" ]; then
+      printf '%s %s\n' "$(git hash-object -- "$file")" "$file"
+    fi
+  done | sort
 }

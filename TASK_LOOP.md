@@ -184,8 +184,11 @@ never fires at all. So is a test command on a project that has no tests: `./grad
 - [ ] One definition, three call sites: local, hook, CI.
 - [ ] Tool choices recorded in the Tech Stack of the requirements.
 
-**Gates run before the reviewer and again at landing.** A red build means the
-reviewer never runs — send the executor back with the compiler output.
+**Gates run before the reviewer and again at landing.** A red build means the reviewer never runs —
+send the executor back with the compiler output. After the gates `review.sh` runs the end-to-end
+tests through `.review/e2e.sh` on every platform the tree ships and counts them in its JUnit
+reports; red, it stops as on a red gate, and with no test that ran, or none that a case of
+`qa/test-cases.md` names once the file has a case, it refuses the run.
 
 **Gates must not modify the tree.** Use check modes (`--check`, `lint`), not
 formatters that rewrite files. `review.sh` compares the fingerprint immediately
@@ -476,11 +479,11 @@ back to the base branch while its next line waits in the tree.
 |---|-----------|-----|
 | 1 | The run directory is a completed review run | An empty directory must never authorise a commit |
 | 2 | The run's tree fingerprint matches the tree now, the loop's own files apart | A review of a tree that has since changed is not a review of what is being committed |
-| 3 | Gates re-run green **now** | Cheap insurance; catches a drifted environment |
+| 3 | Gates re-run green **now**; the run's end-to-end tests passed on every platform the tree ships, with every `e2e:` mark `qa/test-cases.md` has now, and `.review/e2e.sh` is committed | Cheap insurance; catches a drifted environment |
 | 4 | Zero accepted findings at or above the run's threshold | Nothing outstanding |
 | 5 | Zero pending escalations | A human owes an answer |
 | 6 | Changed files ⊆ the task's declared scope, the loop's own files apart | The diff did not sprawl |
-| 7 | Every exit criterion carries a `verified_by` claim | The tracker's definition of done, with the claim recorded in the commit |
+| 7 | Every exit criterion carries a `verified_by` claim; `/qa` recorded the task in a `qa.json`, each `/qa` failure has its end-to-end test seen failing, then passing — or skipped for the task it belongs to, or answered by the user — and no test is skipped for this task | The tracker's definition of done, with the claim recorded in the commit |
 | 8 | `LANDING` is a known level and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
 Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`. At `on`, `push`, `pr`

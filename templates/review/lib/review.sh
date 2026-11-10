@@ -9,8 +9,8 @@
 # projects and updates with `git submodule update --remote`.
 #
 # What it reads from your project (.review/ — yours to edit):
-#   gates.sh, REVIEW_POLICY.md, land.conf, and any prompts/ or schemas/ you
-#   choose to override.
+#   gates.sh, e2e.sh, REVIEW_POLICY.md, land.conf, and any prompts/ or schemas/
+#   you choose to override.
 # What it reads from the submodule (shared defaults):
 #   prompts/, schemas/ — used whenever .review/ has no override.
 #
@@ -22,13 +22,15 @@
 #
 # Exit codes:
 #   0  clean — gates green, nothing accepted above the threshold
-#   2  gates red — send the executor back with the gate output, no LLM review
+#   2  gates or end-to-end tests red — send the executor back with the output,
+#      no LLM review
 #   3  accepted findings remain — hand them to the executor
 #   4  escalations — a human decides
 #   5  review unusable — every finding failed quote verification; re-run
 #   6  the task has had ASK_AFTER_RUNS runs — nothing ran; the user decides
 #      whether another one is worth it (--past-limit runs it)
-#   1  pipeline error, including any malformed agent output (fails closed)
+#   1  pipeline error, including any malformed agent output (fails closed), or
+#      no working end-to-end harness
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
 # VERIFY CLI FLAGS against your installed versions before first use.
@@ -559,6 +561,13 @@ if [ "$GATES_EXIT" -ne 0 ]; then
     "$RUN_DIR/gates.json"
   exit 2
 fi
+
+# The end-to-end tests, through the project's .review/e2e.sh, after the gates
+# because they need the build. Green gates say nothing about the app as its
+# user drives it, so a tree with no working harness stops here as well — in
+# every project, whatever its gates.sh holds, since this file is the
+# submodule's. e2e-gate.sh exits 2 when red and 1 without a harness.
+"$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID" || exit $?
 
 # ---------------------------------------------------------------------------
 # 3. Reviewer

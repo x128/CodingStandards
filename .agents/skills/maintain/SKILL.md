@@ -126,15 +126,14 @@ done directly.
 8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
    step 7 is answered. What it reports as failing or unproven goes back to whoever does the work,
    with the text of step 6, and the task is reviewed again (step 5) — once; a second failing `/qa`
-   is escalated as in step 7. Each failure goes back with the test `/qa` named for it, and the fix
-   makes that test pass; the second `/qa` takes from `qa/test-cases.md` only the cases the fix can
-   reach. Once `/qa` passes, whoever does the work decides which of the cases `/qa` added or changed
-   an end-to-end test takes, writes those tests and marks the cases `e2e: <test>` in
-   `qa/test-cases.md`. A defect `/qa` finds that the change did not bring is fixed now or written
-   into the task it belongs to as an exit criterion (PLANNING_GUIDE.md, "Ongoing Maintenance"). A
-   defect the user finds later that `/qa` passed goes to `/qa` as a defect of that skill too. If
-   `/qa` is not among the skills of the session, link it (.agents/skills/README.md, "Setup") and
-   tell the user; the step is never skipped silently.
+   is escalated as in step 7. Each failure goes back with its case; the end-to-end test of that case
+   is written and seen failing before the fix, the case is marked `e2e: <test>` with it, and the fix
+   makes it pass; the second `/qa` takes from `qa/test-cases.md` only the cases the fix can reach. A
+   defect `/qa` finds that the change did not bring is fixed now, or its end-to-end test stays
+   skipped as `"<task>: <case>"` until that task lands. A defect the user finds later that `/qa`
+   passed goes to `/qa` as a defect of that skill too. If `/qa` is not among the skills of the
+   session, link it (.agents/skills/README.md, "Setup") and tell the user; the step is never skipped
+   silently.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a check you did
    not do; what `/qa` left unproven is not verified.

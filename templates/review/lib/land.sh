@@ -89,7 +89,7 @@ TASK_ID="$(jq -r '.id' "$TASK_FILE")"
 #    empty directory authorise a commit.
 # ---------------------------------------------------------------------------
 
-for artifact in meta.json verdicts.json approved.json escalated.json; do
+for artifact in meta.json verdicts.json approved.json escalated.json e2e.json; do
   [ -f "$RUN_DIR/$artifact" ] || \
     refuse 1 "$RUN_DIR has no $artifact — this is not a completed review run"
 done
@@ -119,6 +119,50 @@ CURRENT_FINGERPRINT="$(tree_fingerprint)"
 [ -n "$REVIEWED_FINGERPRINT" ] || refuse 2 "$RUN_DIR/meta.json has no tree fingerprint"
 [ "$REVIEWED_FINGERPRINT" = "$CURRENT_FINGERPRINT" ] || \
   refuse 2 "the tree changed after this review ran — review again before landing"
+
+# ---------------------------------------------------------------------------
+# 3, end-to-end half. The run's end-to-end tests passed on this tree, on every
+#    platform the tree ships, through the harness as the user committed it.
+#    Only files are read: the devices ran in review.sh, and condition 2 binds
+#    that run to this tree. `.review/` is outside the reviewed diff and the
+#    fingerprint, so a harness changed to pass without a test running would
+#    otherwise go unseen.
+# ---------------------------------------------------------------------------
+
+PLATFORMS_NOW="$(platforms | jq -R . | jq -sc .)"
+jq -e --arg fingerprint "$CURRENT_FINGERPRINT" --argjson need "$PLATFORMS_NOW" \
+  '.status == "pass" and .fingerprint == $fingerprint and (($need - .platforms) | length) == 0' \
+  "$RUN_DIR/e2e.json" >/dev/null 2>&1 || \
+  refuse 3 "the end-to-end tests of this run did not pass on every platform the tree ships: "\
+"$(printf '%s' "$PLATFORMS_NOW" | jq -r 'join(" ")')"
+
+# The harness is `.review/e2e.sh` and any `.review/e2e-*` it calls: each must be
+# in HEAD as it ran (recorded before the run) and as it is now, and none may be
+# missing from HEAD.
+HARNESS_COMMITTED="$(git -c core.quotePath=false ls-tree HEAD -- "$REVIEW_DIR/" \
+  | awk -F'\t' '$2 ~ /^\.review\/e2e(\.sh$|-)/ { split($1, field, " "); print field[3] " " $2 }' \
+  | sort)"
+case "$HARNESS_COMMITTED" in *" $REVIEW_DIR/e2e.sh"*) ;; *) HARNESS_COMMITTED="" ;; esac
+[ -n "$HARNESS_COMMITTED" ] && [ "$(harness_blobs)" = "$HARNESS_COMMITTED" ] \
+  && [ "$(jq -r '.harness // ""' "$RUN_DIR/e2e.json")" = "$HARNESS_COMMITTED" ] || \
+  refuse 3 "$REVIEW_DIR/e2e.sh is not committed as it ran, or a $REVIEW_DIR/e2e-* beside it "\
+"is not — the user commits the harness"
+
+# Every test a case of qa/test-cases.md names now, under that case, was one the run
+# was checked against. The cases are one of the loop's own files, outside condition
+# 2: a mark written since the run names a test no run has seen pass. Checked again
+# after the gates, which run between here and the commit.
+marks_checked_by_run() {
+  local now unchecked
+  now="$(case_marks | marks_json)" || refuse 3 "could not read the marks of qa/test-cases.md"
+  unchecked="$(jq -r --argjson now "$now" \
+    '$now - (.marks // []) | map("\(.case) \(.test)") | join(", ")' "$RUN_DIR/e2e.json")" || \
+    refuse 3 "$RUN_DIR/e2e.json is unreadable"
+  [ -z "$unchecked" ] || \
+    refuse 3 "qa/test-cases.md names end-to-end tests this run was not checked against: "\
+"$unchecked — review again before landing"
+}
+marks_checked_by_run
 
 # ---------------------------------------------------------------------------
 # 4 & 5. No outstanding findings, no pending escalations.
@@ -177,8 +221,12 @@ done < <(jq -r '.scope[]?' "$TASK_FILE")
 # that last part true. Policy and threshold changes are the user's to commit.
 # The decision logs are the one exception, below. So are the loop's own files, which
 # need a task to land with: alone, they are not a task.
-EVERY_CHANGE="$( { git diff --name-only; git diff --cached --name-only;
-                   git ls-files --others --exclude-standard; } | sort -u )"
+# Names as they are (core.quotePath=false): a quoted non-ASCII name matches no
+# scope and is no file to stage.
+EVERY_CHANGE="$( { git -c core.quotePath=false diff --name-only;
+                   git -c core.quotePath=false diff --cached --name-only;
+                   git -c core.quotePath=false ls-files --others --exclude-standard; } \
+                 | sort -u )"
 CHANGED_FILES="$(printf '%s\n' "$EVERY_CHANGE" | only_task_work)"
 [ -n "$CHANGED_FILES" ] || refuse 6 "nothing to commit outside .review/ and the loop's own files"
 
@@ -224,6 +272,87 @@ UNVERIFIED=\
 "$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | length' "$TASK_FILE")"
 [ "$UNVERIFIED" -eq 0 ] || \
   refuse 7 "$UNVERIFIED exit criterion/criteria have no verified_by claim"
+
+#    /qa checked the task, and each failure it recorded — in a qa.json, or in
+#    the qa_failures an e2e.json of this task took from one, which outlasts a
+#    qa.json rewritten or removed — has a test its case is marked with that
+#    failed in a run of this task made after /qa recorded it: passing in this
+#    run, or skipped in it under a tag of the case for the task it belongs to.
+#    Or the user answered it. No test stays skipped for the task that lands
+#    now. Every record is read: an unreadable one refuses, never reads as "no
+#    failures".
+
+QA_RECORDS="$(for record in "$REVIEW_DIR"/runs/*/qa.json; do
+    [ -f "$record" ] || continue
+    jq -c . "$record" || exit 1
+  done | jq -sc --arg id "$TASK_ID" '
+    map(select(.task == $id))
+    | if all(.[]; (.failures | type) == "array"
+                  and all(.failures[]; (.case? // "") | test("^TC-[0-9]+$")))
+      then . else error("malformed") end')" || \
+  refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]} — "\
+"refusing to read it as no failures"
+[ "$(printf '%s' "$QA_RECORDS" | jq 'length')" -gt 0 ] || \
+  refuse 7 "no /qa record (qa.json) for $TASK_ID — /qa has not checked this task"
+
+SKIP_TAGS="$(skip_tags)"
+[ $? -le 1 ] || refuse 7 "could not search the tree for skipped end-to-end tests"
+for task in $(printf '%s' "$TASK_ID" | tr '+' ' '); do
+  STILL_SKIPPED="$(printf '%s\n' "$SKIP_TAGS" | awk -F'\t' -v task="$task" '
+    { split($1, tag, ": "); n = split(tag[1], ids, "+")
+      for (i = 1; i <= n; i++)
+        if (ids[i] == task) { cases = cases " " tag[2]; files = files " " $2 } }
+    END { if (cases != "")
+            print substr(cases, 2) " is still skipped for " task " — make it pass:" files }')"
+  [ -z "$STILL_SKIPPED" ] || refuse 7 "the end-to-end test of $STILL_SKIPPED"
+done
+
+RUNS_OF_TASK="$(for record in "$REVIEW_DIR"/runs/*/e2e.json; do
+    [ -f "$record" ] || continue
+    jq -c . "$record" || exit 1
+  done | jq -sc --arg id "$TASK_ID" '[.[] | select(.task == $id)
+    | {qa: (.qa_failures // []), failed: [.results[]?.failed[]?]}]')" || \
+  refuse 7 "an e2e.json is unreadable — refusing to read it as no failures"
+FAILURES="$(jq -nc --argjson records "$QA_RECORDS" --argjson runs "$RUNS_OF_TASK" \
+  '[$records[].failures[].case] + [$runs[].qa[]] | unique')" || \
+  refuse 7 "could not gather the /qa failures of $TASK_ID"
+NOW="$(jq -c '{passed: [.results[]?.passed[]?], skipped: [.results[]?.skipped[]?]}' \
+  "$RUN_DIR/e2e.json")" || \
+  refuse 7 "$RUN_DIR/e2e.json is unreadable"
+# Only the user's answer counts, and only one that lets the task land: `fixed`
+# means review again (maintain, step 7).
+ANSWERED="[]"
+if [ -f "$RUN_DIR/escalations-answered.json" ]; then
+  require_array_length "$RUN_DIR/escalations-answered.json" >/dev/null && \
+  ANSWERED="$(jq -c '[.[] | select(.by == "human"
+      and (.resolution == "accepted-as-is" or .resolution == "deferred"))
+    | .finding_id]' "$RUN_DIR/escalations-answered.json")" || \
+    refuse 7 "$RUN_DIR/escalations-answered.json is unreadable — refusing to assume an answer"
+fi
+
+UNPROVEN=""
+for case_id in $(printf '%s' "$FAILURES" | jq -r '.[]'); do
+  TESTS="$(case_tests "$case_id" | while IFS= read -r test_id; do
+      tagged=false
+      skip_tag_on "$SKIP_TAGS" "$case_id" "$test_id" && tagged=true
+      jq -nc --arg test "$test_id" --argjson tagged "$tagged" '{test: $test, tagged: $tagged}'
+    done | jq -sc .)"
+  jq -en --argjson tests "$TESTS" --argjson runs "$RUNS_OF_TASK" --argjson now "$NOW" \
+        --argjson answered "$ANSWERED" --arg case "$case_id" "$JQ_HIT"'
+    def among($rows): . as $id | any($rows[]; hit($id));
+    ($answered | index($case)) != null
+      or any($tests[]; . as $mark
+             | any($runs[]; . as $run
+                   | ($run.qa | index($case)) != null and ($mark.test | among($run.failed)))
+               and (($mark.test | among($now.passed))
+                    or ($mark.tagged and ($mark.test | among($now.skipped)))))' \
+    >/dev/null || UNPROVEN="$UNPROVEN $case_id"
+done
+[ -z "$UNPROVEN" ] || \
+  refuse 7 "a /qa failure without an end-to-end test seen red, then green:$UNPROVEN — "\
+"mark the case with its test (e2e: \`<test>\`), see it fail in a run of $TASK_ID made after /qa "\
+"recorded it, then pass; where no end-to-end test can see it, the user answers it in "\
+"$RUN_DIR/escalations-answered.json (by: human, accepted-as-is or deferred)"
 
 # ---------------------------------------------------------------------------
 # 8. Never onto a protected branch, never onto a detached HEAD, and at the levels
@@ -412,6 +541,7 @@ fi
 # rather than trusting the rule that gates must not modify the tree.
 [ "$(tree_fingerprint)" = "$REVIEWED_FINGERPRINT" ] || \
   refuse 2 "the tree changed while the gates ran — review again before landing"
+marks_checked_by_run
 
 # The one branch this script may create. `git switch -c` starts from HEAD and
 # leaves the tree and the index alone, so the uncommitted task moves with it; if

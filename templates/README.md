@@ -91,6 +91,7 @@ and needs no override.
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
 | `review/lib/schemas/*.json` | submodule | Findings and verdicts schemas — the enforcement mechanism |
 | `review/project/gates.sh` | project | Layer 0 — the five deterministic gates, per stack |
+| `review/project/e2e.sh` | project | The end-to-end tests of one platform, leaving JUnit XML that `review.sh` counts; the stub never passes |
 | `review/project/REVIEW_POLICY.md` | project | The maintainer's rubric; grows with every disagreement |
 | `review/project/land.conf` | project | Landing and advancing switches |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
