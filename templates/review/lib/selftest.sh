@@ -156,7 +156,7 @@ review "no findings is clean" 0 "CLEAN — gates green, no verified findings." \
 e2e_check "after a passing end-to-end run /qa may go on" 0 "check exited 0"
 review "an accepted finding goes to the executor" 3 "accepted (>= major): 1" \
   "$(finding '"bug"')" "$(verdict '"accept"' no-rule-fired)"
-review "an escalated finding goes to the user" 4 "escalated         : 1" \
+review "an escalated finding waits for an answer" 4 "escalated         : 1" \
   "$(finding '"bug"')" "$(verdict '"escalate"' needs-human-judgment)"
 review "a category outside the schema fails closed" 1 "reviewer output does not match" \
   "$(finding '"opinion"')" "$(verdict '"accept"' no-rule-fired)"

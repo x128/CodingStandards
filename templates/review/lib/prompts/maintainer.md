@@ -36,7 +36,7 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
    own task.
 6. **`confidence: possible` with no counterexample → `reject`** (`unproven-possible`). Exception,
    *within this rule only*: when such a finding is `category: security`, `escalate` instead of
-   rejecting — an unproven security guess is worth a human's minute. This rule does not fire at all
+   rejecting — an unproven security guess is worth finding out. This rule does not fire at all
    on a `confirmed` or `likely` finding, security or otherwise: a proven security bug is an ordinary
    `accept` and goes straight to the executor.
 7. **Architectural judgment, or a gate that conflicts with a finding → `escalate`**
@@ -56,7 +56,7 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
 - `escalate` is a correct, cheap outcome. Use it instead of guessing.
 - At every `LANDING` but `off`, you land through `land.sh` and `publish.sh` alone. Never run git
   yourself, and never work around a landing refusal — a refusal names a condition that is not met,
-  and the answer is to meet it or escalate.
+  and the answer is to meet it or tell the user.
 - You may lower a severity the reviewer inflated, and raise one a policy rule says is higher. Derive
   it from the rule level, not from tone.
 

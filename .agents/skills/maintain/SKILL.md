@@ -73,8 +73,10 @@ done directly.
    gathered in the tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md,
    "Task Rules").
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
-   and decide in the open with the user: extend (the shape is right), refactor first (as its own
-   task, landing before this one), or deviate (say why). Never fold a refactor into the task.
+   and decide by the standards and the code: extend (the shape is right), refactor first (as its
+   own task, landing before this one), or deviate (say why). Refactor first changes what the user
+   pays for and when: ask them in what it costs and what it saves, never in the code. Never fold a
+   refactor into the task.
 4. **The work**, inside the scope; an agent that does it runs on the role `EXECUTOR` of
    `.claude/agents.conf`. A file outside the scope is a scope change for the user to approve. When
    copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
@@ -115,9 +117,13 @@ done directly.
 
    Record for each accepted finding what was done and why, "nothing, because …" included. A round
    where every finding produced an edit is a warning sign.
-7. **Escalations** (exit `4`): put each to the user with the reasoning; record the answer in
-   `<run-dir>/escalations-answered.json` — `accepted-as-is`, `deferred` (proposed as its own
-   task), or `fixed` (then review again); format:
+7. **Escalations** (exit `4`): answer each yourself. Find out first — read the code, run the check
+   that settles it — then decide. How the code is written — copies, names, constants, test tags,
+   where a file lives, a design inside the plan's decisions — never reaches the user, as a question
+   or in the report. Only what changes what they see in the app, what a task covers or costs, a
+   decision of the plan, or a library the plan does not name goes to them, in their words. Record
+   the answer in `<run-dir>/escalations-answered.json` — `accepted-as-is`, `deferred` (proposed as
+   its own task), or `fixed` (then review again), `by: agent` or `by: human`; format:
    `templates/review/project/escalations-answered.example.json`. Append one line to
    `.review/decisions/escalations.jsonl`, which lasts when run directories do not: the task, the
    run, the finding with its `code_quote`, the answer and the reason (format:
@@ -126,7 +132,8 @@ done directly.
 8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
    step 7 is answered. What it reports as failing or unproven goes back to whoever does the work,
    with the text of step 6, and the task is reviewed again (step 5) — once; a second failing `/qa`
-   is escalated as in step 7. Each failure goes back with its case; the end-to-end test of that case
+   is escalated as in step 7, and a failing case of `qa/test-cases.md` is what the user sees, so its
+   answer is theirs (`by: human`). Each failure goes back with its case; the end-to-end test of that case
    is written and seen failing before the fix, the case is marked `e2e: <test>` with it, and the fix
    makes it pass; the second `/qa` takes from `qa/test-cases.md` only the cases the fix can reach. A
    defect `/qa` finds that the change did not bring is fixed now, or its end-to-end test stays
@@ -157,7 +164,7 @@ done directly.
    further, stop and tell the user to change it or that answer. A lower `LANDING` is the user's to
    set, `off` above all: go on, and say so in the report. Exit codes: `0` landed, as far as
    `LANDING` says, `3` refused, `4` the commit landed but publishing did not finish, `1` error. A
-   refusal names its condition: meet it or escalate; never work around it. A changed tree or an
+   refusal names its condition: meet it or tell the user; never work around it. A changed tree or an
    unfinished run means review again (step 5); a landing that fails at or after its gates may be
    retried once on the same run, and a second time means review again. With `LANDING=off`, `land.sh`
    prints the files, the message and the commands: give the user the files and the message as
@@ -193,11 +200,10 @@ done directly.
       object; with `LANDING=off`, commit; at `push`, merge the branch; at `pr`, merge the pull
       request; and at both, go back to the base branch and update it, so the next task starts there;
       at every level commit the decision logs and the policy rules under `.review/`, and the
-      requirements and the plan if they changed — then what changed, the findings accepted and what
-      was done, the findings rejected and why, the results of the build, test, format, lint and
-      architecture checks, what `/qa` checked and found, the commit, the branch and the pull
-      request, and the findings in `optional.json` (accepted below the threshold and not acted on),
-      and the questions of step 10. Then wait. On acceptance — with `LANDING=off`, once the user
+      requirements and the plan if they changed — then what changed, the results of the build, test,
+      format, lint and architecture checks, what `/qa` checked and found, the commit, the branch and
+      the pull request, and the questions of step 10. The review's findings and their answers stay
+      in `.review/` (steps 6 and 7). Then wait. On acceptance — with `LANDING=off`, once the user
       says it is committed — go to step 1. At `merge` the task is already in main: an objection is a
       new task on top of it, or a revert the user makes.
     - `ADVANCE=auto`, at any `LANDING` but `off`: go on without waiting, with one line saying which

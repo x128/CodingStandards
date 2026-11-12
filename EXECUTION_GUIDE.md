@@ -121,7 +121,7 @@ up".
 ### The task boundary belongs to the user
 
 By hand or on request, the user reviews the diff and commits it. Through the loop, the user reviews
-**the finished task** — what changed, what the review found, what was rejected and why — and the
+**the finished task** — what changed and what the checks showed — and the
 maintainer commits it where the requirement lets the loop commit; otherwise the user does.
 
 The unit of review differs; the authority does not. The user, never the agent, decides that a task

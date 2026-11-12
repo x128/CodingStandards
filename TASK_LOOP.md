@@ -86,8 +86,8 @@ Three roles. The third one owns the tree.
                                     land.sh          escalate
                                     (commit, publish)   │
                                          │              ▼
-                                         ▼            HUMAN
-                                    next task
+                                         ▼          answered
+                                    next task    (/maintain, step 7)
 ```
 
 | Role | Decides | Power |
@@ -354,10 +354,14 @@ Decision rules, first match wins:
 6. **`possible` confidence with no counterexample → reject**, except
    `category: security`, which escalates instead. The rule does not reach a
    `confirmed` or `likely` finding at all — a proven security bug is an
-   ordinary accept, and escalating it would delay a real fix behind a human.
+   ordinary accept, and escalating it would delay a real fix behind an answer.
 7. **Architectural judgment, or gate/finding conflict → escalate.**
 8. **No rule above fires → accept** (`no-rule-fired`): the finding stands on its
    own evidence. It is not a policy rule matching, and is not logged as one.
+
+An escalation is answered before landing; who answers it, and when it reaches the user, is
+`/maintain`, step 7, whatever the name of the rule that raised it (`needs-human-judgment` is kept
+for the logs).
 
 `lib/prompts/maintainer.md` is fed to the maintainer by `review.sh` and is
 **normative**; this section explains the rules rather than restating them, and
@@ -381,7 +385,7 @@ is the most effective dial in the pipeline: raise it when diffs bloat, lower it 
 **Rounds go on while review keeps finding less.** Every review reads the whole
 change, so on a large change a later round finds what an earlier one missed; three
 or four rounds are normal. New findings of a later round go to the executor like
-those of the first. A finding goes to the user only when the fix does not
+those of the first. A finding is escalated only when the fix does not
 converge: the same `file:line` accepted in two consecutive rounds, or a round that
 accepts as many findings as the one before it, or more.
 
@@ -481,7 +485,7 @@ back to the base branch while its next line waits in the tree.
 | 2 | The run's tree fingerprint matches the tree now, the loop's own files apart | A review of a tree that has since changed is not a review of what is being committed |
 | 3 | Gates re-run green **now**; the run's end-to-end tests passed on every platform the tree ships, with every `e2e:` mark `qa/test-cases.md` has now, and `.review/e2e.sh` is committed | Cheap insurance; catches a drifted environment |
 | 4 | Zero accepted findings at or above the run's threshold | Nothing outstanding |
-| 5 | Zero pending escalations | A human owes an answer |
+| 5 | Zero pending escalations | An escalation is owed an answer |
 | 6 | Changed files ⊆ the task's declared scope, the loop's own files apart | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim; `/qa` recorded the task in a `qa.json`, each `/qa` failure has its end-to-end test seen failing, then passing — or skipped for the task it belongs to, or answered by the user — and no test is skipped for this task | The tracker's definition of done, with the claim recorded in the commit |
 | 8 | `LANDING` is a known level and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
@@ -754,8 +758,8 @@ After the landing step, the maintainer either asks you or takes the next task.
 
 `ADVANCE=ask` — the default, and where every project begins.
 
-The maintainer presents the finished task: what changed, which findings were accepted and how they
-were addressed, which were rejected and why, and the gate results. You accept, or you object. On
+The maintainer presents the finished task: what changed, the gate results, and what `/qa` found. The
+review's findings, and how each was answered, stay in `.review/`. You accept, or you object. On
 acceptance — and with `LANDING=off`, once you have committed it — it takes the next unblocked task
 from the tracker and starts the loop again. At `merge` you are shown a task already in main; the
 loop waits for you, main did not.
@@ -773,7 +777,7 @@ yours to do, in `land.conf`.
 The decision is *not* "is this code good" — gates and review already answered
 that. It is "is this task trivial enough that a human would have nothing to
 say", and it is yours. What the maintainer may report to help you make it are
-deterministic signals — diff size, paths touched, findings raised, rounds used,
+deterministic signals — diff size, paths touched, how many findings were raised, rounds used,
 whether behaviour changed without a test, the task category, and your history in
 those paths. That sentence is the whole list — there is no table elsewhere, and
 no score derived from it.

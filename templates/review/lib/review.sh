@@ -25,7 +25,7 @@
 #   2  gates or end-to-end tests red — send the executor back with the output,
 #      no LLM review
 #   3  accepted findings remain — hand them to the executor
-#   4  escalations — a human decides
+#   4  escalations — answered before landing (maintain, step 7)
 #   5  review unusable — every finding failed quote verification; re-run
 #   6  the task has had ASK_AFTER_RUNS runs — nothing ran; the user decides
 #      whether another one is worth it (--past-limit runs it)
@@ -744,8 +744,8 @@ echo
 echo "── review complete: $RUN_DIR"
 echo "   verified findings : $FINDING_COUNT   (of $RAW_COUNT reported, $DROPPED_COUNT dropped)"
 echo "   accepted (>= $THRESHOLD): $APPROVED_COUNT   → approved.json, for the executor"
-echo "   accepted (below)  : $OPTIONAL_COUNT   → optional.json, for the user"
-echo "   escalated         : $ESCALATED_COUNT   → escalated.json, for the user"
+echo "   accepted (below)  : $OPTIONAL_COUNT   → optional.json, not acted on"
+echo "   escalated         : $ESCALATED_COUNT   → escalated.json, to answer"
 echo "   rejected          : $REJECTED_COUNT"
 
 [ "$ESCALATED_COUNT" -gt 0 ] && exit 4

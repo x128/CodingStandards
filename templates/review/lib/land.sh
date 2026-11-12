@@ -176,14 +176,14 @@ APPROVED_COUNT="$(require_array_length "$RUN_DIR/approved.json")" || \
 ESCALATED_COUNT="$(require_array_length "$RUN_DIR/escalated.json")" || \
   refuse 5 "escalated.json is unreadable — refusing to assume it is empty"
 
-# An escalation is answered, not waited out. The human's answer is recorded in
+# An escalation is answered, not waited out. The answer is recorded in
 # escalations-answered.json — one entry per escalated finding — and only then
 # does landing proceed. Without this an escalated finding (every replication
 # finding, for one) could never land at all: re-running the review reproduces it.
 if [ "$ESCALATED_COUNT" -gt 0 ]; then
   ANSWERS="$RUN_DIR/escalations-answered.json"
   [ -f "$ANSWERS" ] || \
-    refuse 5 "$ESCALATED_COUNT escalation(s) are waiting on a human — "\
+    refuse 5 "$ESCALATED_COUNT escalation(s) are waiting for an answer — "\
 "record the answers in $ANSWERS"
   # The same discipline conditions 4 and 5 apply above, and for the same reason:
   # a jq that dies on a malformed answers file prints nothing, and nothing is

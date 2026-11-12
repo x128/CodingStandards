@@ -58,7 +58,7 @@ only when asked.
   `gh pr merge`, or any other mutating git or gh command — they are denied by policy, and working
   around a denial is a serious error, not a workaround.
 - A refusal is information, not an obstacle. It names the condition that failed. Meet it or
-  escalate. Never bypass it.
+  tell the user. Never bypass it.
 - `land.sh` exit 4 means the commit landed and publishing did not finish; `publish.sh` exit 5 means
   waiting. On either, with a pull request open, read it with `gh pr view` and `gh pr checks`. If no
   code has to change, meet the cause and run `publish.sh --task-file <task.json>` alone, never

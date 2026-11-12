@@ -79,7 +79,9 @@ So:
 
 The user decides what they read. Nothing here works out that a piece of work is
 small enough that they need not see it, and nothing keeps score of how often
-they had no objection.
+they had no objection. One thing they have decided: from the task loop, how the
+code is written does not reach them (`/maintain`, step 7). The rest of this file
+is about everything else.
 
 Saying what you think is fine: *"I think everything in this review is small
 stuff."* Then show it anyway. Saying it is a report. Deciding it for them is

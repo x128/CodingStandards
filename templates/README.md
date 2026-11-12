@@ -95,7 +95,7 @@ and needs no override.
 | `review/project/REVIEW_POLICY.md` | project | The maintainer's rubric; grows with every disagreement |
 | `review/project/land.conf` | project | Landing and advancing switches |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
-| `review/project/escalations-answered.example.json` | project | How a human's answer to an escalation is recorded |
+| `review/project/escalations-answered.example.json` | project | How the answer to an escalation is recorded |
 | `review/project/decisions/` | project | Decision log format (training data) |
 | `qa/test-cases.example.md` | project | The format of the project's `qa/test-cases.md`: every case of the product, walked by `/qa` or run by an end-to-end test |
 | `agents/agents.conf` | project | The model and effort of each role |
