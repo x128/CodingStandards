@@ -106,11 +106,12 @@ Where the requirement "Who writes to git" says so, the loop commits — that is 
 maintainer role — and, as far as it says, pushes, opens a pull request and merges it. It does so
 through exactly two scripts. The answer is the permission: `/maintain --init` writes it to
 `.review/land.conf`, and one line there revokes it. `land.sh` refuses unless eight conditions hold,
-stages *and commits* only the task's declared files and the files the loop keeps as it goes (the
-tracker, the test cases), and has no code path for push, amend or force; the only branch it may
-create or move to is `task/<id>`. `publish.sh` has no code path for commit, amend or force, and
-publishes only what landings made. The loop reaches main only through a pull request, never a direct
-commit ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
+stages *and commits* only the task's declared files, the files the loop keeps as it goes (the
+tracker, the test cases) and the end-to-end harness the task changed; it has no code path for push,
+amend or force, and the only branch it may create or move to is `task/<id>`. `publish.sh` has no
+code path for commit, amend or force, and publishes only what landings made. The loop reaches main
+only through a pull request, never a direct commit
+([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
 
 Everything about the loop's landing is what makes it different from an agent running `git commit`:
 it is delegated in advance, narrow in what it can do, revocable, and auditable in the commit

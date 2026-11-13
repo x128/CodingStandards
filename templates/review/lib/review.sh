@@ -100,9 +100,9 @@ done
   exit 1
 }
 
-# The task file has to live under `.review/`. That directory is the one place
-# excluded from the tree fingerprint, and the loop writes `verified_by`
-# into the task file AFTER this review has run. Anywhere else, that write changes
+# The task file has to live under `.review/`. That directory, the end-to-end harness
+# apart, is the one place excluded from the tree fingerprint, and the loop writes
+# `verified_by` into the task file AFTER this review has run. Anywhere else, that write changes
 # the fingerprint and landing refuses with "the tree changed after this review" —
 # on every task, with nothing in the message pointing at the real cause.
 if [ -n "$TASK_FILE" ]; then
@@ -495,15 +495,18 @@ else
 fi
 # `.review/` is pipeline bookkeeping, not task code: land.sh never stages it,
 # so the reviewer must not spend findings on it either. The same goes for the requirements,
-# the plan and the tracker, which land with the task but are not its code.
+# the plan and the tracker, which land with the task but are not its code. The end-to-end
+# harness is the exception: it lands with the task that changes it, so it is reviewed.
 git diff "$DIFF_FROM" -- . "${NOT_TASK_WORK[@]}" >"$RUN_DIR/diff.patch"
+git diff "$DIFF_FROM" -- "${HARNESS[@]}" >>"$RUN_DIR/diff.patch"
 
 # Untracked files are invisible to `git diff` but land.sh will commit them, so
 # a whole new source file would otherwise be committed with no review at all.
 while IFS= read -r untracked; do
   [ -n "$untracked" ] || continue
   git diff --no-index -- /dev/null "$untracked" >>"$RUN_DIR/diff.patch" 2>/dev/null
-done < <(git ls-files --others --exclude-standard | only_task_work)
+done < <(git ls-files --others --exclude-standard | only_task_work;
+         git ls-files --others --exclude-standard -- "${HARNESS[@]}")
 
 if [ ! -s "$RUN_DIR/diff.patch" ]; then
   echo "no changes against ${BASE:-HEAD} — nothing to review"
@@ -693,12 +696,16 @@ fi
   if [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ]; then
     echo "## The task: scope and exit criteria"
     echo "Decision rule 5 (out of task scope) and any scope-based policy rule are"
-    echo "judged against this. Files outside .scope are not this task's problem."
+    echo "judged against this. Files outside .scope are not this task's problem, except the"
+    echo "end-to-end harness (.review/e2e.sh, .review/e2e-*): it lands with the task that"
+    echo "changes it."
     cat "$TASK_FILE"
     echo
     echo "## Files changed in this diff"
     git diff --name-only "$DIFF_FROM" -- . "${NOT_TASK_WORK[@]}"
     git ls-files --others --exclude-standard | only_task_work
+    git diff --name-only "$DIFF_FROM" -- "${HARNESS[@]}"
+    git ls-files --others --exclude-standard -- "${HARNESS[@]}"
     echo
   else
     echo "## No task file supplied"

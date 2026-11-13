@@ -5,8 +5,8 @@
 #
 # THIS FILE BELONGS TO YOUR PROJECT, NOT TO THE SUBMODULE.
 # Copied once from CodingStandards/templates/review/project/ into your repo's
-# .review/, filled in, and committed by the user: land.sh refuses a run whose
-# harness is not the committed one.
+# .review/ and filled in. It is reviewed and lands with the task that changes it;
+# land.sh refuses a run whose harness changed after it ran.
 #
 # Usage:   .review/e2e.sh <platform> <report-dir>
 #          platform: android, ios or app — what e2e-gate.sh finds in the tree
@@ -20,7 +20,8 @@
 # passes only when a test ran on it, none failed, and every test a case of
 # qa/test-cases.md names (e2e: `<test>`) passed on each platform that runs it.
 # It must leave the working tree as it found it. A script it calls from
-# .review/ is named .review/e2e-<name>.sh and committed with it.
+# .review/ is named .review/e2e-<name>.sh. A change to either is reviewed and
+# lands with the task that makes it.
 
 set -uo pipefail
 

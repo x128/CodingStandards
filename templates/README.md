@@ -61,7 +61,7 @@ CodingStandards/templates/review/lib/review.sh --task-file .review/current-task.
 
 Requires `jq` >= 1.6 and `git` >= 2.23, and `gh` at `LANDING=pr` and `merge`. The task file must
 live under `.review/` — `review.sh` refuses otherwise, because that is the only directory outside
-the tree fingerprint.
+the tree fingerprint, the end-to-end harness apart.
 
 ## Overriding a shared file
 

@@ -32,14 +32,13 @@ git init -q -b main || fail_setup "git init"
 git config user.email selftest@example.com && git config user.name selftest \
   || fail_setup "git config"
 printf 'fun answer() = 41\n' >src/answer.kt
-# The cases and the end-to-end harness are committed with the code, as land.sh
-# requires of the harness. The fake harness leaves one JUnit report per platform
-# in which the tests of both cases pass, unless a case sets another report
-# (E2E_XML, or E2E_XML_<platform> for one platform, or E2E_REPORT, a file to
-# copy), where it goes inside the report folder (E2E_NAME), a second place it is
-# copied to (E2E_ALSO), another exit code (E2E_EXIT), the one platform it runs on
-# (E2E_ONLY) or a file it appends to (E2E_TOUCH). Each published project below
-# commits the same harness.
+# The cases and the end-to-end harness start committed with the code. The fake
+# harness leaves one JUnit report per platform in which the tests of both cases pass,
+# unless a case sets another report (E2E_XML, or E2E_XML_<platform> for one platform,
+# or E2E_REPORT, a file to copy), where it goes inside the report folder (E2E_NAME), a
+# second place it is copied to (E2E_ALSO), another exit code (E2E_EXIT), the one
+# platform it runs on (E2E_ONLY) or a file it appends to (E2E_TOUCH). Each published
+# project below commits the same harness.
 cat >qa/test-cases.md <<'EOF'
 # Test cases
 
@@ -674,11 +673,18 @@ e2e_land "a run without end-to-end tests is not a completed run" 3 "condition 1:
   .review/T-007.json "$run_of_t007"
 mv "$WORK/e2e.json" "$run_of_t007/e2e.json"
 printf '# changed\n' >>.review/e2e.sh
-e2e_land "a harness changed after its commit refuses" 3 "not committed as it ran" \
+e2e_land "a harness changed after the run refuses" 3 "the tree changed after this review ran" \
   .review/T-007.json "$run_of_t007"
 e2e_review "a run on a changed harness goes on" 0 "CLEAN — gates green" .review/T-007.json
+e2e_land "a harness changed before the run lands with the task" 0 "  .review/e2e.sh" \
+  .review/T-007.json "$last_run"
+cp "$last_run/e2e.json" "$WORK/e2e.ran.json"
+jq '.harness = "0000 .review/e2e.sh"' "$WORK/e2e.ran.json" >"$last_run/e2e.json"
+e2e_land "a harness that is not the one the run recorded refuses" 3 "is not as it ran" \
+  .review/T-007.json "$last_run"
+cp "$WORK/e2e.ran.json" "$last_run/e2e.json"
 git checkout -q -- .review/e2e.sh
-e2e_land "a run on a harness changed back since refuses" 3 "not committed as it ran" \
+e2e_land "a run on a harness changed back since refuses" 3 "the tree changed after this review ran" \
   .review/T-007.json "$last_run"
 mv .review/runs/0-qa-T-007 "$WORK/0-qa-T-007"
 e2e_land "a task /qa never checked refuses" 3 "no /qa record (qa.json) for T-007" \
@@ -755,9 +761,19 @@ printf '#!/usr/bin/env bash\nexit 0\n' >.review/e2e-app.sh
 chmod +x .review/e2e-app.sh
 e2e_review "a run beside an uncommitted .review/e2e-* goes on" 0 "CLEAN — gates green" \
   .review/T-008.json
-e2e_land "an uncommitted .review/e2e-* beside the harness refuses" 3 "not committed as it ran" \
+e2e_land "an uncommitted .review/e2e-* that ran lands with the task" 0 "  .review/e2e-app.sh" \
   .review/T-008.json "$last_run"
 rm .review/e2e-app.sh
+
+# A task of the harness alone: no file of its scope changed.
+new_task T-090
+printf 'fun answer() = 41\n' >src/answer.kt
+printf '# the harness alone\n' >>.review/e2e.sh
+e2e_review "a change of the harness alone is reviewed" 0 "CLEAN — gates green" .review/T-090.json
+e2e_land "a change of the harness alone lands as its own task" 0 "  .review/e2e.sh" \
+  .review/T-090.json "$last_run"
+git checkout -q -- .review/e2e.sh
+printf 'fun answer() = 42\n' >src/answer.kt
 
 new_task T-009 '[{"case": "TC-001"}]'
 e2e_review "a run with a /qa failure recorded goes on" 0 "CLEAN — gates green" .review/T-009.json

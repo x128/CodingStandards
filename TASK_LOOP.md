@@ -92,7 +92,7 @@ Three roles. The third one owns the tree.
 
 | Role | Decides | Power |
 |------|---------|-------|
-| Executor | How to write it | Edits files inside the task's scope |
+| Executor | How to write it | Edits files inside the task's scope, and the end-to-end harness |
 | Reviewer | What is broken | None — emits JSON, touches nothing |
 | Maintainer | What counts, whether another round is needed, what lands | Lands through two narrow scripts as far as the requirement "Who writes to git" lets the loop go; otherwise none |
 
@@ -211,11 +211,10 @@ exactly the "add a module" task, not an edge case.
 
 Writes code for **one task**.
 
-- **Narrow scope beats clever orchestration.** A tightly scoped task with an
-  explicit file boundary costs an order of magnitude less than a broad one, and
-  the landing contract can check it.
-- **Declares its scope.** The task's allowed paths come from the tracker; the
-  executor works inside them. Landing verifies the diff stayed there.
+- **Narrow scope beats clever orchestration.** A tightly scoped task with an explicit file boundary
+  costs an order of magnitude less than a broad one, and the landing contract can check it.
+- **Declares its scope.** The task's allowed paths come from the tracker; the executor works inside
+  them and in the end-to-end harness. Landing verifies the diff stayed there.
 - **Never reviews its own diff**, and never sees rejected findings.
 
 ### Findings are pointers, not instructions
@@ -350,7 +349,7 @@ Decision rules, first match wins:
    replication finding is *about* code outside the task and reports a count
    rather than a proof, so rules 5 and 6 would each silence it.
 5. **Out of task scope → reject**, and propose it to the user as a new task
-   rather than growing the diff.
+   rather than growing the diff. The end-to-end harness is in every task's scope.
 6. **`possible` confidence with no counterexample → reject**, except
    `category: security`, which escalates instead. The rule does not reach a
    `confirmed` or `likely` finding at all — a proven security bug is an
@@ -467,7 +466,10 @@ objection becomes a new task on top of it, or a revert you make, since no agent 
 At every answer a commit of the loop holds the task's files and the files the loop keeps as it goes:
 `TASK_TRACKER.md` and `qa/test-cases.md`. These are in no task's scope and are written after the
 review, so the reviewer and conditions 2 and 6 leave them out. They land with the task, or a line in
-the tracker would refuse the next task and the two would reach main only by hand.
+the tracker would refuse the next task and the two would reach main only by hand. The end-to-end
+harness lands with the task that changed it too, but as reviewed work: it is in the reviewed diff
+and in the fingerprint of condition 2, so a harness changed to pass without a test running does not
+go unseen.
 
 `REQUIREMENTS.md` and `PLAN.md` change only with your answer, so no landing commits them, and
 neither the reviewer nor conditions 2 and 6 count them as task work. They stay in the working tree
@@ -483,10 +485,10 @@ back to the base branch while its next line waits in the tree.
 |---|-----------|-----|
 | 1 | The run directory is a completed review run | An empty directory must never authorise a commit |
 | 2 | The run's tree fingerprint matches the tree now, the loop's own files apart | A review of a tree that has since changed is not a review of what is being committed |
-| 3 | Gates re-run green **now**; the run's end-to-end tests passed on every platform the tree ships, with every `e2e:` mark `qa/test-cases.md` has now, and `.review/e2e.sh` is committed | Cheap insurance; catches a drifted environment |
+| 3 | Gates re-run green **now**; the run's end-to-end tests passed on every platform the tree ships, with every `e2e:` mark `qa/test-cases.md` has now, and `.review/e2e.sh` is as it ran; a change to it is reviewed and lands with the task | Cheap insurance; catches a drifted environment |
 | 4 | Zero accepted findings at or above the run's threshold | Nothing outstanding |
 | 5 | Zero pending escalations | An escalation is owed an answer |
-| 6 | Changed files ⊆ the task's declared scope, the loop's own files apart | The diff did not sprawl |
+| 6 | Changed files ⊆ the task's declared scope, the loop's own files and the end-to-end harness apart | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim; `/qa` recorded the task in a `qa.json`, each `/qa` failure has its end-to-end test seen failing, then passing — or skipped for the task it belongs to, or answered by the user — and no test is skipped for this task | The tracker's definition of done, with the claim recorded in the commit |
 | 8 | `LANDING` is a known level and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
@@ -499,19 +501,19 @@ off removes the commit, never the contract. The one exception is the protected b
 that commits by hand on `main` still gets the files and the message. That is why `off` is what
 `land.sh` falls back to when nothing is set: it delegates nothing.
 
-**Condition 7 is the one with no mechanical backing.** It checks that a claim
-was *made*, not that it is true. `.review/` is excluded from the tree
-fingerprint on purpose — the task file is filled in after the review, and
-including it would invalidate every run before it could land — so nothing stops
-a false claim but the person writing it. It is an auditable assertion, not a
-proof. Anything genuinely checkable belongs in a gate, not in a criterion.
+**Condition 7 is the one with no mechanical backing.** It checks that a claim was *made*, not that
+it is true. `.review/`, the end-to-end harness apart, is excluded from the tree fingerprint on
+purpose — the task file is filled in after the review, and including it would invalidate every run
+before it could land — so nothing stops a false claim but the person writing it. It is an auditable
+assertion, not a proof. Anything genuinely checkable belongs in a gate, not in a criterion.
 
 Conditions 1, 2, and 4 exist because the dangerous failure is not a wrong
 judgment — it is a **missing** one reading as approval. An unreadable count, an
 absent artifact, or a stale run must refuse, never default to zero.
 
-Then, and only then, it stages **exactly the in-scope files and the loop's own** — never
-`git add -A` — and commits with trailers linking the task and the review run.
+Then, and only then, it stages **exactly the in-scope files, the loop's own and the changed
+end-to-end harness** — never `git add -A` — and commits with trailers linking the task and the
+review run.
 
 The commit is `git commit --only -- <those files>`, not a bare `git commit`. A bare commit writes
 the whole index, so anything the user had staged when the loop ran would ride along inside the
@@ -949,8 +951,9 @@ Use hooks for invariants, never for logic:
 - [ ] `publish.sh` never commits or forces, publishes only what landings made, and merges only this
       task's commits
 - [ ] The loop reaches main only through a pull request, never a direct commit
-- [ ] The tracker and the test cases land with the task; a line left in the tracker does not refuse
-      the next one; the requirements, the plan and the decision logs stay for you to commit
+- [ ] The tracker, the test cases and a changed end-to-end harness land with the task; a line left
+      in the tracker does not refuse the next one; the requirements, the plan and the decision logs
+      stay for you to commit
 - [ ] `LANDING` goes no further than the requirement "Who writes to git"; an unknown value refuses,
       and a change to `land.conf` asks you
 - [ ] `LANDING=off` kill switch works and is documented

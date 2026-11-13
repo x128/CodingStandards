@@ -17,6 +17,12 @@ LOOP_FILES=(TASK_TRACKER.md qa/test-cases.md)
 OWNER_FILES=(REQUIREMENTS.md PLAN.md)
 
 NOT_TASK_WORK=(':(exclude).review')
+
+# The end-to-end harness: `.review/e2e.sh` and any `.review/e2e-*` it calls. It lives
+# under `.review/` but is reviewed and lands like task work: a change to it is in the
+# reviewed diff and the fingerprint, and lands in the task's commit — so a harness
+# changed to pass without a test running does not go unseen.
+HARNESS=(.review/e2e.sh ':(glob).review/e2e-*')
 for loop_file in "${LOOP_FILES[@]}" "${OWNER_FILES[@]}"; do
   NOT_TASK_WORK+=(":(exclude)$loop_file")
 done
@@ -47,9 +53,9 @@ only_task_work() {
   done
 }
 
-# Fingerprint of everything the reviewer saw: HEAD and the tree outside `.review/`
-# and the loop's own files. review.sh records it; land.sh recomputes it and
-# refuses when it differs — a review of a tree that has since changed is not a
+# Fingerprint of everything the reviewer saw: HEAD, the tree outside `.review/` and
+# the loop's own files, and the end-to-end harness. review.sh records it; land.sh
+# recomputes it and refuses when it differs — a review of a tree that has since changed is not a
 # review of what is about to be committed. HEAD counts as the commit it names,
 # never as a branch name, so the task branch land.sh creates from HEAD leaves the
 # fingerprint as it was.
@@ -62,7 +68,7 @@ only_task_work() {
 # `.review/`. e2e-gate.sh checks with it that the end-to-end tests left the tree as
 # they found it, qa/test-cases.md included, whose marks name the tests a run must pass.
 tree_fingerprint() {
-  local scratch outside=("${NOT_TASK_WORK[@]}")
+  local scratch harness outside=("${NOT_TASK_WORK[@]}")
   [ "${1:-}" != --whole ] || outside=(':(exclude).review')
   scratch="$(mktemp -d)" || return 1
   # -p: git trusts an entry whose file is older than the index, so a copy that looks
@@ -70,11 +76,19 @@ tree_fingerprint() {
   cp -p "$(git rev-parse --git-path index)" "$scratch/index" 2>/dev/null
   {
     git rev-parse HEAD
-    # `.review/` is pipeline bookkeeping and is excluded on BOTH sides: the task
-    # file is tracked and is filled in (verified_by) after the review by design,
-    # so including it here would invalidate every run before it could land.
+    # `.review/` is pipeline bookkeeping and is excluded on BOTH sides, the harness
+    # apart (below): the task file is tracked and is filled in (verified_by) after the
+    # review by design, so including it here would invalidate every run before it
+    # could land.
     GIT_INDEX_FILE="$scratch/index" git add -A -- . "${outside[@]}" 2>/dev/null
     GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- . "${outside[@]}"
+    if [ "${1:-}" != --whole ]; then
+      # One pathspec at a time: given several, git stages nothing when one matches no file.
+      for harness in "${HARNESS[@]}"; do
+        GIT_INDEX_FILE="$scratch/index" git add -A -- "$harness" 2>/dev/null
+      done
+      GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- "${HARNESS[@]}"
+    fi
   } | sha256_stdin
   rm -rf "$scratch"
 }
@@ -486,7 +500,7 @@ skip_tag_on() {
 # The files of the end-to-end harness — `.review/e2e.sh` and any
 # `.review/e2e-*` it calls — one `<blob> <path>` per line, each as git stores
 # it: a symbolic link as its target's name. e2e-gate.sh records them before the
-# run; land.sh compares them with HEAD.
+# run; land.sh compares them with the harness at landing.
 harness_blobs() {
   local file
   for file in .review/e2e.sh .review/e2e-*; do

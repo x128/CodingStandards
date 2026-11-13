@@ -67,25 +67,25 @@ done directly.
 2. **Write `.review/current-task.json`** from the tracker entry: `id`, `title`, `category`, `scope`
    (path globs the work may touch), `exit_criteria` (format:
    `templates/review/project/task.example.json`). `land.sh` refuses anything outside the scope,
-   apart from the tracker and `qa/test-cases.md`, which land with every task, and the requirements
-   and the plan, which stay for the user; none of them is named in it. Where the tracker gives no
-   `category` or `scope`, propose them and ask the user. The exit criteria are the ones the task has
-   gathered in the tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md,
-   "Task Rules").
+   apart from the tracker and `qa/test-cases.md`, which land with every task, the end-to-end
+   harness, which lands with the task that changes it, and the requirements and the plan, which stay
+   for the user; none of them is named in it. Where the tracker gives no `category` or `scope`,
+   propose them and ask the user. The exit criteria are the ones the task has gathered in the
+   tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md, "Task Rules").
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
    and decide by the standards and the code: extend (the shape is right), refactor first (as its
    own task, landing before this one), or deviate (say why). Refactor first changes what the user
    pays for and when: ask them in what it costs and what it saves, never in the code. Never fold a
    refactor into the task.
 4. **The work**, inside the scope; an agent that does it runs on the role `EXECUTOR` of
-   `.claude/agents.conf`. A file outside the scope is a scope change for the user to approve. When
-   copying a shape, name its source (`src/api/orders.rs:44`) and record it as `replicates`.
-   `qa/test-cases.md` is kept by `/qa`; the work reads it and changes only the `e2e:` marks of
-   step 8. Before it hands over, it writes for `/qa` what the change may affect anywhere in the app:
-   every place that uses what it changed — callers, screens, background work, the other platform —
-   and the shared state, data, navigation, theme and settings it touched; what a user could now see
-   differently there, including what was not meant to change; and what it checked itself and what it
-   did not.
+   `.claude/agents.conf`. A file outside the scope, the end-to-end harness apart, is a scope change
+   for the user to approve. When copying a shape, name its source (`src/api/orders.rs:44`) and
+   record it as `replicates`. `qa/test-cases.md` is kept by `/qa`; the work reads it and changes
+   only the `e2e:` marks of step 8. Before it hands over, it writes for `/qa` what the change may
+   affect anywhere in the app: every place that uses what it changed — callers, screens, background
+   work, the other platform — and the shared state, data, navigation, theme and settings it touched;
+   what a user could now see differently there, including what was not meant to change; and what it
+   checked itself and what it did not.
 5. **The review pass:**
 
    ```bash

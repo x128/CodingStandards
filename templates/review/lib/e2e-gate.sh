@@ -111,7 +111,7 @@ WHOLE_TREE="$(tree_fingerprint --whole)"
 MARKS="$(case_marks)"
 PLATFORMS="$(platforms)"
 # Recorded before the run: a harness that rewrites itself while it runs would
-# otherwise leave the committed one behind as the one that ran.
+# otherwise leave another one behind as the one that ran.
 HARNESS_BEFORE="$(harness_blobs)"
 
 # The failures /qa has recorded for this task so far. A test that fails in this
@@ -220,7 +220,7 @@ fi
 
 if [ "$(harness_blobs)" != "$HARNESS_BEFORE" ]; then
   echo "   the harness changed while it ran — .review/e2e.sh and the .review/e2e-* it calls" >&2
-  echo "   must stay as they are: what ran is what land.sh compares with the commit" >&2
+  echo "   must stay as they are: what ran is what land.sh compares with the harness at landing" >&2
   exit 1
 fi
 

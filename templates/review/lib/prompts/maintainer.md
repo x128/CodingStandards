@@ -33,7 +33,7 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
    reject it too. Both would silence the one finding class nothing else produces.
 5. **Outside the task's scope → `reject`** (`out-of-task-scope`). A correct observation about code
    this task did not change does not belong in this diff. Say in `reason` that it should become its
-   own task.
+   own task. The end-to-end harness (`.review/e2e.sh`, `.review/e2e-*`) is in every task's scope.
 6. **`confidence: possible` with no counterexample → `reject`** (`unproven-possible`). Exception,
    *within this rule only*: when such a finding is `category: security`, `escalate` instead of
    rejecting — an unproven security guess is worth finding out. This rule does not fire at all

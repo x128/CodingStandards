@@ -6,9 +6,10 @@
 # the one file with commit authority, so it must not be widenable locally.
 #
 # It has no code path for push, amend, --force, rebase, checkout, reset, stash or
-# clean. It stages the task's declared files and the loop's own, and commits: on
-# the current branch, or at LANDING=push, pr and merge on task/<id>, the one
-# branch it may create and the only one it may move to. That is all it can do.
+# clean. It stages the task's declared files, the loop's own and the end-to-end
+# harness the task changed, and commits: on the current branch, or at LANDING=push,
+# pr and merge on task/<id>, the one branch it may create and the only one it may
+# move to. That is all it can do.
 # Whatever happens to the commit next is in publish.sh, which it calls and which
 # cannot commit.
 #
@@ -104,8 +105,8 @@ THRESHOLD="$(jq -r '.threshold // "major"' "$RUN_DIR/meta.json")"
 # ---------------------------------------------------------------------------
 
 # The run must belong to THIS task: the maintainer triaged against one task's
-# scope, and landing checks another's. `.review/` is outside the fingerprint, so
-# nothing else would catch a swapped task file.
+# scope, and landing checks another's. `.review/` (the harness apart) is outside the
+# fingerprint, so nothing else would catch a swapped task file.
 # Both sides are absolute: review.sh resolves the path before recording it, and
 # this script resolves its own argument the same way.
 REVIEWED_TASK="$(jq -r '.task_file // ""' "$RUN_DIR/meta.json")"
@@ -122,11 +123,10 @@ CURRENT_FINGERPRINT="$(tree_fingerprint)"
 
 # ---------------------------------------------------------------------------
 # 3, end-to-end half. The run's end-to-end tests passed on this tree, on every
-#    platform the tree ships, through the harness as the user committed it.
-#    Only files are read: the devices ran in review.sh, and condition 2 binds
-#    that run to this tree. `.review/` is outside the reviewed diff and the
-#    fingerprint, so a harness changed to pass without a test running would
-#    otherwise go unseen.
+#    platform the tree ships, through the harness as it is now. Only files are
+#    read: the devices ran in review.sh, and condition 2 binds that run to this
+#    tree, the harness included: a change to the harness is in the reviewed diff
+#    and lands with the task.
 # ---------------------------------------------------------------------------
 
 PLATFORMS_NOW="$(platforms | jq -R . | jq -sc .)"
@@ -137,16 +137,11 @@ jq -e --arg fingerprint "$CURRENT_FINGERPRINT" --argjson need "$PLATFORMS_NOW" \
 "$(printf '%s' "$PLATFORMS_NOW" | jq -r 'join(" ")')"
 
 # The harness is `.review/e2e.sh` and any `.review/e2e-*` it calls: each must be
-# in HEAD as it ran (recorded before the run) and as it is now, and none may be
-# missing from HEAD.
-HARNESS_COMMITTED="$(git -c core.quotePath=false ls-tree HEAD -- "$REVIEW_DIR/" \
-  | awk -F'\t' '$2 ~ /^\.review\/e2e(\.sh$|-)/ { split($1, field, " "); print field[3] " " $2 }' \
-  | sort)"
-case "$HARNESS_COMMITTED" in *" $REVIEW_DIR/e2e.sh"*) ;; *) HARNESS_COMMITTED="" ;; esac
-[ -n "$HARNESS_COMMITTED" ] && [ "$(harness_blobs)" = "$HARNESS_COMMITTED" ] \
-  && [ "$(jq -r '.harness // ""' "$RUN_DIR/e2e.json")" = "$HARNESS_COMMITTED" ] || \
-  refuse 3 "$REVIEW_DIR/e2e.sh is not committed as it ran, or a $REVIEW_DIR/e2e-* beside it "\
-"is not — the user commits the harness"
+# now as it ran (recorded before the run), and `.review/e2e.sh` must be there.
+HARNESS_NOW="$(harness_blobs)"
+case "$HARNESS_NOW" in *" $REVIEW_DIR/e2e.sh"*) ;; *) HARNESS_NOW="" ;; esac
+[ -n "$HARNESS_NOW" ] && [ "$(jq -r '.harness // ""' "$RUN_DIR/e2e.json")" = "$HARNESS_NOW" ] || \
+  refuse 3 "$REVIEW_DIR/e2e.sh, or a $REVIEW_DIR/e2e-* beside it, is not as it ran — review again"
 
 # Every test a case of qa/test-cases.md names now, under that case, was one the run
 # was checked against. The cases are one of the loop's own files, outside condition
@@ -219,8 +214,9 @@ done < <(jq -r '.scope[]?' "$TASK_FILE")
 # never part of a task's diff: it is not scope-checked, not staged, and not
 # committed here — see the `--only` on the commit below, which is what makes
 # that last part true. Policy and threshold changes are the user's to commit.
-# The decision logs are the one exception, below. So are the loop's own files, which
-# need a task to land with: alone, they are not a task.
+# The end-to-end harness is the one exception: it is reviewed work and lands with
+# the task, below, even a task of the harness alone. The loop's own files land too,
+# but need a task to land with: alone, they are not a task.
 # Names as they are (core.quotePath=false): a quoted non-ASCII name matches no
 # scope and is no file to stage.
 EVERY_CHANGE="$( { git -c core.quotePath=false diff --name-only;
@@ -228,11 +224,15 @@ EVERY_CHANGE="$( { git -c core.quotePath=false diff --name-only;
                    git -c core.quotePath=false ls-files --others --exclude-standard; } \
                  | sort -u )"
 CHANGED_FILES="$(printf '%s\n' "$EVERY_CHANGE" | only_task_work)"
-[ -n "$CHANGED_FILES" ] || refuse 6 "nothing to commit outside .review/ and the loop's own files"
+HARNESS_CHANGED="$(printf '%s\n' "$EVERY_CHANGE" | grep -E '^\.review/e2e(\.sh|-.*)$')"
+[ -n "$CHANGED_FILES" ] || [ -n "$HARNESS_CHANGED" ] || \
+  refuse 6 "nothing to commit outside .review/, the end-to-end harness apart, "\
+"and the loop's own files"
 
 OUT_OF_SCOPE=""
 IN_SCOPE=()
 while IFS= read -r file; do
+  [ -n "$file" ] || continue
   matched=0
   for pattern in "${SCOPE_PATTERNS[@]}"; do
     # shellcheck disable=SC2053
@@ -248,15 +248,20 @@ done <<<"$CHANGED_FILES"
 [ -z "$OUT_OF_SCOPE" ] || \
   refuse 6 "files outside task scope:$OUT_OF_SCOPE — split them into their own task"
 
-# What the commit holds: the task's files and the loop's own. The decision logs record
-# what the user said, and the requirements and the plan are the product owner's: at
-# every LANDING they stay in the tree for the user.
-TO_COMMIT=("${IN_SCOPE[@]}")
+# What the commit holds: the task's files, the loop's own, and the end-to-end harness
+# the task changed. The decision logs record what the user said, and the requirements
+# and the plan are the product owner's: at every LANDING they stay in the tree for the
+# user. A task of the harness alone has no file in scope: the expansion below is empty
+# then, which bash 3.2 under `set -u` refuses to expand as "${IN_SCOPE[@]}".
+TO_COMMIT=(${IN_SCOPE[@]+"${IN_SCOPE[@]}"})
 while IFS= read -r file; do
   if is_loop_file "$file"; then
     TO_COMMIT+=("$file")
   fi
 done <<<"$EVERY_CHANGE"
+while IFS= read -r file; do
+  [ -z "$file" ] || TO_COMMIT+=("$file")
+done <<<"$HARNESS_CHANGED"
 
 # ---------------------------------------------------------------------------
 # 7. Every exit criterion carries an explicit verification claim.
