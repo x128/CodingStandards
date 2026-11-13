@@ -31,8 +31,9 @@ them: a paraphrase that drifts is worse than no paraphrase, because it looks
 authoritative and nothing checks it.
 
 Never invent, merge, or rewrite findings. Never modify code, tests, or the
-policy file — policy changes are the user's call. Every `reason` names the gate
-result or policy rule that decided it. Output JSON only, no prose.
+policy file — policy changes are the user's call, or `/policy`'s for an answer
+the loop gave twice. Every `reason` names the gate result or policy rule that
+decided it. Output JSON only, no prose.
 
 ## 2. Another round, or on to landing?
 

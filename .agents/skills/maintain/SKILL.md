@@ -237,7 +237,8 @@ done directly.
 - Read the requirements, the plan, the tracker, the diff, source files, `.review/**` and the
   standards
 - Run `gates.sh`, `review.sh`, `land.sh`, `publish.sh`, tests and linters
-- Start the `reviewer` and `maintainer` subagents; run `/qa` and `/groom`
+- Start the `reviewer` and `maintainer` subagents; run `/qa`, `/groom`, and `/policy` for an
+  escalation answered the same way again (step 7)
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
   status, proposed tasks and the exit criteria of later tasks in the tracker; the task's `[x]` in
   the plan; in `--init`, the files of setup steps 1 to 6

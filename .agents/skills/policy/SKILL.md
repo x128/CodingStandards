@@ -2,33 +2,36 @@
 name: policy
 description: >-
   Turn a disagreement of the user with the task loop into a rule or setting in .review/. Use when
-  the user says a finding was real, a task needed their eyes, or asks where a problem entered.
+  the user says a finding was real, a task needed their eyes, or asks where a problem entered, and
+  when the loop answered the same escalation the same way again.
 ---
 
 # Policy Skill
 
-Turns a disagreement of the user with the task loop into a rule or a setting of the project, so
-the loop's maintainer learns the user's judgment. It works only in the project's `.review/` and
-follows the two limits of MAINTAINER_TRAINING.md: a "not yet" never becomes a rule, and nothing here
-counts or scores anything.
+Turns a disagreement of the user with the task loop, or an answer the loop gave twice, into a rule
+or a setting of the project, so the loop's maintainer learns the judgment once. It works only in
+the project's `.review/` and follows the two limits of MAINTAINER_TRAINING.md: a "not yet" never
+becomes a rule, and nothing here counts or scores anything.
 
 ## Instructions
 
-First work out which kind of disagreement it is:
+First work out which kind it is:
 
-| The user said | Track | Goes into |
+| What happened | Track | Goes into |
 |---|---|---|
 | "that finding was real", or "this is right here on purpose" | A — findings | `.review/REVIEW_POLICY.md` |
+| the loop answered the same escalation the same way again (`/maintain`, step 7) | A — findings | `.review/REVIEW_POLICY.md` |
 | "you should have shown me this task" | B — advancing | `.review/land.conf` |
 | a trigger of Track C fired | C — where it entered | wherever it entered |
 
 "Not yet" is none of them: record why it was rejected, and leave the reviewer looking. In every
 track, fix both the outcome and what produced it.
 
-### Track A: a finding's verdict was wrong
+### Track A: a finding's verdict was wrong, or the same answer came twice
 
 1. **The finding and both verdicts**, from the latest `.review/runs/*/verdicts.json`; something
-   not in a run is written down in the same shape.
+   not in a run is written down in the same shape. For an answer given twice, the verdicts are
+   the triage's and the answer in `.review/decisions/escalations.jsonl`.
 2. **Why, once.** The reason must hold beyond this case ("untrusted input changes the confidence
    threshold"); ask one question if it is not clear.
 3. **A check first.** If a linter, a type checker or an architecture test could catch it, it is
@@ -104,7 +107,9 @@ Report the chain walked, where it entered, and what changed.
 
 ### Rules
 
-- You draft; the user confirms every rule. No rule is deleted without asking.
+- You draft; the user confirms every rule that came from their disagreement. A rule from an answer
+  the loop gave twice is the loop's: the user sees it in the policy file, which they commit, or
+  which the task's commit holds where `WITH_RECORDS=yes`. No rule is deleted without asking.
 - Never write inside `CodingStandards/`.
 - A disagreement that produced no rule will come back: write it down, or record why it is a one-off.
 - Policy changes are the user's to commit: a commit of the loop holds them only where

@@ -431,7 +431,8 @@ failed.
 
 - Never adds findings the reviewer did not report; never rewrites a finding into a different
   problem.
-- Never edits code, tests, or `REVIEW_POLICY.md`. Policy changes are yours.
+- Never edits code, tests, or `REVIEW_POLICY.md`. Policy changes are yours, apart from the rule
+  `/policy` writes when the loop answered the same escalation the same way twice.
 - Never resolves an escalation by guessing. Escalation is a cheap, correct outcome.
 - Never runs git directly, and reads a pull request only with `gh pr view` and `gh pr checks`. Its
   only write paths are `land.sh` and `publish.sh`.

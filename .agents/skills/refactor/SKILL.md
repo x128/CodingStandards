@@ -145,11 +145,15 @@ work on `EXECUTOR`.
    requirements, the plan and the code, runs the build and the tests, and lists where the code
    departs from a rule of the standards: the place, the rule (quoted in a few words), and what to
    change. Not taste. It decides nothing for the human: a decision the standards ask the project to
-   make, or use case texts the requirements lack, are proposed to the human.
+   make that the plan does not have yet, or use case texts the requirements lack, are proposed to
+   the human.
 4. **The work.** Fresh engineers do the items one at a time; the build and the tests pass after
    each. Where an item's suggestion would break the rule it cites, the rule wins. An item that needs
-   a download not allowed, would change what must not change, or needs the human's decision waits
-   for the human.
+   a download not allowed, would change what must not change, or changes what the user sees, what
+   the refactoring covers or costs, or a decision of the plan waits for the human. How the code is
+   written — copies, names, tests, where code lives, what a decision of the plan already settles,
+   a stale name or reason in the plan that leaves its choice as it is — never waits: find out, and
+   decide.
 5. **Check.** The build and the tests pass. A fresh agent reads the diff for code made harder to
    read and for tests that check less; another runs `/loss-check` against the saved project.
    What they find is repaired.
