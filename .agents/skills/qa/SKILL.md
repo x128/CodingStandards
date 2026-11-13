@@ -121,7 +121,9 @@ is the number the user feels.
 **Another version of the code.** A replay, the version to compare with and the broken copy of the
 Tests check are built in a folder of their own, never by changing the working tree:
 `CodingStandards/templates/review/lib/export-version.sh <ref> <folder>` (or `WORKTREE` for a
-copy of the uncommitted work).
+copy of the uncommitted work). Once no check or challenge of the run needs a copy any more, the
+copy and its builds are deleted, and the reports and logs cited as evidence are kept with the run's
+other evidence; recordings and frames stay until the task lands.
 
 ### 3. Challenge every pass
 
@@ -166,7 +168,8 @@ task — is a defect of this skill as well as of the code.
 - Build, run tests, install and run the app on simulators, emulators and devices, record the
   screen, cut frames
 - Start an agent for each check and for the challenge
-- Take another version of the code out into a folder of its own, and break code only there
+- Take another version of the code out into a folder of its own, break code only there, and delete
+  it and its builds once the run no longer needs them
 - Write recordings, frames and reports under `.review/runs/` when the project has `.review/`, and
   otherwise under a temporary directory; write `qa/test-cases.md`; correct this file, or
   `/maintain`, after a defect got past

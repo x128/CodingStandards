@@ -198,7 +198,9 @@ done directly.
     commit of the next task. An accepted task is provisional; once `CONFIRM_AFTER`
     (`.review/land.conf`) later tasks in the same paths are accepted and committed, add its
     confirmation line. No predictions and no score of quiet tasks: the user decides when a kind of
-    task stops being shown.
+    task stops being shown. Once the task has landed, delete what its checks left: under
+    `.review/runs`, the recordings, frames, copies of the code and builds — the reports, logs and
+    JSON stay — and erase the simulators the checks created.
 13. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
       object; with `LANDING=off`, commit; at `push`, merge the branch; at `pr`, merge the pull
@@ -239,6 +241,7 @@ done directly.
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
   status, proposed tasks and the exit criteria of later tasks in the tracker; the task's `[x]` in
   the plan; in `--init`, the files of setup steps 1 to 6
+- Delete what the checks left under `.review/runs` and erase the simulators they created (step 12)
 - Git: read-only (`status`, `diff`, `log`, `show`, and `remote` in `--init`); `gh`: read-only
   (`pr view`, `pr checks`, and `auth status` in `--init`)
 

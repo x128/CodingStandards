@@ -182,6 +182,25 @@ elif [ "$PAST_LIMIT" = true ]; then
   exit 1
 fi
 
+# The disk. Builds, simulators and recordings take gigabytes, and a disk that fills
+# up stops the user's own work too, which they learn only when they come back. Below
+# MIN_FREE_GB free, nothing runs; the run is not counted.
+MIN_FREE_GB="$(read_conf "$REVIEW_DIR/land.conf" MIN_FREE_GB 15)"
+case "$MIN_FREE_GB" in
+  ''|*[!0-9]*|??????*)
+    echo "MIN_FREE_GB in $REVIEW_DIR/land.conf must be a whole number of gigabytes, "\
+"not '$MIN_FREE_GB'" >&2
+    exit 1 ;;
+esac
+FREE_GB=$(( $(df -Pk . | awk 'NR == 2 { print $4 }') / 1048576 ))
+if [ "$FREE_GB" -lt "$MIN_FREE_GB" ]; then
+  echo "DISK LOW — $FREE_GB GB free, $MIN_FREE_GB needed (MIN_FREE_GB); nothing ran." >&2
+  echo "   Delete what the loop left behind (maintain, step 12): recordings, frames, copies" >&2
+  echo "   of the code and builds under $REVIEW_DIR/runs of tasks that landed. If that is" >&2
+  echo "   not enough, tell the user now." >&2
+  exit 1
+fi
+
 # Each role runs in its own fresh session, which keeps the maintainer from
 # rubber-stamping the reviewer. The model and effort of each role come from
 # .claude/agents.conf, one line per role ("REVIEWER=opus high"), opus when it names

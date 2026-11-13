@@ -23,6 +23,17 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 FAILURES=0
 
+# review.sh runs nothing on a disk with less than MIN_FREE_GB free, and measures it
+# with df. Here df reports a disk of 1 TB free, so that no case depends on the room
+# left on the machine that runs this; the case of a low disk asks for more than that.
+mkdir -p "$WORK/df-bin" || { echo "setup failed: df-bin"; exit 1; }
+printf '#!/bin/sh
+echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
+echo "fake 2147483648 1073741824 1073741824 50%% /"
+' \
+  >"$WORK/df-bin/df" && chmod +x "$WORK/df-bin/df" || { echo "setup failed: df"; exit 1; }
+export PATH="$WORK/df-bin:$PATH"
+
 fail_setup() { echo "setup failed: $1"; exit 1; }
 
 repository="$WORK/project"
@@ -222,6 +233,9 @@ for limit in none 0 05; do
   counted "a limit of '$limit' fails closed" 1 "must be a whole number from 1" T-002
 done
 
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nMIN_FREE_GB=99999\n' >.review/land.conf
+review "a disk with too little free space runs nothing" 1 "DISK LOW" \
+  '{"findings":[]}' '{"verdicts":[]}'
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 mkdir -p "$WORK/bin"
 cat >"$WORK/bin/claude" <<'EOF'
