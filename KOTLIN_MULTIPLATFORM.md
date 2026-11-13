@@ -42,7 +42,7 @@ and release APK):
 | AGP | 9.4.1 |
 | `compileSdk` | 37 |
 | JDK (build) | 17 |
-| iOS deployment target | 15.0 |
+| iOS deployment target | 15.0; the UI-test target 17.0 |
 
 Compose Multiplatform names the Navigation 3 and material3 versions it pairs
 with in the Components table of its CHANGELOG; take those, even when they are
@@ -82,8 +82,8 @@ newer.
 ### gradle.properties
 
 ```properties
-# Gradle
-org.gradle.jvmargs=-Xmx2048M -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options\="-Xmx2048M"
+# Gradle: the release link of the iOS framework runs in this daemon and needs over 3 GB
+org.gradle.jvmargs=-Xmx6144M -Dfile.encoding=UTF-8 -Dkotlin.daemon.jvm.options\="-Xmx2048M"
 org.gradle.parallel=true
 org.gradle.caching=true
 
@@ -573,7 +573,7 @@ commands produce Info.plist" error):
 | `GENERATE_INFOPLIST_FILE` | `YES` |
 | `INFOPLIST_FILE` | `Info.plist` |
 | `ENABLE_USER_SCRIPT_SANDBOXING` | `NO` |
-| `IPHONEOS_DEPLOYMENT_TARGET` | `15.0` (supported by Compose Multiplatform 1.12) |
+| `IPHONEOS_DEPLOYMENT_TARGET` | `15.0` (supported by Compose Multiplatform 1.12); `17.0` on the UI-test target |
 
 Compose Multiplatform 1.12 supports iOS 14 and newer (kotlinlang.org,
 "Compatibility and versions"). The Xcode link still warns:
@@ -688,7 +688,7 @@ After setup, verify compilation on all active targets:
 | Android code on the JVM | `androidApp/src/test/kotlin/...` | kotlin-test-junit |
 | Desktop end-to-end | `composeApp/src/desktopTest/` | `org.jetbrains.compose.ui:ui-test-junit4` |
 | Android end-to-end | `androidApp/src/androidTest/` | `androidx.compose.ui:ui-test-junit4` |
-| iOS end-to-end | `iosApp/{App}UITests/` | XCUITest (Swift) |
+| iOS end-to-end | `iosApp/{App}UITests/` | XCUITest (Swift); the target's deployment target is iOS 17.0 or later, the version XCTest of Xcode 27 is built for |
 
 Unit and integration test files mirror main source package structure.
 End-to-end tests follow platform conventions.

@@ -57,7 +57,9 @@ platform-specific frameworks.
 
 Every test name must follow the pattern: **action [condition] → result**. A test that pins a reason
 or a source ends with it: `→ result because reason`, with no comma — Kotlin/Native refuses one in a
-backtick name (KOTLIN_MULTIPLATFORM.md).
+backtick name (KOTLIN_MULTIPLATFORM.md). Android device tests (`androidTest`) of an app whose
+`minSdk` is below 30 put underscores for the spaces: D8 refuses a space in a method name before
+DEX 040.
 
 ### Kotlin (backtick names)
 
@@ -739,7 +741,8 @@ fun `processes model output`() = runTest {
 - [ ] One concept per test
 - [ ] Tests are independent (no shared mutable state)
 - [ ] Test names follow action → [condition] → result pattern
-- [ ] Kotlin: backtick-quoted descriptive names
+- [ ] Kotlin: backtick-quoted descriptive names; underscores in Android device tests below
+      `minSdk` 30
 - [ ] Swift: `test_action[_condition]_result` format
 
 ### Coverage
