@@ -657,6 +657,25 @@ e2e_check "a platform the newest end-to-end run never ran on holds /qa back" 2 \
 rm -rf app
 e2e_land "a run with passing end-to-end tests lands" 0 "For the user to commit" \
   .review/T-007.json "$run_of_t007"
+# The records of the loop land with the task only where the project says so.
+cp .review/land.conf "$WORK/land.conf.saved"
+printf '# Plan\n' >PLAN.md
+mkdir -p .review/decisions
+printf '{"task": "T-007"}\n' >.review/decisions/tasks.jsonl
+printf 'WITH_RECORDS=yes\n' >>.review/land.conf
+e2e_land "with WITH_RECORDS=yes the plan lands with the task" 0 "  PLAN.md" \
+  .review/T-007.json "$run_of_t007"
+e2e_land "with WITH_RECORDS=yes the decision logs land with the task" 0 \
+  "  .review/decisions/tasks.jsonl" .review/T-007.json "$run_of_t007"
+e2e_review "a review with the plan landing beside it goes on" 0 "CLEAN — gates green" \
+  .review/T-007.json
+check "the reviewer is told the plan lands with the task" 0 "landing with this task" 0 \
+  "$last_run/reviewer-prompt.md"
+printf 'WITH_RECORDS=maybe\n' >>.review/land.conf
+e2e_land "a WITH_RECORDS that is neither yes nor no refuses" 3 "must be yes or no" \
+  .review/T-007.json "$run_of_t007"
+cp "$WORK/land.conf.saved" .review/land.conf
+rm PLAN.md .review/decisions/tasks.jsonl
 printf -- '- **TC-003 Never.** It never runs. — e2e: `AnswerE2E.doesNotExist`\n' \
   >>qa/test-cases.md
 e2e_land "a case marked after the run with a test the run never saw refuses" 3 \

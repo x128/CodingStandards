@@ -11,9 +11,10 @@
 # task, and they would reach main only by hand.
 LOOP_FILES=(TASK_TRACKER.md qa/test-cases.md)
 
-# The requirements and the plan change only with the product owner's answer. They are
-# not task work, and no landing commits them: like the policy under .review/, the user
-# reads and commits them.
+# The requirements and the plan change only with the product owner's answer, apart from
+# the `[x]` of a finished task in the plan. They are not task work: a landing commits
+# them only with WITH_RECORDS=yes (land.sh), and otherwise, like the policy under
+# .review/, the user reads and commits them.
 OWNER_FILES=(REQUIREMENTS.md PLAN.md)
 
 NOT_TASK_WORK=(':(exclude).review')

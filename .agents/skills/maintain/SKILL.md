@@ -68,10 +68,11 @@ done directly.
    (path globs the work may touch), `exit_criteria` (format:
    `templates/review/project/task.example.json`). `land.sh` refuses anything outside the scope,
    apart from the tracker and `qa/test-cases.md`, which land with every task, the end-to-end
-   harness, which lands with the task that changes it, and the requirements and the plan, which stay
-   for the user; none of them is named in it. Where the tracker gives no `category` or `scope`,
-   propose them and ask the user. The exit criteria are the ones the task has gathered in the
-   tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md, "Task Rules").
+   harness, which lands with the task that changes it, and the requirements and the plan, which
+   land with it only with `WITH_RECORDS=yes`; none of them is named in it. Where the tracker gives
+   no `category` or `scope`, propose them and ask the user. The exit criteria are the ones the task
+   has gathered in the tracker, and none is a valid answer; none is written now (PLANNING_GUIDE.md,
+   "Task Rules").
 3. **The third copy.** If the work would make the third or later copy of an existing shape, stop
    and decide by the standards and the code: extend (the shape is right), refactor first (as its
    own task, landing before this one), or deviate (say why). Refactor first changes what the user
@@ -144,14 +145,15 @@ done directly.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a check you did
    not do; what `/qa` left unproven is not verified.
-10. **The tasks ahead.** Mark the task `✅ done` in the tracker. What it showed about a later one —
-    what it hands it, what it leaves to it — goes into that task's exit criteria in the tracker. A
-    choice about the product it raised is a question for the user, in the task that waits on it and
-    in the report of step 13, together with the questions the next task waits on. When the task
-    changed something the plan rests on — a decision, a use case, the architecture, what a later
-    task was to get — run `/groom --change`. All of this comes before the landing, because the
-    tracker lands with the task; the requirements and the plan stay for the user to commit
-    (TASK_LOOP.md, "Landing").
+10. **The tasks ahead.** Mark the task `✅ done` in the tracker and `[x]` in the plan. What it
+    showed about a later one — what it hands it, what it leaves to it — goes into that task's exit
+    criteria in the tracker. A choice about the product it raised is a question for the user, in the
+    task that waits on it and in the report of step 13, together with the questions the next task
+    waits on. When the task changed something the plan rests on — a decision, a use case, the
+    architecture, what a later task was to get — run `/groom --change`. All of this comes before
+    the landing, because the tracker lands with the task, and with `WITH_RECORDS=yes` the
+    requirements and the plan too; otherwise they stay for the user to commit (TASK_LOOP.md,
+    "Landing").
 11. **Land:**
 
    ```bash
@@ -191,21 +193,25 @@ done directly.
    row goes to the user as in step 6; a merge `publish.sh` refused is never done by hand.
 12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format:
-    `templates/review/project/decisions/tasks.example.jsonl`). An accepted task is provisional; once
-    `CONFIRM_AFTER` (`.review/land.conf`) later tasks in the same paths are accepted and committed,
-    add its confirmation line. No predictions and no score of quiet tasks: the user decides when a
-    kind of task stops being shown.
+    `templates/review/project/decisions/tasks.example.jsonl`) — written once the user has answered
+    (step 13), or at `ADVANCE=auto` when the loop goes on; with `LANDING=off` it goes into the
+    commit of the next task. An accepted task is provisional; once `CONFIRM_AFTER`
+    (`.review/land.conf`) later tasks in the same paths are accepted and committed, add its
+    confirmation line. No predictions and no score of quiet tasks: the user decides when a kind of
+    task stops being shown.
 13. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
       object; with `LANDING=off`, commit; at `push`, merge the branch; at `pr`, merge the pull
       request; and at both, go back to the base branch and update it, so the next task starts there;
       at every level commit the decision logs and the policy rules under `.review/`, and the
-      requirements and the plan if they changed — then what changed, the results of the build, test,
-      format, lint and architecture checks, what `/qa` checked and found, the commit, the branch and
-      the pull request, and the questions of step 10. The review's findings and their answers stay
-      in `.review/` (steps 6 and 7). Then wait. On acceptance — with `LANDING=off`, once the user
-      says it is committed — go to step 1. At `merge` the task is already in main: an objection is a
-      new task on top of it, or a revert the user makes.
+      requirements and the plan if they changed — with `LANDING=off`, all in the task's one commit;
+      with `WITH_RECORDS=yes` the loop's commit holds them — then what changed, the results of the
+      build, test, format, lint and architecture checks, what `/qa` checked and found, the commit,
+      the branch and the pull request, and the questions of step 10. The review's findings and their
+      answers stay in `.review/` (steps 6 and 7). Then wait. On acceptance — with `LANDING=off`,
+      once the user says it is committed — log the task boundary (step 12) and go to step 1. At
+      `merge` the task is already in main: an objection is a new task on top of it, or a revert the
+      user makes.
     - `ADVANCE=auto`, at any `LANDING` but `off`: go on without waiting, with one line saying which
       task landed and which starts, only when `land.sh`, or the last `publish.sh` after it, ended
       with `0`, the task's category is in `ADVANCE_CATEGORIES`, nothing it touched is in
@@ -231,8 +237,8 @@ done directly.
 - Run `gates.sh`, `review.sh`, `land.sh`, `publish.sh`, tests and linters
 - Start the `reviewer` and `maintainer` subagents; run `/qa` and `/groom`
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
-  status, proposed tasks and the exit criteria of later tasks in the tracker; in `--init`, the
-  files of setup steps 1 to 6
+  status, proposed tasks and the exit criteria of later tasks in the tracker; the task's `[x]` in
+  the plan; in `--init`, the files of setup steps 1 to 6
 - Git: read-only (`status`, `diff`, `log`, `show`, and `remote` in `--init`); `gh`: read-only
   (`pr view`, `pr checks`, and `auth status` in `--init`)
 

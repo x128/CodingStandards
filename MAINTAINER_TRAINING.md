@@ -36,9 +36,9 @@ never offer to.
 
 3. **Put the rule in the file that gets read at that point.**
 
-4. **Have it committed**, by the user: a commit of the loop never holds a rule of `.review/` or of
-   these standards, whatever the requirement "Who writes to git" says (TASK_LOOP.md, "Landing"). A
-   rule that is not committed lasted one session.
+4. **Have it committed**: a rule of these standards by the user, in their own repository; a rule of
+   `.review/` by the user too, or in the task's commit where the project's `.review/land.conf` says
+   `WITH_RECORDS=yes` (TASK_LOOP.md, "Landing"). A rule that is not committed lasted one session.
 
 Step 2 is the one that goes wrong. A rule about writing reports, put into the
 document about reviewing code, will never be read while writing a report.

@@ -6,10 +6,10 @@
 # the one file with commit authority, so it must not be widenable locally.
 #
 # It has no code path for push, amend, --force, rebase, checkout, reset, stash or
-# clean. It stages the task's declared files, the loop's own and the end-to-end
-# harness the task changed, and commits: on the current branch, or at LANDING=push,
-# pr and merge on task/<id>, the one branch it may create and the only one it may
-# move to. That is all it can do.
+# clean. It stages the task's declared files, the loop's own, the end-to-end harness
+# the task changed and, with WITH_RECORDS=yes, the loop's records, and commits: on
+# the current branch, or at LANDING=push, pr and merge on task/<id>, the one branch
+# it may create and the only one it may move to. That is all it can do.
 # Whatever happens to the commit next is in publish.sh, which it calls and which
 # cannot commit.
 #
@@ -80,6 +80,17 @@ refuse() {
 }
 
 LANDING="$(landing_level "$CONFIG")" || refuse 8 "$LANDING"
+
+# The records of the loop — the requirements and the plan, the decision logs and the
+# review policy — land in the task's commit with WITH_RECORDS=yes; with no, they stay
+# in the tree for the user. The loop's settings (land.conf, gates.sh) never land here:
+# what the loop may do is the user's to commit. Nor does the task file, which the
+# project ignores.
+WITH_RECORDS="$(read_conf "$CONFIG" WITH_RECORDS no)"
+case "$WITH_RECORDS" in
+  yes | no) ;;
+  *) refuse 8 "WITH_RECORDS in $CONFIG must be yes or no, not '$WITH_RECORDS'" ;;
+esac
 
 TASK_ID="$(jq -r '.id' "$TASK_FILE")"
 [ -n "$TASK_ID" ] && [ "$TASK_ID" != "null" ] || { echo "task file has no .id" >&2; exit 1; }
@@ -211,10 +222,11 @@ done < <(jq -r '.scope[]?' "$TASK_FILE")
 [ "${#SCOPE_PATTERNS[@]}" -gt 0 ] || refuse 6 "task $TASK_ID declares no scope"
 
 # The pipeline's own bookkeeping (decision logs, policy edits, run artifacts) is
-# never part of a task's diff: it is not scope-checked, not staged, and not
-# committed here — see the `--only` on the commit below, which is what makes
-# that last part true. Policy and threshold changes are the user's to commit.
-# The end-to-end harness is the one exception: it is reviewed work and lands with
+# never part of a task's diff: it is not scope-checked, and not staged or committed
+# here — see the `--only` on the commit below, which is what makes that last part
+# true — apart from the decision logs and the policy with WITH_RECORDS=yes, below.
+# Threshold changes, and policy changes with WITH_RECORDS=no, are the user's to commit.
+# The end-to-end harness is another exception: it is reviewed work and lands with
 # the task, below, even a task of the harness alone. The loop's own files land too,
 # but need a task to land with: alone, they are not a task.
 # Names as they are (core.quotePath=false): a quoted non-ASCII name matches no
@@ -250,13 +262,20 @@ done <<<"$CHANGED_FILES"
 
 # What the commit holds: the task's files, the loop's own, and the end-to-end harness
 # the task changed. The decision logs record what the user said, and the requirements
-# and the plan are the product owner's: at every LANDING they stay in the tree for the
-# user. A task of the harness alone has no file in scope: the expansion below is empty
-# then, which bash 3.2 under `set -u` refuses to expand as "${IN_SCOPE[@]}".
+# and the plan are the product owner's: they land here only with WITH_RECORDS=yes, and
+# otherwise stay in the tree for the user. A task of the harness alone has no file in
+# scope: the expansion below is empty then, which bash 3.2 under `set -u` refuses to
+# expand as "${IN_SCOPE[@]}".
 TO_COMMIT=(${IN_SCOPE[@]+"${IN_SCOPE[@]}"})
 while IFS= read -r file; do
   if is_loop_file "$file"; then
     TO_COMMIT+=("$file")
+  elif [ "$WITH_RECORDS" = yes ]; then
+    case "$file" in
+      "$REVIEW_DIR"/decisions/*.jsonl | "$REVIEW_DIR/REVIEW_POLICY.md")
+        TO_COMMIT+=("$file") ;;
+      *) if is_owner_file "$file"; then TO_COMMIT+=("$file"); fi ;;
+    esac
   fi
 done <<<"$EVERY_CHANGE"
 while IFS= read -r file; do
@@ -561,10 +580,11 @@ fi
 # `git add` first, because --only alone cannot commit a path git has never seen;
 # then --only with the same pathspec, because a bare `git commit` writes the
 # WHOLE INDEX. Anything the user had staged beforehand would ride along inside
-# the task's commit — including `.review/land.conf` and `.review/REVIEW_POLICY.md`,
-# which are filtered out of CHANGED_FILES above and so are never scope-checked.
-# The files that define the pipeline's limits are exactly the ones that must not
-# be able to change unnoticed in a commit the pipeline made by itself.
+# the task's commit — including `.review/land.conf` and, with WITH_RECORDS=no,
+# `.review/REVIEW_POLICY.md`, which are filtered out of CHANGED_FILES above and so
+# are never scope-checked. The files that define the pipeline's limits are exactly
+# the ones that must not be able to change unnoticed in a commit the pipeline made
+# by itself: the policy lands only by WITH_RECORDS=yes, among the files the commit names.
 git add -- "${TO_COMMIT[@]}" || { echo "staging failed" >&2; exit 1; }
 git commit --only -m "$MESSAGE" -m "$COMMIT_BODY" -- "${TO_COMMIT[@]}" || {
   # The add already happened, so the task's files are staged and the commit is

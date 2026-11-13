@@ -107,8 +107,8 @@ Report the chain walked, where it entered, and what changed.
 - You draft; the user confirms every rule. No rule is deleted without asking.
 - Never write inside `CodingStandards/`.
 - A disagreement that produced no rule will come back: write it down, or record why it is a one-off.
-- Policy changes are the user's to commit: a commit of the loop never holds them, at every answer to
-  "Who writes to git" (TASK_LOOP.md, "Landing").
+- Policy changes are the user's to commit: a commit of the loop holds them only where
+  `.review/land.conf` says `WITH_RECORDS=yes` (TASK_LOOP.md, "Landing").
 
 ## Allowed Prompts
 - Read `.review/**`, the diff and source files

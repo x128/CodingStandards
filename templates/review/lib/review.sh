@@ -493,10 +493,12 @@ if [ -n "$BASE" ]; then
 else
   DIFF_FROM="HEAD"
 fi
-# `.review/` is pipeline bookkeeping, not task code: land.sh never stages it,
-# so the reviewer must not spend findings on it either. The same goes for the requirements,
-# the plan and the tracker, which land with the task but are not its code. The end-to-end
-# harness is the exception: it lands with the task that changes it, so it is reviewed.
+# `.review/` is pipeline bookkeeping, not task code: land.sh never stages it as task
+# work, so the reviewer must not spend findings on it either. The same goes for the
+# tracker, which lands with the task but is not its code, and for the requirements,
+# the plan, the decision logs and the policy, which land beside it only with
+# WITH_RECORDS=yes and are then named to the reviewer below. The end-to-end harness
+# is the exception: it lands with the task that changes it, so it is reviewed.
 git diff "$DIFF_FROM" -- . "${NOT_TASK_WORK[@]}" >"$RUN_DIR/diff.patch"
 git diff "$DIFF_FROM" -- "${HARNESS[@]}" >>"$RUN_DIR/diff.patch"
 
@@ -572,6 +574,27 @@ fi
 # submodule's. e2e-gate.sh exits 2 when red and 1 without a harness.
 "$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID" || exit $?
 
+# The requirements, the plan and the loop's records are not reviewed. With
+# WITH_RECORDS=yes they land in the task's commit all the same, and a review that
+# does not know it reads a plan moved to PLAN.md as a plan deleted, and cannot tell
+# that a commit of the loop changes the review policy.
+WITH_RECORDS="$(read_conf "$REVIEW_DIR/land.conf" WITH_RECORDS no)"
+RECORDS=("${OWNER_FILES[@]}" "$REVIEW_DIR/REVIEW_POLICY.md" ":(glob)$REVIEW_DIR/decisions/*.jsonl")
+records_landing_unreviewed() {
+  [ "$WITH_RECORDS" = yes ] || return 0
+  { git diff --name-only "$DIFF_FROM" -- "${RECORDS[@]}"
+    git ls-files --others --exclude-standard -- "${RECORDS[@]}"; } | sort -u
+}
+RECORDS_LANDING="$(records_landing_unreviewed)"
+say_records_landing() {
+  [ -n "$RECORDS_LANDING" ] || return 0
+  echo
+  echo "## Not in the diff, landing with this task"
+  echo "The requirements, the plan and the loop's records are not reviewed, but these land in"
+  echo "the same commit; a file the diff seems to lose may be among them:"
+  printf '%s\n' "$RECORDS_LANDING"
+}
+
 # ---------------------------------------------------------------------------
 # 3. Reviewer
 # ---------------------------------------------------------------------------
@@ -589,6 +612,7 @@ fi
   echo '```diff'
   cat "$RUN_DIR/diff.patch"
   echo '```'
+  say_records_landing
 } >"$RUN_DIR/reviewer-prompt.md"
 
 run_agent "$REVIEWER_CMD" "$RUN_DIR/reviewer-prompt.md" "$RUN_DIR/findings.raw.json" \
@@ -706,6 +730,7 @@ fi
     git ls-files --others --exclude-standard | only_task_work
     git diff --name-only "$DIFF_FROM" -- "${HARNESS[@]}"
     git ls-files --others --exclude-standard -- "${HARNESS[@]}"
+    say_records_landing
     echo
   else
     echo "## No task file supplied"

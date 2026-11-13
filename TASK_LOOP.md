@@ -471,11 +471,16 @@ harness lands with the task that changed it too, but as reviewed work: it is in 
 and in the fingerprint of condition 2, so a harness changed to pass without a test running does not
 go unseen.
 
-`REQUIREMENTS.md` and `PLAN.md` change only with your answer, so no landing commits them, and
-neither the reviewer nor conditions 2 and 6 count them as task work. They stay in the working tree
-for you to read and commit, at every answer, as do your policy rules and the decision logs under
-`.review/`, which record what you said. A log committed on a task branch would also stop you going
-back to the base branch while its next line waits in the tree.
+`REQUIREMENTS.md` and `PLAN.md` change only with your answer, apart from the `[x]` of a finished
+task in the plan, and neither the reviewer nor conditions 2 and 6 count them as task work. Where
+`.review/land.conf` says `WITH_RECORDS=yes`, the task's commit holds them, with your policy rules
+and the decision logs under `.review/`; the reviewer is told of those that changed before it ran.
+Otherwise they stay in the working tree for you to read and commit, at every answer; the logs
+record what you said. A log committed on a task branch stops you going back to the base branch
+while its next line waits in the tree, until the branch is merged: with `WITH_RECORDS=yes` at
+`push` and `pr`, merge before the loop writes to a log again. The loop's settings, `land.conf` and
+`gates.sh`, never land with a task: what the loop may do is yours to commit. Nor does the task
+file, which the project ignores.
 
 ### The contract
 
@@ -490,7 +495,7 @@ back to the base branch while its next line waits in the tree.
 | 5 | Zero pending escalations | An escalation is owed an answer |
 | 6 | Changed files ⊆ the task's declared scope, the loop's own files and the end-to-end harness apart | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim; `/qa` recorded the task in a `qa.json`, each `/qa` failure has its end-to-end test seen failing, then passing — or skipped for the task it belongs to, or answered by the user — and no test is skipped for this task | The tracker's definition of done, with the claim recorded in the commit |
-| 8 | `LANDING` is a known level and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
+| 8 | `LANDING` is a known level, `WITH_RECORDS` is `yes` or `no`, and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
 Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`. At `on`, `push`, `pr`
 and `merge` the eight checks are followed by a commit; at `push` and up, by publishing too; with
@@ -511,16 +516,17 @@ Conditions 1, 2, and 4 exist because the dangerous failure is not a wrong
 judgment — it is a **missing** one reading as approval. An unreadable count, an
 absent artifact, or a stale run must refuse, never default to zero.
 
-Then, and only then, it stages **exactly the in-scope files, the loop's own and the changed
-end-to-end harness** — never `git add -A` — and commits with trailers linking the task and the
-review run.
+Then, and only then, it stages **exactly the in-scope files, the loop's own, the changed
+end-to-end harness and, with `WITH_RECORDS=yes`, the loop's records** — never `git add -A` — and
+commits with trailers linking the task and the review run.
 
 The commit is `git commit --only -- <those files>`, not a bare `git commit`. A bare commit writes
 the whole index, so anything the user had staged when the loop ran would ride along inside the
-task's commit without ever being scope-checked — `.review/land.conf` and `.review/REVIEW_POLICY.md`
-most of all, since they are filtered out of the changed-file list by design. The files that define
-this pipeline's limits must not be able to change inside a commit the pipeline made on its own.
-Whatever the user had staged stays staged, untouched.
+task's commit without ever being scope-checked — `.review/land.conf` most of all, and
+`.review/REVIEW_POLICY.md` with `WITH_RECORDS=no`, since they are filtered out of the changed-file
+list by design. The files that define this pipeline's limits must not be able to change unseen
+inside a commit the pipeline made on its own: the policy lands only by `WITH_RECORDS=yes`, and then
+among the files the commit names. Whatever the user had staged stays staged, untouched.
 
 `land.sh` exits `0` when the task went as far as `LANDING` says, `3` on a refusal, `1` on an error,
 and `4` when the commit landed but publishing did not finish. The output of `publish.sh` is shown.
@@ -953,7 +959,7 @@ Use hooks for invariants, never for logic:
 - [ ] The loop reaches main only through a pull request, never a direct commit
 - [ ] The tracker, the test cases and a changed end-to-end harness land with the task; a line left
       in the tracker does not refuse the next one; the requirements, the plan and the decision logs
-      stay for you to commit
+      land with it with `WITH_RECORDS=yes`, and otherwise stay for you to commit
 - [ ] `LANDING` goes no further than the requirement "Who writes to git"; an unknown value refuses,
       and a change to `land.conf` asks you
 - [ ] `LANDING=off` kill switch works and is documented
