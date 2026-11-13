@@ -50,6 +50,7 @@ document about reviewing code, will never be read while writing a report.
 | doing a task | `EXECUTION_GUIDE.md` |
 | checking a finished change before it is shown as done | `.agents/skills/qa/SKILL.md` |
 | giving work to another agent | `EXECUTION_GUIDE.md`, "Work given to other agents" |
+| answering a review's findings on your own change | `EXECUTION_GUIDE.md`, "A review's findings"; under the bar of a later round, `.agents/skills/code-review/SKILL.md`, "Another round" |
 | writing the report back to the user | `.agents/skills/write/SKILL.md`; `EXECUTION_GUIDE.md`, the reporting section |
 | looking for bugs in the code | `.agents/skills/code-review/SKILL.md` |
 | refactoring code to the standards | the requirements of this project; `.agents/skills/refactor/SKILL.md` for how a refactoring runs |

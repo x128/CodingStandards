@@ -19,16 +19,47 @@ Schema
                                            #   every code link resolves against it
      "lang":    "en" | "ru",                # what the findings are written in;
                                            #   the screen speaks it too
+     "round":   int,                       # optional: which round of the review
+     "earlier": [{...}],                   # optional: earlier rounds' findings
      "findings": [{"id", "title", "where", "options", "decision", ...}]}
 
 Required on a finding: `id`, `title`, `where`, `options`, `decision`. The list
 has no headings and no sections: findings are read in the order they are
 written, so write them in the order they should be read.
-Optional: `see`, `why`, `fix`, `refs` — absent ones are skipped, not blanked.
-Nothing else is read; a field this list does not name is carried through the
-file and never shown.
+Optional: `see`, `why`, `if_left`, `weight`, `certainty`, `author`, `again`,
+`fix`, `refs` — absent ones are skipped, not blanked. Nothing else is read; a
+field this list does not name is carried through the file and never shown.
 
-`options` is what can be done about this finding, written by whoever found it:
+`weight` is "blocks", "matters" or "minor", and `if_left` is what it is weighed
+by: who meets the finding if it is left as is, how likely, and what it costs
+them, and which of this was checked and which is only assumed. Nine findings
+that each look equally urgent cost a reader the same attention whatever is at
+stake, so the weight is on the list beside every title, and the count of each
+weight sits above the list: which ones block is seen before any finding is
+opened.
+
+`certainty` is 0 to 100: how sure the review is of that weight. It is a
+second judgement, not a part of the first — a "minor" can be certain and a
+"blocks" a guess — so it has its own place beside the weight, and is never
+folded into the word or the colour of the weight. (The loop's reviewer has a
+`confidence` of its own — confirmed, likely, possible — about whether a finding
+is proven, and a `severity` from the level of the rule it breaks; those are
+other fields in another file, and its `minor` is not this one.)
+
+`author` is the answer of whoever wrote the change, given before the user sees
+the finding: {"says": "real" | "wrong" | "other_task" | "unsettled" |
+"below_bar", "why": str}. A reviewer does not know everything the author knows,
+and a finding may be wrong, so the user reads both: the reviewer's weight and
+the author's answer, side by side, neither folded into the other.
+
+`again` is the `id`, in `earlier`, of the finding this one repeats. `earlier`
+holds the findings of the earlier rounds of the review with their `round`,
+`author`, `decision` and `note`, and `round` says which round this is. A repeat
+is shown as one, with what was answered to it before: a finding that comes back
+otherwise reads as new, and the earlier reason is lost.
+
+`options` is what can be done about this finding, written by the author when it
+answered the finding, else by whoever found it:
 
     [{"id": "fix-now",
       "do": "Fix it now: add a night theme and let the system pick the colour",
@@ -70,8 +101,8 @@ about the finding either way. They are buttons like any other, and never rows in
 the table — two real choices must look like two, not like four.
 
 Writing "A, or else B" into a single option is the one mistake that matters:
-that is two options, and collapsing them hands the choice back to the reviewer
-silently, with the file recording an answer the user never gave.
+that is two options, and collapsing them hands the choice back to whoever wrote
+the options, silently, with the file recording an answer the user never gave.
 
 `decision` and `note` are the user's, and the only things written back:
 `decision` is an option's `id`, or "skip", or "discuss", or null; `note` is free
@@ -106,7 +137,18 @@ NOISE = {".git", "build", ".gradle", "node_modules", "DerivedData", "Pods", ".id
 #  unreadable, and the half that is English is the half nobody asked for. The
 #  file says which language it is in; nothing here guesses.
 WORDS = {
-    "en": {"see": "What you would see", "why": "Why", "code": "Code",
+    "en": {"see": "What you would see", "why": "Why", "if_left": "If left as is",
+           "weights": {"blocks": "blocks", "matters": "matters", "minor": "minor"},
+           "sure_of": "sure {n} of 100",
+           "sure_key": "number = how sure of the weight, of 100",
+           "author": "The author", "author_line": "author — ",
+           "says": {"real": "real", "wrong": "wrong", "other_task": "another task's",
+                    "unsettled": "unsettled", "below_bar": "below the bar"},
+           "by_author": "author: {s}", "again": "again",
+           "earlier": "Earlier, in round {n}", "earlier_any": "Earlier",
+           "your_answer": "your answer: {a}",
+           "round": "round {n}",
+           "code": "Code",
            "where": "Where", "gone": "no such file in the project",
            "empty": "No findings — there is nothing to triage.",
            "fix": "The fix",
@@ -136,7 +178,19 @@ WORDS = {
                        "back to you. Comments are read with the answer they sit on."],
            "waiting": ["Claude was waiting on this process and has the result now.",
                        "You can close the page."]},
-    "ru": {"see": "Что ты увидишь", "why": "Почему", "code": "Код",
+    "ru": {"see": "Что ты увидишь", "why": "Почему", "if_left": "Если оставить как есть",
+           "weights": {"blocks": "блокирует", "matters": "существенно",
+                       "minor": "мелочь"},
+           "sure_of": "уверенность {n} из 100",
+           "sure_key": "число — уверенность в весе, из 100",
+           "author": "Ответ автора", "author_line": "автор — ",
+           "says": {"real": "верно", "wrong": "неверно", "other_task": "в другую задачу",
+                    "unsettled": "не ясно", "below_bar": "ниже планки"},
+           "by_author": "автор: {s}", "again": "повторно",
+           "earlier": "Раньше, в круге {n}", "earlier_any": "Раньше",
+           "your_answer": "твой ответ: {a}",
+           "round": "круг {n}",
+           "code": "Код",
            "where": "Где", "gone": "такого файла в проекте нет",
            "empty": "Находок нет — разбирать нечего.",
            "fix": "Исправление",
@@ -375,6 +429,85 @@ def answered(item):
     return item.get("decision") in ALWAYS or bool(chose(item))
 
 
+def label(words, v):
+    """The word for a value, the value as written when it is not a known one,
+    "" when there is none. A value that silently vanishes reads as no value."""
+    if v is None or v == "":
+        return ""
+    return words.get(v, v) if isinstance(v, str) else str(v)
+
+
+def weight_of(item, t):
+    """The word for the finding's weight, or "" in a file written before weights."""
+    return label(t["weights"], item.get("weight"))
+
+
+def author_of(item, t):
+    """The author's answer as (word, why), or None when the file has none.
+    Written as plain text instead, it is all `why`."""
+    a = item.get("author")
+    if isinstance(a, str):
+        return ("", a.strip()) if a.strip() else None
+    if not isinstance(a, dict):
+        return None
+    word, why = label(t["says"], a.get("says")), str(a.get("why") or "").strip()
+    return (word, why) if word or why else None
+
+
+def earlier_of(doc, item):
+    """What the finding this one repeats was answered before, as {"round",
+    "author", "answer"} — {} when the earlier finding is not in the file, since
+    a repeat is still one; None when the finding repeats nothing."""
+    ref = item.get("again")
+    if not ref:
+        return None
+    old = next((x for x in doc.doc.get("earlier") or []
+                if isinstance(x, dict) and x.get("id") == ref), None)
+    if old is None:
+        return {}
+    t, d = doc.t, old.get("decision")
+    answer = t["skip"] if d == SKIP else t["discuss"] if d == DISCUSS else \
+        next((o["do"] for o in options_of(old) if o["id"] == d), "")
+    note = (old.get("note") or "").strip() if isinstance(old.get("note"), str) else ""
+    return {"round": old.get("round"), "author": author_of(old, t),
+            "answer": " — ".join(s for s in (answer, note) if s)}
+
+
+def certainty_of(item):
+    """How sure the review is of the weight, 0 to 100 — None when it does not
+    say. A value outside 0..100 or not a number is not guessed into one."""
+    v = item.get("certainty")
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= 100:
+        return None
+    return int(v + 0.5)      # half up, as the page rounds it
+
+
+def weights_line(findings, t, round_=None):
+    """The lines above the list: the round, from the second on; how many
+    findings of each weight — none when no finding has one, since a row of zeros
+    would say that nothing blocks when nobody weighed anything; what the number
+    beside each weight is, when there is one — two numbers side by side with no
+    key read as one; and how many of each answer the author gave."""
+    def count(key, value):
+        return sum(isinstance(x.get(key), str) and x.get(key) == value for x in findings)
+
+    lines = []
+    if isinstance(round_, int) and not isinstance(round_, bool) and round_ > 1:
+        lines.append(t["round"].format(n=round_))
+    if any(count("weight", key) for key in t["weights"]):
+        lines.append(" · ".join(f"{word}: {count('weight', key)}"
+                                for key, word in t["weights"].items()))
+    if any(certainty_of(x) is not None for x in findings):
+        lines.append(t["sure_key"])
+    said = [author_of(x, t) for x in findings]
+    words = [w for w, _ in (s for s in said if s) if w]
+    if words:
+        lines.append(t["author_line"] + " · ".join(
+            f"{w}: {words.count(w)}" for w in dict.fromkeys(
+                [t["says"][k] for k in t["says"]] + words) if w in words))
+    return "\n".join(lines)
+
+
 class Doc:
     def __init__(self, store):
         self.store = store
@@ -542,9 +675,9 @@ def run_tui(doc):
         curses.use_default_colors()
         for i, c in enumerate((curses.COLOR_GREEN, curses.COLOR_YELLOW,
                                curses.COLOR_CYAN, curses.COLOR_MAGENTA,
-                               curses.COLOR_BLUE), 1):
+                               curses.COLOR_BLUE, curses.COLOR_RED), 1):
             curses.init_pair(i, c, -1)
-        GREEN, DIM, CYAN, MAGENTA, BLUE = (curses.color_pair(i) for i in range(1, 6))
+        GREEN, DIM, CYAN, MAGENTA, BLUE, RED = (curses.color_pair(i) for i in range(1, 7))
         BOLD, REV = curses.A_BOLD, curses.A_REVERSE
         def tone(x):
             d = x.get("decision")
@@ -562,27 +695,71 @@ def run_tui(doc):
                 except curses.error:
                     pass
 
-        def list_rows():
-            rows = []
+        # The title has the row to itself, and what is said about the finding —
+        # its weight, how sure, the author's answer, a repeat — is the line under
+        # it, starting in one place, so the eye runs down the weights alone. On
+        # one line with them, a Russian title had eight columns of an 80-column
+        # terminal left.
+        def weight_attr(x):
+            return RED | BOLD if x.get("weight") == "blocks" else \
+                DIM if x.get("weight") == "minor" else 0
+
+        def list_rows(width):
+            # The lines above the list are wrapped to it: cut at its edge, the
+            # key under a column of numbers is the part that goes.
+            counts = weights_line(doc.findings, t, doc.doc.get("round"))
+            rows = [(None, f" {part}", BOLD if k == 0 else DIM, None)
+                    for k, line in enumerate(counts.split("\n")) if counts
+                    for part in textwrap.wrap(line, max(10, width - 3))]
             for i, x in enumerate(doc.findings):
                 pen = "*" if (x.get("note") or "").strip() else " "
                 tick = "✓" if answered(x) else f"{i + 1}"
-                rows.append((i, f" {tick:>2} {pen}{x.get('title', '')}", tone(x)))
+                rows.append((i, f" {tick:>2} {pen}{x.get('title', '')}", tone(x), None))
+                c, said = certainty_of(x), author_of(x, t)
+                meta = " · ".join(p for p in (
+                    " ".join(p for p in (weight_of(x, t), "" if c is None else str(c)) if p),
+                    said and said[0] and t["by_author"].format(s=said[0]),
+                    earlier_of(doc, x) is not None and t["again"]) if p)
+                for k, part in enumerate(textwrap.wrap(meta, max(10, width - 7))):
+                    rows.append((i, f"     {part}", tone(x) or DIM,
+                                 5 if k == 0 and weight_of(x, t) else None))
             return rows
 
         def detail_rows(width):
             item = doc.findings[sel]
-            rows = [(item.get("title", ""), BOLD),
-                    (item.get("id", ""), DIM), ("", 0)]
-            for key in ("see", "why"):
-                label, val = t[key], (item.get(key) or "").strip()
-                if not val:
-                    continue
-                rows.append((label.upper(), MAGENTA | BOLD))
+            rows = [(item.get("title", ""), BOLD)]
+            if weight_of(item, t):
+                rows.append((weight_of(item, t), weight_attr(item) or BOLD))
+            if certainty_of(item) is not None:
+                rows.append((t["sure_of"].format(n=certainty_of(item)), 0))
+            before = earlier_of(doc, item)
+            if before is not None:
+                rows.append((t["again"], BOLD))
+            rows += [(item.get("id", ""), DIM), ("", 0)]
+
+            def section(head, val):
+                rows.append((head.upper(), MAGENTA | BOLD))
                 for para in val.split("\n"):
                     for line in textwrap.wrap(para, max(20, width - 2)) or [""]:
                         rows.append((line, 0))
                 rows.append(("", 0))
+
+            for key in ("see", "why", "if_left"):
+                val = (item.get(key) or "").strip()
+                if val:
+                    section(t[key], val)
+            answer = author_of(item, t)
+            if answer:
+                section(t["author"] + (f": {answer[0]}" if answer[0] else ""), answer[1])
+            if before:
+                old = before["author"]
+                text = "\n".join(s for s in (
+                    old and " — ".join(p for p in (
+                        old[0] and t["by_author"].format(s=old[0]), old[1]) if p),
+                    before["answer"] and t["your_answer"].format(a=before["answer"])) if s)
+                if text:
+                    section(t["earlier"].format(n=before["round"])
+                            if before.get("round") else t["earlier_any"], text)
             refs, missing = locations(item, doc.root, doc.index)
             if refs:
                 rows.append((t["code"].upper(), MAGENTA | BOLD))
@@ -753,13 +930,17 @@ def run_tui(doc):
             rw = w - lw - 1
             item = doc.findings[sel]
 
-            rows = list_rows()
+            rows = list_rows(lw)
             here = next((k for k, r in enumerate(rows) if r[0] == sel), 0)
             top = max(0, min(here - (h - 2) // 2, len(rows) - (h - 1)))
-            for i, (idx, line, attr) in enumerate(rows[top:top + h - 1]):
+            for i, (idx, line, attr, at) in enumerate(rows[top:top + h - 1]):
                 on = idx == sel
                 put(i, 0, line.ljust(lw), attr | (REV if on and pane == "list" else
                                                   (BOLD if on else 0)), lw)
+                x = doc.findings[idx] if idx is not None else {}
+                if at is not None and weight_attr(x) and not (on and pane == "list"):
+                    word = weight_of(x, t)
+                    put(i, at, word, weight_attr(x), min(lw - at, len(word) + 1))
 
             body = detail_rows(rw)
             scroll = max(0, min(scroll, max(0, len(body) - (h - 1))))
@@ -928,6 +1109,29 @@ border-radius:7px;border:1px solid rgba(128,128,128,.4);background:transparent;
 color:inherit;resize:vertical}
 textarea:focus{outline:none;border-color:#4a80e0}
 .it .pen{opacity:.5;font-size:11px;margin-left:auto;flex:0 0 auto}
+/* The weight sits at the right of every row, with how sure the review is of it
+   beside it, where the eye can run down them without reading a title. Only
+   "blocks" is filled: it is the one that changes what happens next. */
+.wt{font-size:11px;line-height:1.5;padding:1px 8px;border-radius:20px;white-space:nowrap;
+border:1px solid rgba(128,128,128,.45);flex:0 0 auto;align-self:flex-start;margin-top:2px}
+.wt.blocks{background:#d64545;border-color:#d64545;color:#fff;font-weight:600}
+.wt.minor{opacity:.5}
+.it .wt{margin-left:auto}
+.it .wt ~ .pen{margin-left:0}
+#pane .wt{display:inline-block;margin:0 0 8px}
+/* How sure the review is: a second scale, so a second mark of its own, plain
+   and grey — the colour belongs to the weight alone. */
+.cf{font-size:11px;line-height:1.5;padding:1px 7px;border-radius:20px;white-space:nowrap;
+border:1px dashed rgba(128,128,128,.55);flex:0 0 auto;align-self:flex-start;margin-top:2px;
+font-variant-numeric:tabular-nums;opacity:.8}
+#pane .cf{display:inline-block;margin:0 0 8px 6px}
+.weights{font-size:12.5px;opacity:.7;padding:2px 10px 10px;font-variant-numeric:tabular-nums;
+white-space:pre-line}
+/* The author's answer and a repeat go under the title, not beside it: four
+   marks in one row leave the title no room. */
+.tt .sub{display:block;font-size:12px;opacity:.6;margin-top:1px}
+#pane .ag{display:inline-block;margin:0 0 8px 6px;font-size:11px;line-height:1.5;
+padding:1px 8px;border-radius:20px;background:rgba(128,128,128,.18)}
 #ask{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;place-items:center;
 padding:40px;z-index:5}
 #ask.on{display:grid}
@@ -1015,6 +1219,24 @@ const hl = s => escCode(s).replace(RX, (m, lit) =>
   lit ? `<span class="${lit[0] === '/' || lit[0] === '#' ? 'c' : 's'}">${m}</span>`
       : `<span class="k">${m}</span>`);
 const T = D._t;
+// A file written before weights has none, and then there is no badge at all —
+// an empty one would read as a weight of its own.
+const badge = x => x.weight
+  ? `<span class="wt ${esc(x.weight)}">${esc(T.weights[x.weight] || x.weight)}</span>` : '';
+const sure = x => Number.isFinite(x.certainty) && x.certainty >= 0 && x.certainty <= 100
+  ? Math.round(x.certainty) : null;
+// In the list the number alone, under the key above the list; on the finding's
+// own page the whole phrase.
+const sureMark = (x, long) => sure(x) === null ? ''
+  : `<span class="cf">${esc(long ? T.sure_of.replace('{n}', sure(x)) : sure(x))}</span>`;
+// Under the title in the list: what the author said, in a word, and whether it
+// is a repeat. Nothing when the file has neither.
+const subLine = x => {
+  const parts = [];
+  if (x._author && x._author[0]) parts.push(T.by_author.replace('{s}', x._author[0]));
+  if (x._earlier) parts.push(T.again);
+  return parts.length ? `<span class="sub">${esc(parts.join(' · '))}</span>` : '';
+};
 fin.textContent = D._waiting ? T.finish_waiting : T.finish;
 // Two projects triaged in two tabs are the same page without this.
 if (D.project) document.title = D.project + ' — review triage';
@@ -1039,12 +1261,14 @@ function stat(){
 }
 function drawList(){
   // One question per row: answered or not. Which option was picked is on the
-  // finding's own screen; a column of numbers here is a puzzle, not a list.
-  let h = '';
+  // finding's own screen; a column of option numbers here is a puzzle, not a
+  // list. The one number a row does carry is how sure the review is, and the
+  // key above the list says so.
+  let h = D._weights ? `<div class="weights">${esc(D._weights)}</div>` : '';
   D.findings.forEach((x, i) => {
     h += `<div class="it ${kind(x)} ${i === sel ? 'on' : ''}" data-i="${i}">
       <span class="bx">${kind(x) ? '✓' : i + 1}</span>
-      <span class="tt">${esc(x.title)}</span>
+      <span class="tt">${esc(x.title)}${subLine(x)}</span>${badge(x)}${sureMark(x, false)}
       ${(x.note || '').trim() ? '<span class="pen">note</span>' : ''}</div>`;
   });
   list.innerHTML = h;
@@ -1162,8 +1386,21 @@ function drawPane(){
     : (opts.length ? T.pick_one.replace('{do}', opts[0].do) : '');
   // The id is a handle for talking about the finding afterwards, not something
   // the reader has to get past to reach the sentence that matters.
-  pane.innerHTML = `<h2>${esc(x.title)}</h2><div class="slug">${esc(x.id)}</div>
-    ${sec(T.see, x.see)}${sec(T.why, x.why)}
+  // The author's answer comes after the reviewer's own account, and a repeat
+  // shows what was answered to it before.
+  const au = x._author;
+  const authorSec = au ? `<div class="lbl">${esc(T.author + (au[0] ? ': ' + au[0] : ''))}</div>`
+    + (au[1] ? `<p>${esc(au[1])}</p>` : '') : '';
+  const was = x._earlier, old = was && was.author;
+  const wasText = was ? [old ? [old[0] && T.by_author.replace('{s}', old[0]), old[1]]
+                                 .filter(Boolean).join(' — ') : '',
+                         was.answer ? T.your_answer.replace('{a}', was.answer) : '']
+                        .filter(Boolean).join('\\n') : '';
+  const earlierSec = wasText ? sec(esc(was.round ? T.earlier.replace('{n}', was.round)
+                                                 : T.earlier_any), wasText) : '';
+  pane.innerHTML = `<h2>${esc(x.title)}</h2>${badge(x)}${sureMark(x, true)}`
+    + `${was ? `<span class="ag">${esc(T.again)}</span>` : ''}<div class="slug">${esc(x.id)}</div>
+    ${sec(T.see, x.see)}${sec(T.why, x.why)}${sec(T.if_left, x.if_left)}${authorSec}${earlierSec}
     ${refs ? `<div class="lbl">${esc(T.code)}</div>` + refs : sec(T.where, x.where)}
     ${how}${acts}
     ${more}${wants ? `<textarea id="note" maxlength="4000" placeholder="${esc(ph)}"
@@ -1272,10 +1509,12 @@ draw();
 
 
 def payload(doc):
-    out = dict(doc.doc, _waiting=WAITING, _t=doc.t)
-    # `options` is resolved here, not in the page: the fallback for a finding
-    # written before options existed has to read the same in both modes.
-    out["findings"] = [dict(x, options=options_of(x),
+    out = dict(doc.doc, _waiting=WAITING, _t=doc.t,
+               _weights=weights_line(doc.findings, doc.t, doc.doc.get("round")))
+    # `options`, the author's answer and the earlier one are resolved here, not
+    # in the page: a file written before them has to read the same in both modes.
+    out["findings"] = [dict(x, options=options_of(x), _author=author_of(x, doc.t),
+                            _earlier=earlier_of(doc, x),
                             **dict(zip(("refs", "missing"),
                                        locations(x, doc.root, doc.index))))
                        for x in doc.findings]

@@ -194,6 +194,7 @@ MyApp/
 - How far the loop takes a finished task is the project's decision (the requirement "Who writes to
   git"); outside the loop git is read-only for agents
 - The task boundary and the definition of done belong to the user
+- A review's findings: whoever wrote the change answers each; none is an instruction
 - Reporting: the user's terms, ranked by what blocks the product, findings in a file
 
 ### TASK_LOOP.md

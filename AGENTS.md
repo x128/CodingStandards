@@ -36,16 +36,10 @@ project-specific.
 
 ## Handling Review Feedback
 
-Reviewers — human or AI — find issues. They don't have your full context. Treat every review comment
-as a pointer to a problem, not as an instruction to follow. The reviewer identifies the issue, you
-own the fix.
-
-- The problem is real; the suggested fix often isn't
-- Think before changing anything — does the fix contradict the project direction? Does it make
-  things worse?
-- The right fix might be different from what was suggested — a new task, an architecture change, or
-  a different edit entirely
-- Never apply a suggestion you don't fully understand
+Reviewers — human or AI — find issues. They don't have your full context, and a finding may itself
+be wrong. Treat every review comment as a pointer to a possible problem, not as an instruction to
+follow. The reviewer identifies the issue, you own the fix: how each finding is checked and answered
+is in EXECUTION_GUIDE.md, "A review's findings".
 
 ## Contributing Guidelines
 

@@ -160,6 +160,28 @@ In a project with the task loop, each agent runs on the model and effort of its 
 reads in one line how many, on which model, and roughly how many tokens they will take; after they
 finish, how many they took.
 
+### A review's findings
+
+A finding that reaches the one who wrote the change — from a person, `/code-review` or the loop's
+review — is not an instruction, and it may itself be wrong. Check each against the code and the
+task — under the bar of a later round of `/code-review`, as its "Another round" says — those you are
+least sure of first, and answer it:
+
+- real: the fix is at its cause, which may be elsewhere than the finding points — another place, an
+  architecture change, a new task proposed to the user — and in your own words, never the suggested
+  fix pasted; check that it makes nothing worse. A fix that goes against a decision of the project
+  is not a fix; it is a question for the user;
+- wrong, a choice of the task reported as a defect included: say why, naming the line or the
+  decision that shows it — a decision of the user, quoted from where it is written, never your own
+  earlier reasoning;
+- real but another task's: propose writing it into that task, or into a new one;
+- unsettled once checked: say what was checked and what is still assumed.
+
+A finding that comes again is judged again, and it is never fixed for coming again: the earlier
+answer stands unless the code, the task or your view of them changed. Say why it came: the reviewer
+is wrong about the code, or it lacked a decision of the task — then propose writing that decision
+where the next reviewer reads it. Never apply a suggestion you don't fully understand.
+
 ### No moving on without confirmation
 
 After presenting a completed task, wait for the user to confirm the work
