@@ -157,7 +157,7 @@ e2e_check "after a passing end-to-end run /qa may go on" 0 "check exited 0"
 review "an accepted finding goes to the executor" 3 "accepted (>= major): 1" \
   "$(finding '"bug"')" "$(verdict '"accept"' no-rule-fired)"
 review "an escalated finding waits for an answer" 4 "escalated         : 1" \
-  "$(finding '"bug"')" "$(verdict '"escalate"' needs-human-judgment)"
+  "$(finding '"bug"')" "$(verdict '"escalate"' needs-judgment)"
 review "a category outside the schema fails closed" 1 "reviewer output does not match" \
   "$(finding '"opinion"')" "$(verdict '"accept"' no-rule-fired)"
 review "a category given as a list fails closed" 1 "reviewer output does not match" \
@@ -165,7 +165,7 @@ review "a category given as a list fails closed" 1 "reviewer output does not mat
 review "a verdict outside the schema fails closed" 1 "maintainer output is malformed" \
   "$(finding '"bug"')" "$(verdict '"maybe"' no-rule-fired)"
 review "a verdict given as a list fails closed" 1 "maintainer output is malformed" \
-  "$(finding '"bug"')" "$(verdict '["escalate"]' needs-human-judgment)"
+  "$(finding '"bug"')" "$(verdict '["escalate"]' needs-judgment)"
 review "a rejected finding leaves the run clean" 0 "rejected          : 1" \
   "$(finding '"bug"')" "$(verdict '"reject"' contradicts-green-gate)"
 

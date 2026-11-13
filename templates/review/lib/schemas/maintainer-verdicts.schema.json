@@ -29,7 +29,7 @@
               "replication",
               "out-of-task-scope",
               "unproven-possible",
-              "needs-human-judgment",
+              "needs-judgment",
               "no-rule-fired"
             ],
             "description": "Which decision rule from TASK_LOOP.md fired. First match wins."

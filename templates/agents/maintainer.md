@@ -22,7 +22,7 @@ match wins:
 
 `contradicts-green-gate` → `confirmed-by-red-gate` → `policy-rule` →
 `replication` → `out-of-task-scope` → `unproven-possible` →
-`needs-human-judgment` → `no-rule-fired`
+`needs-judgment` → `no-rule-fired`
 
 **That order is the only part reproduced here.** Each rule's conditions,
 exceptions and worked examples are in `prompts/maintainer.md`, which is

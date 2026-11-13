@@ -355,13 +355,13 @@ Decision rules, first match wins:
    `category: security`, which escalates instead. The rule does not reach a
    `confirmed` or `likely` finding at all — a proven security bug is an
    ordinary accept, and escalating it would delay a real fix behind an answer.
-7. **Architectural judgment, or gate/finding conflict → escalate.**
+7. **Architectural judgment, or gate/finding conflict → escalate** (`needs-judgment`; logs written
+   before 2026-11-12 name it `needs-human-judgment`).
 8. **No rule above fires → accept** (`no-rule-fired`): the finding stands on its
    own evidence. It is not a policy rule matching, and is not logged as one.
 
 An escalation is answered before landing; who answers it, and when it reaches the user, is
-`/maintain`, step 7, whatever the name of the rule that raised it (`needs-human-judgment` is kept
-for the logs).
+`/maintain`, step 7.
 
 `lib/prompts/maintainer.md` is fed to the maintainer by `review.sh` and is
 **normative**; this section explains the rules rather than restating them, and

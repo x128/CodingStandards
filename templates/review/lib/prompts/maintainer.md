@@ -40,7 +40,7 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
    on a `confirmed` or `likely` finding, security or otherwise: a proven security bug is an ordinary
    `accept` and goes straight to the executor.
 7. **Architectural judgment, or a gate that conflicts with a finding → `escalate`**
-   (`needs-human-judgment`).
+   (`needs-judgment`).
 8. **No rule above fires → `accept`** (`no-rule-fired`), severity as the reviewer derived it —
    lowered only where the reviewer inflated it (below). The finding stands on its own evidence.
    Never name `policy-rule` for it: `/policy` reads that value as a rule of the project that
@@ -97,7 +97,7 @@ Finding: {"id": "F-007", "category": "arch", "severity": "major",
           "confidence": "likely",
           "evidence": "the use case calls the HTTP client directly instead of a repository"}
 Verdict: {"finding_id": "F-007", "verdict": "escalate", "severity": "major",
-          "decision_rule": "needs-human-judgment",
+          "decision_rule": "needs-judgment",
           "reason": "The arch gate passes, so no encoded rule forbids this. Introducing a
                      repository is a design decision outside the task's exit criteria."}
 ```
