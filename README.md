@@ -4,11 +4,10 @@ Reusable coding standards and agent skills for consistent, clean code across pro
 
 ## Standards
 
-Every project follows PLANNING_GUIDE, CLEAN_CODE, ARCHITECTURE, TESTING and
-EXECUTION_GUIDE, and the documents of its stack: KOTLIN for Kotlin,
-KOTLIN_MULTIPLATFORM for KMP, SWIFT where it has iOS. A language with no
-document here follows the language-agnostic ones. TASK_LOOP is for a project
-that runs the loop.
+Every project follows PLANNING_GUIDE, CLEAN_CODE, ARCHITECTURE, TESTING and EXECUTION_GUIDE, and the
+documents of its stack: KOTLIN for Kotlin, KOTLIN_MULTIPLATFORM for KMP, SWIFT where it has iOS, CPP
+for a C++ core. A language with no document here follows the language-agnostic ones. TASK_LOOP is
+for a project that runs the loop.
 
 | Document | Description |
 |----------|-------------|
@@ -16,6 +15,7 @@ that runs the loop.
 | [CLEAN_CODE.md](./CLEAN_CODE.md) | Language-agnostic clean code principles (SOLID, DRY, naming, etc.) |
 | [KOTLIN.md](./KOTLIN.md) | Kotlin / KMP coding standards |
 | [SWIFT.md](./SWIFT.md) | Swift / iOS coding standards |
+| [CPP.md](./CPP.md) | C++ core under native apps: the code owner's decisions, asked before the C++ code is written |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Clean Architecture, package organization, presentation patterns |
 | [TESTING.md](./TESTING.md) | Testing pyramid, conventions, per-layer strategies |
 | [KOTLIN_MULTIPLATFORM.md](./KOTLIN_MULTIPLATFORM.md) | KMP project init, test locations, runners, frameworks |

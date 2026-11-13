@@ -10,6 +10,7 @@ PLANNING_GUIDE.md  # FIRST: intake, requirements, plan, task tracker — before 
 CLEAN_CODE.md      # Language-agnostic principles
 KOTLIN.md          # Kotlin/KMP standards
 SWIFT.md           # Swift/iOS standards
+CPP.md             # C++ core under native apps: the code owner's decisions
 ARCHITECTURE.md    # Clean Architecture, package organization, presentation patterns
 TESTING.md         # Testing pyramid, conventions, per-layer strategies
 KOTLIN_MULTIPLATFORM.md  # KMP project init, test locations, runners, frameworks
@@ -22,9 +23,9 @@ templates/self-improve/ # Tools of /self-improve; never copied into a project th
 tools/mdwrap.py    # Line breaks of the Markdown at 100 columns: check, fill
 ```
 
-Language-specific standards (KOTLIN.md, SWIFT.md) are per-stack. Everything
-else — including the review pipeline — is language-agnostic by design: only
-`templates/review/project/gates.sh` knows what language a project is written in.
+Language-specific standards (KOTLIN.md, SWIFT.md, CPP.md) are per-stack. Everything else — including
+the review pipeline — is language-agnostic by design: only `templates/review/project/gates.sh` knows
+what language a project is written in.
 
 This repo is consumed as a submodule at `CodingStandards/`. Templates are split by ownership:
 `templates/review/lib/` runs from the submodule and is never copied or edited by host projects;
