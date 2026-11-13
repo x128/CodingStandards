@@ -626,6 +626,11 @@ class Doc:
 #  the summary below is what it reads. Launched from your own shell, there is no
 #  such channel and the tool can only tell you to go say so.
 WAITING = os.environ.get("TRIAGE_CALLER") == "claude"
+# A terminal that is still open makes a read wait for a key; one closed under the
+# tool answers every read at once with nothing. A signal gives one empty read at
+# most, so this many in a row, with no key between them, means the terminal is
+# gone — and they take a few milliseconds, where waiting longer spins a core.
+EMPTY_READS_WHEN_GONE = 10
 
 
 def tally_of(doc):
@@ -686,6 +691,7 @@ def run_tui(doc):
 
         pane, sel, scroll, opened = "list", 0, 0, {}
         refcur = {}         # finding → which code link the cursor is on
+        empty = 0           # reads in a row that brought no key
 
         def put(y, x, text, attr=0, width=None):
             room = (width if width is not None else scr.getmaxyx()[1] - x) - 1
@@ -889,6 +895,7 @@ def run_tui(doc):
             leaves what was there — the only place Enter decides anything, and
             it decides about text, never about a finding."""
             text = item.get("note") or ""
+            empty = 0
             curses.curs_set(1)
             try:
                 while True:
@@ -906,7 +913,11 @@ def run_tui(doc):
                     try:
                         k = scr.get_wch()     # get_wch, not getch: a note is
                     except curses.error:      # typed in whatever language the
-                        continue              # review is written in
+                        empty += 1            # review is written in
+                        if empty >= EMPTY_READS_WHEN_GONE:
+                            return None       # as Esc: the note was not kept
+                        continue
+                    empty = 0
                     if isinstance(k, str):
                         if k == "\x1b":
                             return None
@@ -969,6 +980,9 @@ def run_tui(doc):
             scr.refresh()
 
             k = scr.getch()
+            empty = empty + 1 if k == -1 else 0
+            if empty >= EMPTY_READS_WHEN_GONE:
+                break                   # the answers are saved on the way out
             refs, _ = locations(item, doc.root, doc.index)
             # Esc used to quit. It is also the first byte of every arrow key, so
             # a reach for → could end the review — and nothing that ends it
