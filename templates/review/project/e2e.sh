@@ -6,7 +6,7 @@
 # THIS FILE BELONGS TO YOUR PROJECT, NOT TO THE SUBMODULE.
 # Copied once from CodingStandards/templates/review/project/ into your repo's
 # .review/ and filled in. It is reviewed and lands with the task that changes it;
-# land.sh refuses a run whose harness changed after it ran.
+# land.sh, or at LANDING=pr and merge publish.sh, refuses a run whose harness changed after it ran.
 #
 # Usage:   .review/e2e.sh <platform> <report-dir>
 #          platform: android, ios or app — what e2e-gate.sh finds in the tree

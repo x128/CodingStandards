@@ -11,8 +11,8 @@ Runs the task loop of TASK_LOOP.md on one task at a time — the work, the check
 fixes, the landing — and shows the finished task to the user; or sets the loop up in a project that
 has none. It needs the project's requirements, plan and tracker. The steps that need judgment live
 here; the fixed ones are scripts: `gates.sh` for the checks, `review.sh` for review and triage,
-`land.sh` for the commit, `publish.sh` for the push, the pull request and the merge. The loop calls
-them and never does their work by hand.
+`land.sh` for the commit, `publish.sh` for the push, the pull request and the merge, `pr-post.sh`
+for what the loop writes on the pull request. The loop calls them and never does their work by hand.
 
 ## Instructions
 
@@ -43,8 +43,10 @@ Every step below, when `.review/gates.sh` does not exist.
    changes it. Fill `RISK_PATHS` with the project's sensitive folders. At `push` and up, look for
    the remote with `git remote`; at `pr` and `merge`, for `gh` with `gh auth status`; a name the
    project needs goes into `REMOTE` or `BASE_BRANCH`. Landing refuses by condition 8 until these are
-   there. At `merge`, set `CHECKS_WAIT` a little over what the project's checks take, or to `0` if
-   it has none.
+   there. At `pr` and `merge`, set `CHECKS_WAIT` a little over what the project's checks take, or to
+   `0` if it has none, and tell the user in the report how their host can make the base branch take
+   changes only through a pull request, with the loop's statuses required and squash merges only,
+   where it can; change nothing there yourself.
 7. **Report**, in the user's language, starting with what the user has to do — commit the new files,
    at `push` and up, push that commit too (condition 8 refuses to publish a commit no landing made),
    add a missing remote, log `gh` in, fill what only they can — then each check with its command,
@@ -56,14 +58,31 @@ With `.review/` present this is the way task work is done, named or not: "next t
 "continue", accepting a finished task. A question, a typo fix, a rename, or "skip the review" is
 done directly.
 
+At `LANDING=pr` and `merge`, the pull request levels, the loop works as a developer does: the work
+and its own checks come before the commit, and the review, the end-to-end tests and `/qa` run on the
+pull request and post their results there (TASK_LOOP.md, "The Loop"). The steps then run in this
+order: 1–4; 11, which commits, pushes and opens the pull request; 5–10, with 11 again in each fix;
+11 once more, which commits the records and merges, or at `pr` says the pull request is ready; 12
+and 13. Throughout, read what people wrote on the pull request with `pr-post.sh comments`, which
+shows whole, with its id and place, everything not settled — `gh pr view` shows no comment on a
+line — weigh each like a finding (EXECUTION_GUIDE.md, "A review's findings"), act, and answer it
+with `pr-post.sh reply <comment-id> <answer> <text-file>`, in its thread, the text in a file under
+`.review/runs/`: `fixed`, or why not — `not-a-problem`, `other-task`, `unsettled`. A person outranks
+the loop: what it did not fix goes to the user, and their decision is posted as the answer `user`,
+with their words from the chat or from what they wrote — a decision counts only when given after the
+loop's answer it decides. A comment that asks for no change, such as the user's own decision written
+on the pull request, is settled by a reply `user` that quotes it. The merge waits until each is
+fixed or decided. At `off`, `on` and `push` the steps run in their order.
+
 1. **The task.** The one named, or the next unblocked `💡 to-do`; ask if the tracker is unclear.
    No tracker is a stop: say so and point to PLANNING_GUIDE.md, Steps 1-2. When no task of its
    epic has started yet, run `/groom` on the epic first, which can change its tasks, and take the
    task again from the groomed tracker; if `/groom` is not among the skills of the session, link
    it (.agents/skills/README.md, "Setup") and tell the user. On the branch of an earlier task the
    work will stack on it (TASK_LOOP.md, "Branches"), and only the user can move the checkout: if
-   that task is merged, ask them to go back to the base branch and update it first; at
-   `LANDING=merge`, say that this task will wait for the earlier one.
+   that task is merged, ask them to go back to the base branch and update it first. At the pull
+   request levels a task never stacks — `land.sh` refuses — so it starts from the updated base
+   branch, never on another task's unmerged branch: until the earlier task is merged, it waits.
 2. **Write `.review/current-task.json`** from the tracker entry: `id`, `title`, `category`, `scope`
    (path globs the work may touch), `exit_criteria` (format:
    `templates/review/project/task.example.json`). `land.sh` refuses anything outside the scope,
@@ -86,21 +105,33 @@ done directly.
    affect anywhere in the app: every place that uses what it changed — callers, screens, background
    work, the other platform — and the shared state, data, navigation, theme and settings it touched;
    what a user could now see differently there, including what was not meant to change; and what it
-   checked itself and what it did not.
+   checked itself and what it did not. At the pull request levels the work ends with its own checks,
+   `.review/gates.sh`, green; `land.sh` runs them again before the commit.
 5. **The review pass:**
 
    ```bash
    CodingStandards/templates/review/lib/review.sh --task-file .review/current-task.json
    ```
 
-   No `--base` inside the loop: by default it reviews the uncommitted work, which is what `land.sh`
-   will commit; `--base <ref>` is for a final pass over a finished branch. Exit codes: `0` clean,
-   `2` checks red, `3` accepted findings remain, `4` escalations, `5` review unusable (re-run; not
-   clean), `6` the task has had `ASK_AFTER_RUNS` runs (5 unless `.review/land.conf` says otherwise)
-   and nothing ran, `1` pipeline error. Note the run directory it prints; landing needs the last
-   one. On `6`, ask the user whether to go on; `--past-limit` runs once more, on their answer or
-   when the count is wrong — runs of another task under the same id — and the report says which.
-   Runs that ended with `2`, `5` or `1` count by design; they never make the count wrong.
+   Below `pr`, no `--base` inside the loop: by default it reviews the uncommitted work, which is
+   what `land.sh` will commit; `--base <ref>` is for a final pass over a finished branch. Exit
+   codes: `0` clean, `2` checks red, `3` accepted findings remain, `4` escalations, `5` review
+   unusable (re-run; not clean), `6` the task has had `ASK_AFTER_RUNS` runs (5 unless
+   `.review/land.conf` says otherwise) and nothing ran, `1` pipeline error. Note the run directory
+   it prints; landing needs the last one. On `6`, ask the user whether to go on; `--past-limit` runs
+   once more, on their answer or when the count is wrong — runs of another task under the same id —
+   and the report says which. Runs that ended with `2`, `5` or `1` count by design; they never make
+   the count wrong.
+
+   At the pull request levels it reviews the pull request's change, from its merge base to HEAD, and
+   refuses, exit `1`, what it cannot review there: work not committed — commit it with `land.sh`
+   first (step 11); the pull request's head behind HEAD, or no pull request after a landing that
+   stopped before opening it — `publish.sh` alone, then review again; a closed pull request, or a
+   head HEAD does not contain — for the user. It posts the run to the pull request; a post that
+   failed makes a clean run exit `1`. Post it with
+   `CodingStandards/templates/review/lib/pr-post.sh run <run-dir>` alone before anything else on
+   that run — answers, `/qa` — which finds a review GitHub took and posts none twice. The merge
+   refuses while any run on the pull request is not posted (M1, M7).
 6. **Fix round.** Work through the accepted findings and run again, as long as each run accepts
    fewer findings than the one before (TASK_LOOP.md, "Job 2"); the count is the
    `accepted (>= threshold)` line, and a run that ended with `2`, `5` or `1` is not compared. A
@@ -118,6 +149,15 @@ done directly.
 
    Record for each accepted finding what was done and why, "nothing, because …" included. A round
    where every finding produced an edit is a warning sign.
+
+   At the pull request levels a round is: the work; `land.sh` (step 11), only when files changed;
+   then the record, in `<run-dir>/answers.json` of the run the findings came from — for each, one of
+   the four answers of EXECUTION_GUIDE.md, "A review's findings": `fixed`, `not-a-problem`,
+   `other-task` or `unsettled`, with its text (format:
+   `templates/review/project/answers.example.json`); then `pr-post.sh answers <run-dir>`, which
+   replies with each to its finding on the pull request; then `review.sh` again. The merge refuses
+   while an answer is not posted. `review.sh` does not read the answers: a finding answered
+   `not-a-problem` that the next run accepts again is escalated, as above.
 7. **Escalations** (exit `4`): answer each yourself. Find out first — read the code, run the check
    that settles it — then decide. How the code is written — copies, names, constants, test tags,
    where a file lives, a design inside the plan's decisions — never reaches the user, as a question
@@ -129,19 +169,28 @@ done directly.
    `.review/decisions/escalations.jsonl`, which lasts when run directories do not: the task, the
    run, the finding with its `code_quote`, the answer and the reason (format:
    `templates/review/project/decisions/escalations.example.jsonl`). Landing refuses while an
-   escalation is unanswered. An escalation answered the same way again is a rule for `/policy`.
+   escalation is unanswered; at the pull request levels the merge does, and the answers are then
+   posted with `pr-post.sh answers <run-dir>`, which posts the statuses again: the review turns
+   green with no commit. An escalation answered the same way again is a rule for `/policy`.
 8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
-   step 7 is answered. What it reports as failing or unproven goes back to whoever does the work,
-   with the text of step 6, and the task is reviewed again (step 5) — once; a second failing `/qa`
-   is escalated as in step 7, and a failing case of `qa/test-cases.md` is what the user sees, so its
-   answer is theirs (`by: human`). Each failure goes back with its case; the end-to-end test of that case
-   is written and seen failing before the fix, the case is marked `e2e: <test>` with it, and the fix
-   makes it pass; the second `/qa` takes from `qa/test-cases.md` only the cases the fix can reach. A
-   defect `/qa` finds that the change did not bring is fixed now, or its end-to-end test stays
-   skipped as `"<task>: <case>"` until that task lands. A defect the user finds later that `/qa`
-   passed goes to `/qa` as a defect of that skill too. If `/qa` is not among the skills of the
-   session, link it (.agents/skills/README.md, "Setup") and tell the user; the step is never skipped
-   silently.
+   step 7 is answered; at the pull request levels it checks the pull request and posts its report
+   there. What it reports as failing or unproven goes back to whoever does the work, with the text
+   of step 6, and the task is reviewed again (step 5; at the pull request levels after `land.sh`) —
+   once; a second failing `/qa` is escalated as in step 7, and a failing case of `qa/test-cases.md`
+   is what the user sees, so its answer is theirs (`by: human`). Each failure goes back with its
+   case; the end-to-end test of that case is written and seen failing before the fix, the case is
+   marked `e2e: <test>` with it, and the fix makes it pass; the second `/qa` takes from
+   `qa/test-cases.md` only the cases the fix can reach. A defect `/qa` finds that the change did not
+   bring is fixed now, or its end-to-end test stays skipped as `"<task>: <case>"` until that task
+   lands. A defect the user finds later that `/qa` passed goes to `/qa` as a defect of that skill
+   too. If `/qa` is not among the skills of the session, link it (.agents/skills/README.md, "Setup")
+   and tell the user; the step is never skipped silently. At the pull request levels the merge waits
+   on what `/qa` left unproven or not checked. An item not checked because a tool or device failed
+   is the loop's: restore it — boot or erase the simulator — and run `/qa` of the whole pull request
+   again. What is still open after that goes to the user, who decides: another `/qa`, or their
+   acceptance in `open-answered.json` beside its `qa.json`, written as
+   `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`. A `/qa` after a fix
+   does not clear what an earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a check you did
    not do; what `/qa` left unproven is not verified.
@@ -153,7 +202,8 @@ done directly.
     architecture, what a later task was to get — run `/groom --change`. All of this comes before
     the landing, because the tracker lands with the task, and with `WITH_RECORDS=yes` the
     requirements and the plan too; otherwise they stay for the user to commit (TASK_LOOP.md,
-    "Landing").
+    "Landing"). At the pull request levels `land.sh` commits these records on the branch before the
+    merge (step 11): the tracker and `qa/test-cases.md`, and the plan only with `WITH_RECORDS=yes`.
 11. **Land:**
 
    ```bash
@@ -167,30 +217,51 @@ done directly.
    set, `off` above all: go on, and say so in the report. Exit codes: `0` landed, as far as
    `LANDING` says, `3` refused, `4` the commit landed but publishing did not finish, `1` error. A
    refusal names its condition: meet it or tell the user; never work around it. A changed tree or an
-   unfinished run means review again (step 5); a landing that fails at or after its gates may be
-   retried once on the same run, and a second time means review again. With `LANDING=off`, `land.sh`
-   prints the files, the message and the commands: give the user the files and the message as
-   printed, the commands only when asked, and never run them.
+   unfinished run means review again (step 5); below `pr`, a landing that fails at or after its
+   gates may be retried once on the same run, and a second time means review again. With
+   `LANDING=off`, `land.sh` prints the files, the message and the commands: give the user the files
+   and the message as printed, the commands only when asked, and never run them.
 
-   At `push`, `pr` and `merge`, `land.sh` calls `publish.sh` after the commit, and at `merge` that
-   can take `CHECKS_WAIT` seconds: give the command that long. On `4` the commit is in. If no code
-   has to change, meet the cause its output names and run the script alone, never `land.sh` again:
+   At `push`, `pr` and `merge`, `land.sh` calls `publish.sh` after the commit. On `4` the commit is
+   in. If no code has to change, meet the cause its output names and run the script alone, never
+   `land.sh` again:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json
    ```
 
-   Exit codes: `0` done, `3` refused, `5` waiting (the pull request stays as it is), `1` error. On
-   `4` or `5` with a pull request open, read it with `gh pr view` and `gh pr checks`. Checks still
-   running are not a failure: run `publish.sh` again, up to three runs in a row, then tell the user.
-   What needs fixing — a failing check, a change a reviewer asked for — goes through the loop on the
-   same branch: the work (step 4), a review run (step 5), landing again, which adds a commit and
-   updates the pull request. Requested changes stand until the person who asked approves them, so
-   after the fix `5` for that reason goes to the user. So does what no agent can do: a conflict with
-   the base branch, which they merge in before `publish.sh` runs alone; a pull request closed
-   without a merge, which only they reopen; a stacked task waiting for an earlier one; a base branch
-   that could not fast-forward after a merge. The same `4` or `5` for any other reason twice in a
-   row goes to the user as in step 6; a merge `publish.sh` refused is never done by hand.
+   Exit codes: `0` done, `3` refused, `5` waiting (the pull request stays as it is), `1` error.
+
+   At the pull request levels `land.sh` takes no `--run`:
+
+   ```bash
+   CodingStandards/templates/review/lib/land.sh --task-file .review/current-task.json
+   ```
+
+   It checks the commit contract (TASK_LOOP.md, "The contract at the pull request levels") — the
+   branch, the scope, the checks now — commits on `task/<id>`, and `publish.sh` pushes and opens the
+   pull request, or updates it. It runs after step 4; in a fix round, when files changed; and after
+   step 10, for the records alone. Past `ASK_AFTER_RUNS` red or unfinished checks of the task it
+   refuses, and `--past-limit` goes on as in step 5. Then the merge contract, M1–M9:
+
+   ```bash
+   CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json --merge
+   ```
+
+   at `merge`, or `--check` at `pr`. At `merge` it merges with squash once every item holds, which
+   can take `CHECKS_WAIT` seconds: give the command that long. At `pr`, `0` says the pull request is
+   ready for the user to merge. A refusal names its item: meet it — a review run, `/qa` again, an
+   answer to post — or tell the user. On `4` or `5`, read the pull request with `gh pr view`,
+   `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure: run `--check`
+   or `--merge` again, up to three runs in a row, then tell the user. Changes requested in a review
+   stand until the one who asked approves or dismisses it: once the fix is in, that wait goes to the
+   user, and so does a comment the loop did not fix. What needs fixing — a failing check, a person's
+   comment — goes through the loop on the same branch: the work (step 4), `land.sh`, a review run
+   (step 5). What no agent can do goes to the user: a conflict with the base branch, which they
+   merge in, and the loop then publishes, reviews and checks it again; a pull request closed without
+   a merge, which only they reopen; a base branch that could not fast-forward after a merge. The
+   same `4` or `5` for any other reason twice in a row goes to the user as in step 6; a merge
+   `publish.sh` refused is never done by hand.
 12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format:
     `templates/review/project/decisions/tasks.example.jsonl`) — written once the user has answered
@@ -198,26 +269,28 @@ done directly.
     commit of the next task. An accepted task is provisional; once `CONFIRM_AFTER`
     (`.review/land.conf`) later tasks in the same paths are accepted and committed, add its
     confirmation line. No predictions and no score of quiet tasks: the user decides when a kind of
-    task stops being shown. Once the task has landed, delete what its checks left: under
-    `.review/runs`, the recordings, frames, copies of the code and builds — the reports, logs and
-    JSON stay — and erase the simulators the checks created.
+    task stops being shown. Once the task is in the base branch — at `pr`, once the user has merged
+    it — delete what its checks left: under `.review/runs`, the recordings, frames, copies of the
+    code and builds — the reports, logs and JSON stay — and erase the simulators the checks created.
 13. **Advance or stop**, as `.review/land.conf` says:
-    - `ADVANCE=ask`: show the finished task, starting with what the user has to do — accept or
-      object; with `LANDING=off`, commit; at `push`, merge the branch; at `pr`, merge the pull
-      request; and at both, go back to the base branch and update it, so the next task starts there;
-      at every level commit the decision logs and the policy rules under `.review/`, and the
+    - `ADVANCE=ask`: show the finished task, at the pull request levels starting with the link of
+      its pull request, then what the user has to do — accept or object; with `LANDING=off`, commit;
+      at `push`, merge the branch; at `pr`, merge the pull request with squash, so that it lands as
+      one commit; and at both, go back to the base branch and update it, so the next task starts
+      there; at every level commit the decision logs and the policy rules under `.review/`, and the
       requirements and the plan if they changed — with `LANDING=off`, all in the task's one commit;
       with `WITH_RECORDS=yes` the loop's commit holds them — then what changed, the results of the
       build, test, format, lint and architecture checks, what `/qa` checked and found, the commit,
       the branch and the pull request, and the questions of step 10. The review's findings and their
-      answers stay in `.review/` (steps 6 and 7). Then wait. On acceptance — with `LANDING=off`,
-      once the user says it is committed — log the task boundary (step 12) and go to step 1. At
-      `merge` the task is already in main: an objection is a new task on top of it, or a revert the
-      user makes.
-    - `ADVANCE=auto`, at any `LANDING` but `off`: go on without waiting, with one line saying which
-      task landed and which starts, only when `land.sh`, or the last `publish.sh` after it, ended
-      with `0`, the task's category is in `ADVANCE_CATEGORIES`, nothing it touched is in
-      `RISK_PATHS` and step 10 left no question; otherwise as `ask`.
+      answers stay in `.review/` (steps 6 and 7), and on the pull request for whoever opens it. Then
+      wait. On acceptance — with `LANDING=off`, once the user says it is committed — log the task
+      boundary (step 12) and go to step 1. At `merge` the task is already in main: an objection is a
+      new task on top of it, or a revert the user makes.
+    - `ADVANCE=auto`, at any `LANDING` but `off` and `pr`: go on without waiting, with one line
+      saying which task landed and which starts, only when `land.sh`, or the last `publish.sh` after
+      it — at `merge` with `--merge` — ended with `0`, the task's category is in
+      `ADVANCE_CATEGORIES`, nothing it touched is in `RISK_PATHS` and step 10 left no question;
+      otherwise as `ask`. At `pr` the next task waits for the user's merge anyway (step 1).
 
 ### Rules
 
@@ -225,9 +298,11 @@ done directly.
   do it myself" are followed at once, without offering the loop again.
 - A partial run is never shown as a loop run; say which steps were skipped.
 - `--dry-run` runs every step with `land.sh --dry-run`, to show the files and the message that
-  would land.
-- Only `land.sh` and `publish.sh` write to git, and only as far as the answer to "Who writes to git"
-  allows; nothing else here does (EXECUTION_GUIDE.md, "Who writes to git").
+  would land; at the pull request levels the review then reviews the uncommitted work as at `push`,
+  and nothing is posted.
+- Only `land.sh` and `publish.sh` write to git, and `pr-post.sh` to the pull request, only as far as
+  the answer to "Who writes to git" allows; nothing else here does (EXECUTION_GUIDE.md, "Who writes
+  to git").
 - Only accepted findings reach whoever does the work.
 - Reviewer and maintainer each work in a fresh session (TASK_LOOP.md, "Role separation").
 - An objection of the user at a task boundary goes to `/policy`.
@@ -236,7 +311,7 @@ done directly.
 ## Allowed Prompts
 - Read the requirements, the plan, the tracker, the diff, source files, `.review/**` and the
   standards
-- Run `gates.sh`, `review.sh`, `land.sh`, `publish.sh`, tests and linters
+- Run `gates.sh`, `review.sh`, `land.sh`, `publish.sh`, `pr-post.sh`, tests and linters
 - Start the `reviewer` and `maintainer` subagents; run `/qa`, `/groom`, and `/policy` for an
   escalation answered the same way again (step 7)
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
@@ -244,7 +319,7 @@ done directly.
   the plan; in `--init`, the files of setup steps 1 to 6
 - Delete what the checks left under `.review/runs` and erase the simulators they created (step 12)
 - Git: read-only (`status`, `diff`, `log`, `show`, and `remote` in `--init`); `gh`: read-only
-  (`pr view`, `pr checks`, and `auth status` in `--init`)
+  (`pr view`, its comments and reviews included, `pr checks`, and `auth status` in `--init`)
 
 ## Example Usage
 

@@ -10,9 +10,20 @@
 # slots at the bottom for your stack and nothing else changes between projects.
 #
 # Usage:   .review/gates.sh [output-path]
-# Writes:  JSON gate results (default .review/runs/latest/gates.json)
+# Writes:  JSON gate results (default .review/runs/latest/gates.json): each gate's
+#          status, command, output, seconds and summary line
 # Exit:    0 — all blocking gates passed
 #          1 — a blocking gate failed
+#
+# What a gate's command finds in its environment:
+#   REVIEW_BASE   the commit the change under review starts from: the merge base with
+#                 the base branch on a pull request (LANDING=pr and merge), the merge
+#                 base with <ref> for review.sh --base <ref>, HEAD otherwise. A gate that looks at the change alone — the formatting of
+#                 the changed files, the comments added — measures it from there: on a
+#                 pull request whose work is all committed, HEAD shows no change, and
+#                 the gate would check nothing and pass.
+#   GATE_SUMMARY  a file the command may write one line to — the tests run, the
+#                 warnings — shown with the gate's result on the pull request.
 #
 # Requires: jq >= 1.6
 
@@ -23,6 +34,7 @@ mkdir -p "$(dirname "$OUT")"
 
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "$RESULTS_FILE"' EXIT
+export REVIEW_BASE="${REVIEW_BASE:-HEAD}"
 BLOCKING_FAILURE=0
 MAX_OUTPUT_CHARS=4000
 
@@ -31,11 +43,14 @@ run_gate() {
   local slot="$1" blocking="$2"
   shift 2
   local command="$*"
-  local log_file status
+  local log_file status started seconds summary
 
   log_file="$(mktemp)"
+  GATE_SUMMARY="$(mktemp)"
+  export GATE_SUMMARY
   printf '── gate %-7s %s\n' "$slot" "$command" >&2
 
+  started="$(date +%s)"
   if eval "$command" >"$log_file" 2>&1; then
     status="pass"
   else
@@ -45,7 +60,9 @@ run_gate() {
     fi
   fi
 
-  printf '   %s\n' "$status" >&2
+  seconds=$(($(date +%s) - started))
+  summary="$(head -1 "$GATE_SUMMARY")"
+  printf '   %s%s\n' "$status" "${summary:+ — $summary}" >&2
 
   jq -n \
     --arg slot "$slot" \
@@ -54,6 +71,8 @@ run_gate() {
     --argjson blocking "$([ "$blocking" = "yes" ] && echo true || echo false)" \
     --rawfile output "$log_file" \
     --argjson maxChars "$MAX_OUTPUT_CHARS" \
+    --argjson seconds "$seconds" \
+    --arg summary "$summary" \
     '{
        key: $slot,
        value: {
@@ -62,11 +81,13 @@ run_gate() {
          command: $command,
          output: (if ($output | length) > $maxChars
                   then ($output | .[(length - $maxChars):])
-                  else $output end)
+                  else $output end),
+         seconds: $seconds,
+         summary: (if $summary == "" then null else $summary end)
        }
      }' >>"$RESULTS_FILE"
 
-  rm -f "$log_file"
+  rm -f "$log_file" "$GATE_SUMMARY"
 }
 
 # ---------------------------------------------------------------------------

@@ -16,9 +16,14 @@
 #
 # Usage, from your project root:
 #   review.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>] [--past-limit]
+#             [--dry-run]
 #
 # Without --base, reviews the uncommitted work — exactly what land.sh commits.
 # With --base <ref>, reviews the whole branch since that ref (a final pass).
+# At LANDING=pr and merge, reviews the task's pull request instead: its change since
+# the merge base with the base branch, committed and pushed by land.sh; the run is
+# then posted there (pr-post.sh run). --dry-run reviews the uncommitted work, as at
+# push, and posts nothing.
 #
 # Exit codes:
 #   0  clean — gates green, nothing accepted above the threshold
@@ -30,7 +35,9 @@
 #   6  the task has had ASK_AFTER_RUNS runs — nothing ran; the user decides
 #      whether another one is worth it (--past-limit runs it)
 #   1  pipeline error, including any malformed agent output (fails closed), or
-#      no working end-to-end harness
+#      no working end-to-end harness; at LANDING=pr and merge also work that is not
+#      committed, a pull request that is not at HEAD, or a run that could not be
+#      posted on it
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
 # VERIFY CLI FLAGS against your installed versions before first use.
@@ -45,6 +52,7 @@ BASE=""
 THRESHOLD_CLI=""
 TASK_FILE=""
 PAST_LIMIT=false
+DRY_RUN=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -52,6 +60,7 @@ while [ $# -gt 0 ]; do
     --threshold)  require_value "--threshold" $#; THRESHOLD_CLI="$2"; shift 2 ;;
     --task-file)  require_value "--task-file" $#; TASK_FILE="$2"; shift 2 ;;
     --past-limit) PAST_LIMIT=true; shift ;;
+    --dry-run)    DRY_RUN=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -240,12 +249,67 @@ REVIEWER_SETTING="$(role_setting REVIEWER)" || exit 1
 MAINTAINER_SETTING="$(role_setting MAINTAINER)" || exit 1
 REVIEWER_SHOWN="${REVIEWER_CMD:+REVIEWER_CMD}"
 MAINTAINER_SHOWN="${MAINTAINER_CMD:+MAINTAINER_CMD}"
+# The reviewer holds Bash to verify claims, but not gh: the pull request holds the
+# verdicts and the answers, which are not the reviewer's to see (TASK_LOOP.md, "Role
+# separation").
 REVIEWER_CMD="${REVIEWER_CMD:-claude -p $(role_flags \
-"$REVIEWER_SETTING")--allowedTools Read,Grep,Glob,Bash --output-format json}"
+"$REVIEWER_SETTING")--allowedTools Read,Grep,Glob,Bash --disallowedTools \"Bash(gh:*)\" \
+--output-format json}"
 MAINTAINER_CMD="${MAINTAINER_CMD:-claude -p $(role_flags \
 "$MAINTAINER_SETTING")--allowedTools Read --output-format json}"
-echo "── models: reviewer ${REVIEWER_SHOWN:-$REVIEWER_SETTING}, "\
-"maintainer ${MAINTAINER_SHOWN:-$MAINTAINER_SETTING} ($AGENTS_CONF)"
+MODELS="reviewer ${REVIEWER_SHOWN:-$REVIEWER_SETTING}, "\
+"maintainer ${MAINTAINER_SHOWN:-$MAINTAINER_SETTING}"
+echo "── models: $MODELS ($AGENTS_CONF)"
+
+# At LANDING=pr and merge the work is committed and its pull request open before it is
+# reviewed, and the run reviews the pull request: the task's work committed, the pull
+# request open at HEAD. Each refusal says whose turn it is. Its URL goes into no prompt
+# and into meta.json alone: the pull request holds what neither the reviewer nor the
+# executor may see. --dry-run reviews the uncommitted work, as at push.
+pr_refuse() { echo "REVIEW REFUSED — $1" >&2; exit 1; }
+LANDING="$(landing_level "$REVIEW_DIR/land.conf")" || pr_refuse "$LANDING"
+PR_URL=""
+MERGE_BASE=""
+if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
+  [ -n "$TASK_ID" ] || \
+    pr_refuse "at LANDING=$LANDING the run is posted on the task's pull request: --task-file"
+  [ -z "$BASE" ] || \
+    pr_refuse "at LANDING=$LANDING the review is of the pull request, from its merge base: "\
+"--base is for the levels below"
+  REMOTE="$(resolve_remote "$REVIEW_DIR/land.conf")" || pr_refuse "$REMOTE"
+  BASE_BRANCH="$(resolve_base_branch "$REVIEW_DIR/land.conf" "$REMOTE")" || \
+    pr_refuse "$BASE_BRANCH"
+  PROBLEM="$(publishing_problem "$REVIEW_DIR/land.conf" "$LANDING" "$REMOTE" "$BASE_BRANCH")" \
+    || pr_refuse "$PROBLEM"
+  BRANCH="$(current_branch)"
+  [ -n "$BRANCH" ] || pr_refuse "HEAD is detached — there is no pull request to review"
+  UNCOMMITTED="$(uncommitted_task_work)"
+  [ -z "$UNCOMMITTED" ] || \
+    pr_refuse "the task's work is not committed: $(printf '%s\n' "$UNCOMMITTED" | tr '\n' ' ')"\
+"— commit it with land.sh first, which also publishes it"
+  [ "$(task_id_of "$(git rev-list -1 --no-merges --first-parent HEAD)")" = "$TASK_ID" ] || \
+    pr_refuse "HEAD is no commit of $TASK_ID — commit it with land.sh first"
+  git fetch -q "$REMOTE" "+refs/heads/$BASE_BRANCH:refs/remotes/$REMOTE/$BASE_BRANCH" || \
+    pr_refuse "could not read $BASE_BRANCH from $REMOTE; git says why above"
+  PULL_REQUEST="$(pull_request_of "$(remote_repository "$REMOTE")" "$BRANCH" "$BASE_BRANCH" all)" \
+    || pr_refuse "gh could not say whether $BRANCH has a pull request into $BASE_BRANCH"
+  PR_URL="$(printf '%s' "$PULL_REQUEST" | jq -r '.url // ""')"
+  PR_HEAD="$(printf '%s' "$PULL_REQUEST" | jq -r '.headRefOid // ""')"
+  case "$(printf '%s' "$PULL_REQUEST" | jq -r '.state // ""')" in
+    OPEN) ;;
+    CLOSED) pr_refuse "$PR_URL was closed without a merge — for the person: only they reopen it" ;;
+    *) pr_refuse "$BRANCH has no open pull request into $BASE_BRANCH — for the person; "\
+"if a landing stopped before opening it, publish.sh alone opens it" ;;
+  esac
+  if [ "$PR_HEAD" != "$(git rev-parse HEAD)" ]; then
+    git merge-base --is-ancestor "$PR_HEAD" HEAD 2>/dev/null && \
+      pr_refuse "the head of $PR_URL is behind HEAD — run publish.sh alone, then review again"
+    pr_refuse "the head of $PR_URL is $PR_HEAD, which HEAD does not contain: someone else "\
+"pushed to $BRANCH — for the person"
+  fi
+  MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE_BRANCH" HEAD)" || \
+    pr_refuse "HEAD has no commit in common with $BASE_BRANCH of $REMOTE"
+fi
 
 # Created only once the configuration is known good: otherwise every run against
 # an unconfigured project leaves an empty directory behind.
@@ -372,11 +436,13 @@ run_agent() {
   local command="$1" prompt_file="$2" output_file="$3" label="$4"
   echo "── $label" >&2
   # eval, not word splitting: a command with a quoted argument
-  # (--append-system-prompt "a b") must survive intact.
-  if ! eval "$command" <"$prompt_file" | extract_json >"$output_file"; then
+  # (--append-system-prompt "a b") must survive intact. The CLI's answer is kept
+  # whole, <run>/<label>.cli.json: its tokens and cost go into the summary.
+  if ! eval "$command" <"$prompt_file" >"$RUN_DIR/$label.cli.json"; then
     echo "   $label failed to run" >&2
     return 1
   fi
+  extract_json <"$RUN_DIR/$label.cli.json" >"$output_file"
   if ! jq -e . "$output_file" >/dev/null 2>&1; then
     echo "   $label returned invalid JSON — see $output_file" >&2
     return 1
@@ -506,9 +572,13 @@ validate_verdicts() {
 # that already landed on this branch, and their findings could never be resolved
 # — land.sh does not see those files as changed, so it would refuse forever.
 # --base <ref> widens the review to a whole branch for a final pass; landing
-# still only ever commits the uncommitted work.
+# still only ever commits the uncommitted work. At the pull request levels the work
+# is committed first, and the branch holds this task alone — land.sh refuses another
+# task's commits on it — so the review is of the pull request, from its merge base.
 if [ -n "$BASE" ]; then
   DIFF_FROM="$(git merge-base "$BASE" HEAD)" || exit 1
+elif [ -n "$MERGE_BASE" ]; then
+  DIFF_FROM="$MERGE_BASE"
 else
   DIFF_FROM="HEAD"
 fi
@@ -530,27 +600,51 @@ done < <(git ls-files --others --exclude-standard | only_task_work;
          git ls-files --others --exclude-standard -- "${HARNESS[@]}")
 
 if [ ! -s "$RUN_DIR/diff.patch" ]; then
-  echo "no changes against ${BASE:-HEAD} — nothing to review"
+  echo "no changes against ${BASE:-${MERGE_BASE:-HEAD}} — nothing to review"
   exit 0
 fi
 
+# `time` orders the runs of a task (M1 of the merge takes the newest), `count` is its
+# place among the ASK_AFTER_RUNS, and `head`, `pr_url` and `merge_base` say what was
+# reviewed at the pull request levels.
+COUNT=null
+[ -z "$TASK_ID" ] || [ "$PAST_LIMIT" = true ] || COUNT=$((RUNS_SO_FAR + 1))
 REVIEWED_FINGERPRINT="$(tree_fingerprint)"
 jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg fingerprint "$REVIEWED_FINGERPRINT" --arg task "$TASK_FILE" \
       --arg task_id "$TASK_ID" --argjson past_limit "$PAST_LIMIT" \
-      --argjson epoch "$EPOCH" \
-      --arg reviewer "$REVIEWER_CMD" --arg maintainer "$MAINTAINER_CMD" \
+      --argjson epoch "$EPOCH" --argjson count "$COUNT" \
+      --arg reviewer "$REVIEWER_CMD" --arg maintainer "$MAINTAINER_CMD" --arg models "$MODELS" \
+      --arg head "$(git rev-parse HEAD)" --arg pr_url "$PR_URL" --arg merge_base "$MERGE_BASE" \
       '{base: $base, threshold: $threshold, tree_fingerprint: $fingerprint,
         task_file: (if $task == "" then null else $task end),
         task: (if $task_id == "" then null else $task_id end),
-        past_limit: $past_limit, epoch: $epoch,
-        reviewer: $reviewer, maintainer: $maintainer}' >"$RUN_DIR/meta.json"
+        past_limit: $past_limit, epoch: $epoch, count: $count, time: now, head: $head,
+        pr_url: (if $pr_url == "" then null else $pr_url end),
+        merge_base: (if $merge_base == "" then null else $merge_base end),
+        models: $models, reviewer: $reviewer, maintainer: $maintainer}' >"$RUN_DIR/meta.json"
+
+# At the pull request levels every run is posted there, whatever its end: red checks and
+# findings are what the people on the pull request need to see. A post that fails is
+# said, and a clean run then exits 1.
+post_run() {
+  local code=$?
+  trap - EXIT
+  if ! "$LIB_DIR/pr-post.sh" run "$RUN_DIR"; then
+    echo "   the run is not posted on $PR_URL — run $LIB_DIR/pr-post.sh run $RUN_DIR alone" >&2
+    [ "$code" -ne 0 ] || code=1
+  fi
+  exit "$code"
+}
+[ -z "$PR_URL" ] || trap post_run EXIT
 
 # ---------------------------------------------------------------------------
 # 2. Layer 0 — gates. Ground truth, and a hard stop.
 # ---------------------------------------------------------------------------
 
-"$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.json" >/dev/null
+# REVIEW_BASE: where the change under review starts, for a gate that looks at the
+# change alone — on a pull request whose work is all committed, HEAD would show none.
+REVIEW_BASE="$DIFF_FROM" "$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.json" >/dev/null
 GATES_EXIT=$?
 
 # A gate runner that could not run is not a red gate. 126/127, or no usable
@@ -598,7 +692,6 @@ fi
 # does not know it reads a plan moved to PLAN.md as a plan deleted, and cannot tell
 # that a commit of the loop changes the review policy.
 WITH_RECORDS="$(read_conf "$REVIEW_DIR/land.conf" WITH_RECORDS no)"
-RECORDS=("${OWNER_FILES[@]}" "$REVIEW_DIR/REVIEW_POLICY.md" ":(glob)$REVIEW_DIR/decisions/*.jsonl")
 records_landing_unreviewed() {
   [ "$WITH_RECORDS" = yes ] || return 0
   { git diff --name-only "$DIFF_FROM" -- "${RECORDS[@]}"
@@ -664,7 +757,7 @@ jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VA
             and ((.category? // "") | in_enum($categories))
             and ((.severity? // "") | in_enum($severities))
             and ((.confidence? // "") | in_enum($confidences))
-            and ((.evidence? // "") != ""))
+            and ((.evidence? | type) == "string" and .evidence != ""))
 ' "$RUN_DIR/findings.raw.json" >/dev/null 2>&1 || {
   echo "   reviewer output does not match the findings schema — see $RUN_DIR/findings.raw.json" >&2
   echo "   required per finding: id (F-nnn), file, line, code_quote, category," >&2

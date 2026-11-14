@@ -34,7 +34,7 @@ Copy-and-fill starting points, not documentation:
 
 | Template | Copy to | Purpose |
 |----------|---------|---------|
-| [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing scripts, `triage.py`, prompts, schemas. Never copied, never edited |
+| [templates/review/lib/](./templates/review/lib/) | — runs from the submodule | Orchestrator, landing scripts, the script that posts on a pull request, `triage.py`, prompts, schemas. Never copied, never edited |
 | [templates/review/project/](./templates/review/project/) | `.review/` | Gates, policy, landing config, decision logs — yours to edit |
 | [templates/agents/](./templates/agents/) | `.claude/agents/`, `.claude/` | `reviewer` and `maintainer` subagents; `agents.conf`, the model of each role |
 | [templates/self-improve/](./templates/self-improve/) | — `setup.sh` copies the tools into the work folder | Tools, workflows and an example project for `/self-improve`. Never copied into a project that is measured |
@@ -95,7 +95,10 @@ implementation before you have looked at the gates.
 Landing is what you answered to "Who writes to git" in the requirements, and `/maintain --init`
 writes it to `.review/land.conf`. At `off` the loop runs end to end and prints the commit instead of
 making it; at `push`, `pr` and `merge` it commits on a branch and takes that branch as far as you
-said. The loop reaches main only through a pull request, never a direct commit.
+said. At `pr` and `merge` it opens the pull request before the review, and the review, the
+end-to-end tests and `/qa` run on it and leave their results there; at `merge` it merges it with
+squash, one commit per task. The loop reaches main only through a pull request, never a direct
+commit.
 
 ### If the code already exists
 
@@ -115,10 +118,9 @@ Ask me about anything the code does not settle. No code changes yet.
 Do the next task.
 ```
 
-That is the whole trigger — `/maintain`'s description makes any request to do
-task work start a full loop run (gates → review → triage → fix rounds →
-landing), not just an edit. You do not type `/maintain`, and there is no magic
-phrase: "next task", "do T-014", and "continue" all start it.
+That is the whole trigger — `/maintain`'s description makes any request to do task work start a full
+loop run (gates, review, triage, fix rounds, landing), not just an edit. You do not type
+`/maintain`, and there is no magic phrase: "next task", "do T-014", and "continue" all start it.
 
 The loop is the **default**, never an obligation. "Just make this change", "skip
 the review", "I'll write this one myself" are complete instructions — see
@@ -203,7 +205,8 @@ MyApp/
 - Layer 0 gate slots and how to wire them for any language
 - JSON contracts for findings and verdicts
 - Triage rules, round limits, escalation
-- Landing: how far the loop goes, the eight conditions, and why the authority is in two scripts
+- Landing: how far the loop goes, the eight conditions, the merge contract of a pull request, and
+  why the authority is in scripts
 - Findings are pointers, not instructions — over-fitting to the reviewer
 - Advancing: when the maintainer may take the next task without asking
 

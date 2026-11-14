@@ -78,15 +78,19 @@ Any one of these starts it:
 
 Write no rule about the symptom itself; fix it where it entered.
 
-1. **The symptom as a fact** someone can go and look at ("every caller re-parses the header
-   because `parse()` returns a borrowed slice"), and the files it lives in. If it cannot be said
-   that concretely, tell the user so and stop.
+1. **The symptom as a fact** someone can go and look at ("every caller re-parses the header because
+   `parse()` returns a borrowed slice"), and the files it lives in. If it cannot be said that
+   concretely, tell the user so and stop.
 2. **Walk back** through `.review/decisions/tasks.jsonl` and the commit trailers (`Task-Id`,
-   `Findings:`) of every task that touched those files, newest first; where the user commits by
-   hand there are no trailers, so walk the log and the files each task touched.
+   `Findings:`) of every task that touched those files, newest first — at `LANDING=pr` and `merge`
+   on the squash commit of its pull request, or in that pull request's description; where the user
+   commits by hand there are no trailers, so walk the log and the files each task touched.
 3. **Find where it entered**, not where it spread.
-4. **Read what the loop said then:** that task's `verdicts.json`. Often the reviewer raised it and
-   the maintainer rejected it.
+4. **Read what the loop said then:** that task's `findings.json` and `verdicts.json`, and at
+   `LANDING=pr` and `merge` `answers-posted.json`, while its run folder stays; after that, the
+   review on its pull request, which carries each finding with its verdict and the replies with the
+   answers — `gh pr view` shows the review's summary, not the comments on lines. Often the reviewer
+   raised it and the maintainer rejected it.
 5. **Fix it where it belongs:** seen and rejected — a Track A rule; seen by nobody — a check in
    `gates.sh` if one can catch it, otherwise a rule that tells the reviewer to look; a task scoped
    wrong or with weak criteria — a planning fix (PLANNING_GUIDE.md).
@@ -116,7 +120,7 @@ Report the chain walked, where it entered, and what changed.
   `.review/land.conf` says `WITH_RECORDS=yes` (TASK_LOOP.md, "Landing").
 
 ## Allowed Prompts
-- Read `.review/**`, the diff and source files
+- Read `.review/**`, the diff and source files, and a task's pull request with `gh pr view`
 - Write `.review/REVIEW_POLICY.md`, `.review/land.conf` and the decision logs
 - Propose changes to `.review/gates.sh` (ask before editing)
 - Never edit source files; git read-only

@@ -29,6 +29,8 @@ The short version:
   `status`, `diff`, `log`, `show`, `blame`. Never `add`, `commit`, `checkout`, `stash`, `reset`, or
   anything else that writes. You are reviewing the user's working tree, not managing it. See
   `CodingStandards/EXECUTION_GUIDE.md`.
+- **Never use `gh`, and never read the pull request**: it holds the verdicts on findings and the
+  answers to them, which a reviewer must not see.
 - An empty `findings` array is a valid, common, correct answer.
 
 Output JSON only. No prose, no markdown fences.

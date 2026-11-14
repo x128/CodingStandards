@@ -47,10 +47,11 @@ The shape of every task:
 
 Steps 4 and 5 are the only ones the loop changes: there, the user reviews the finished task rather
 than the raw diff, and, where the requirement "Who writes to git" lets the loop commit, the commit
-happens through the landing contract instead of by hand, and before the user looks; where that
-requirement's last answer lets the loop merge, so does the merge into main. That order is what the
-user chose in that requirement. Who decides that the task is finished — step 4 — never moves: an
-objection to a task already in main is a new task on top of it, or a revert the user makes.
+happens through the landing contract instead of by hand, and before the user looks — where the loop
+opens a pull request, before the review too, which runs on it; where that requirement's last answer
+lets the loop merge, so does the merge into main. That order is what the user chose in that
+requirement. Who decides that the task is finished — step 4 — never moves: an objection to a task
+already in main is a new task on top of it, or a revert the user makes.
 
 ---
 
@@ -73,8 +74,8 @@ Before it presents its first finished work, the agent asks that question (PLANNI
 questions of every project") if it is not answered, and writes the answer into the requirements.
 When the user asks in chat for a commit, give the files and the message; the user makes it.
 
-Outside `land.sh` and `publish.sh`, and `/research`'s own `land.sh` for its folder where the user
-answered that it commits, git is read-only for agents:
+Outside `land.sh` and `publish.sh`, `pr-post.sh` on the loop's own pull request, and `/research`'s
+own `land.sh` for its folder where the user answered that it commits, git is read-only for agents:
 
 These rules are about the project's repository and its submodules. A test script
 that builds a throwaway repository in a temporary folder and deletes it
@@ -100,17 +101,22 @@ Say what changed instead — which files, and what is in each — and stop there
 They commit in their own tool, where staging is visible before it happens.
 Print a git command only when they ask for one.
 
-### The loop's landing: `land.sh` and `publish.sh`
+### The loop's landing: `land.sh`, `publish.sh` and `pr-post.sh`
 
 Where the requirement "Who writes to git" says so, the loop commits — that is the point of the
 maintainer role — and, as far as it says, pushes, opens a pull request and merges it. It does so
-through exactly two scripts. The answer is the permission: `/maintain --init` writes it to
-`.review/land.conf`, and one line there revokes it. `land.sh` refuses unless eight conditions hold,
-stages *and commits* only the task's declared files, the files the loop keeps as it goes (the
-tracker, the test cases), the end-to-end harness the task changed, and, where `land.conf` says
-`WITH_RECORDS=yes`, the requirements, the plan and the loop's records; it has no code path for
-push, amend or force, and the only branch it may create or move to is `task/<id>`. `publish.sh` has
-no code path for commit, amend or force, and publishes only what landings made. The loop reaches
+through two scripts, and writes on a pull request through a third. The answer is the permission:
+`/maintain --init` writes it to `.review/land.conf`, and one line there revokes it. `land.sh`
+refuses unless eight conditions hold, stages *and commits* only the task's declared files, the files
+the loop keeps as it goes (the tracker, the test cases), the end-to-end harness the task changed,
+and, where `land.conf` says `WITH_RECORDS=yes`, the requirements, the plan and the loop's records;
+it has no code path for push, amend or force, and the only branch it may create or move to is
+`task/<id>`. `publish.sh` has no code path for commit, amend or force, and publishes only what
+landings made. Where the loop opens a pull request, `land.sh` commits the work once the project's
+checks pass, before the review; at `merge` `publish.sh` merges it with squash only once the review,
+the end-to-end tests and `/qa` on the pull request, and the answers there, meet the merge contract,
+and at `pr` `publish.sh --check` says it is ready for the user to merge; `pr-post.sh` writes their
+results on the pull request and has no code path for push, commit or merge. The loop reaches
 main only through a pull request, never a direct commit
 ([TASK_LOOP.md § Landing](./TASK_LOOP.md#landing)).
 
@@ -123,8 +129,8 @@ up".
 ### The task boundary belongs to the user
 
 By hand or on request, the user reviews the diff and commits it. Through the loop, the user reviews
-**the finished task** — what changed and what the checks showed — and the
-maintainer commits it where the requirement lets the loop commit; otherwise the user does.
+**the finished task** — what changed and what the checks showed — and the maintainer commits it
+where the requirement lets the loop commit; otherwise the user does.
 
 The unit of review differs; the authority does not. The user, never the agent, decides that a task
 is genuinely done and that work may continue. The maintainer may only stop asking for a category of
@@ -183,6 +189,9 @@ A finding that comes again is judged again, and it is never fixed for coming aga
 answer stands unless the code, the task or your view of them changed. Say why it came: the reviewer
 is wrong about the code, or it lacked a decision of the task — then propose writing that decision
 where the next reviewer reads it. Never apply a suggestion you don't fully understand.
+
+Where the loop opens a pull request, each answer goes there too, as a reply to its finding, and what
+a person writes on the pull request is checked and answered the same way.
 
 ### No moving on without confirmation
 

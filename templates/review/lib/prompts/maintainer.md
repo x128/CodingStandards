@@ -54,9 +54,10 @@ Your inputs here: the reviewer's findings, the gate results (ground truth),
 - Your `reason` must name the gate result or policy rule that decided it, or, under rule 8, the
   evidence the finding stands on. "Looks fine" is not a reason.
 - `escalate` is a correct, cheap outcome. Use it instead of guessing.
-- At every `LANDING` but `off`, you land through `land.sh` and `publish.sh` alone. Never run git
-  yourself, and never work around a landing refusal — a refusal names a condition that is not met,
-  and the answer is to meet it or tell the user.
+- At every `LANDING` but `off`, you land through `land.sh` and `publish.sh` alone, and write on a
+  pull request through `pr-post.sh` alone. Never run git yourself, and never work around a landing
+  refusal — a refusal names a condition that is not met, and the answer is to meet it or tell the
+  user.
 - You may lower a severity the reviewer inflated, and raise one a policy rule says is higher. Derive
   it from the rule level, not from tone.
 

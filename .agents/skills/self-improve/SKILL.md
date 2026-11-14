@@ -78,8 +78,8 @@ versions names `diff -ru`. Before any project sees the change:
    as it will be committed.
 5. **A changed skill is run**, on a small project made for it, and a second agent compares what it
    did with what its name and its text say.
-6. **The loop's scripts:** after a change to `review.sh`, `land.sh`, `publish.sh`, the schemas or
-   the decision rules, `templates/review/lib/selftest.sh` passes.
+6. **The loop's scripts:** after a change to `review.sh`, `land.sh`, `publish.sh`, `pr-post.sh`,
+   `common.sh`, the schemas or the decision rules, `templates/review/lib/selftest.sh` passes.
 
 ### 5. Measure before and after
 

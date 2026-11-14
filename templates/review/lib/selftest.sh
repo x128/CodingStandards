@@ -861,9 +861,11 @@ e2e_land "a harness committed as a link lands" 0 "For the user to commit" .revie
 
 # ---------------------------------------------------------------------------
 # Publishing. Each project has a bare repository as its remote; gh is a stand-in
-# that logs its calls to calls, keeps the pull requests as JSON in prs.json, and
-# answers as the files next to them say. It answers with the fields --json asks
-# for, and acts only on the repository --repo names, as real gh does with the flag.
+# that logs its calls to calls, keeps the pull requests as JSON in prs.json, the
+# statuses posted in statuses.json and every comment and review in comments.json,
+# and answers as the files next to them say. It answers with the fields --json asks
+# for, and acts only on the repository --repo names, as real gh does with the flag,
+# or gh api its path.
 # ---------------------------------------------------------------------------
 
 # A PATH with no gh on it, whatever this machine has installed. A folder that is on
@@ -890,7 +892,11 @@ export GIT_AUTHOR_NAME=gh GIT_AUTHOR_EMAIL=gh@example.com \
   GIT_COMMITTER_NAME=gh GIT_COMMITTER_EMAIL=gh@example.com
 printf '%s\n' "$*" >>"$GH_STATE/calls"
 PRS="$GH_STATE/prs.json"
-[ -e "$PRS" ] || printf '[]' >"$PRS"
+STATUSES="$GH_STATE/statuses.json"
+COMMENTS="$GH_STATE/comments.json"
+for state in "$PRS" "$STATUSES" "$COMMENTS"; do
+  [ -e "$state" ] || printf '[]' >"$state"
+done
 
 flag() {
   local name="$1"; shift
@@ -915,10 +921,13 @@ find_pr() {
                   else .headRefName == $selector end)] | last // empty' "$PRS"
 }
 
-update_prs() {
-  local updated
-  updated="$(jq "$@" "$PRS")" && printf '%s' "$updated" >"$PRS"
+update_json() {
+  local file="$1" updated
+  shift
+  updated="$(jq "$@" "$file")" && printf '%s' "$updated" >"$file"
 }
+
+update_prs() { update_json "$PRS" "$@"; }
 
 set_pr() {
   update_prs --argjson number "$1" "map(if .number == \$number then $2 else . end)"
@@ -940,10 +949,77 @@ someone_pushes() {
     "$(git -C "$GH_REMOTE" commit-tree "$head^{tree}" -p "$head" -m "someone else")"
 }
 
+next_id() { jq '[.[].id] | (max // 99) + 1' "$COMMENTS"; }
+
 case "$1 $2" in
   "auth status") [ ! -e "$GH_STATE/logged-out" ]; exit ;;
   "repo view") [ ! -e "$GH_STATE/no-repo" ]; exit ;;
 esac
+
+# gh api names the repository in its path, repos/<owner>/<repository>/..., and has no
+# --repo; the rest of the path says what is asked.
+if [ "$1" = api ]; then
+  if [ "$(printf '%s' "$2" | cut -d/ -f3)" != "$(basename "$GH_REMOTE" .git)" ]; then
+    echo "gh: Not Found (HTTP 404)" >&2
+    exit 1
+  fi
+  rest="$(printf '%s' "$2" | cut -d/ -f4-)"
+  number="$(printf '%s' "$rest" | cut -d/ -f2)"
+  input="$(flag --input "$@")"
+  case "$(flag --method "$@" || echo GET) $rest" in
+    "POST statuses/"*)
+      update_json "$STATUSES" --arg sha "${rest#statuses/}" --slurpfile input "$input" \
+        '. + [$input[0] + {sha: $sha}]'
+      echo '{"id": 1}' ;;
+    "POST pulls/"*"/reviews")
+      if [ -e "$GH_STATE/review-422" ] && [ "$(jq '.comments | length' "$input")" -gt 0 ]; then
+        echo '{"message": "Unprocessable Entity"}'
+        echo "gh: Unprocessable Entity (HTTP 422)" >&2
+        exit 1
+      fi
+      id="$(next_id)"
+      update_json "$COMMENTS" --slurpfile input "$input" --argjson id "$id" \
+        --argjson pr "$number" '
+        . + [{id: $id, node_id: "PRR_\($id)", kind: "review", pr: $pr, state: "COMMENTED",
+              body: $input[0].body, commit_id: $input[0].commit_id}]
+          + [$input[0].comments // [] | to_entries[]
+             | {id: ($id + 1 + .key), node_id: "PRRC_\($id + 1 + .key)", kind: "line",
+                pr: $pr, review_id: $id, body: .value.body, path: .value.path,
+                line: .value.line}]'
+      printf '{"id": %s}\n' "$id" ;;
+    "POST pulls/"*"/comments/"*"/replies")
+      # GitHub takes a reply only to the first comment of a thread.
+      if jq -e --argjson to "$(printf '%s' "$rest" | cut -d/ -f4)" \
+           'any(.[]; .id == $to and .in_reply_to_id != null)' "$COMMENTS" >/dev/null; then
+        echo '{"message": "Validation Failed"}'
+        echo "gh: Validation Failed (HTTP 422)" >&2
+        exit 1
+      fi
+      id="$(next_id)"
+      update_json "$COMMENTS" --slurpfile input "$input" --argjson id "$id" \
+        --argjson pr "$number" --argjson to "$(printf '%s' "$rest" | cut -d/ -f4)" '
+        . + [{id: $id, node_id: "PRRC_\($id)", kind: "line", pr: $pr, in_reply_to_id: $to,
+              body: $input[0].body}]'
+      printf '{"id": %s}\n' "$id" ;;
+    "POST issues/"*"/comments")
+      id="$(next_id)"
+      update_json "$COMMENTS" --slurpfile input "$input" --argjson id "$id" \
+        --argjson pr "$number" '
+        . + [{id: $id, node_id: "IC_\($id)", kind: "issue", pr: $pr, body: $input[0].body}]'
+      printf '{"id": %s}\n' "$id" ;;
+    "GET pulls/"*"/reviews/"*"/comments")
+      jq --argjson review "$(printf '%s' "$rest" | cut -d/ -f4)" \
+        '[.[] | select(.kind == "line" and .review_id == $review)]' "$COMMENTS" ;;
+    "GET pulls/"*"/reviews")
+      jq --argjson pr "$number" '[.[] | select(.kind == "review" and .pr == $pr)]' "$COMMENTS" ;;
+    "GET pulls/"*"/comments")
+      jq --argjson pr "$number" '[.[] | select(.kind == "line" and .pr == $pr)]' "$COMMENTS" ;;
+    "GET issues/"*"/comments")
+      jq --argjson pr "$number" '[.[] | select(.kind == "issue" and .pr == $pr)]' "$COMMENTS" ;;
+    *) echo "gh: Not Found (HTTP 404): $*" >&2; exit 1 ;;
+  esac
+  exit
+fi
 
 repository="$(flag --repo "$@")"
 if [ "${repository##*/}" != "$(basename "$GH_REMOTE" .git)" ]; then
@@ -974,13 +1050,19 @@ case "$1 $2" in
       echo "a pull request for that branch already exists" >&2
       exit 1
     fi
+    body="$(flag --body "$@")" || body="$(cat "$(flag --body-file "$@")")"
     number="$(($(jq length "$PRS") + 1))"
     url="https://example.test/pull/$number"
     update_prs --arg url "$url" --arg head "$head" --arg base "$base" --arg oid "$oid" \
-      --argjson number "$number" \
+      --argjson number "$number" --arg title "$(flag --title "$@")" --arg body "$body" \
       '. + [{number: $number, url: $url, state: "OPEN", headRefName: $head, baseRefName: $base,
-             headRefOid: $oid, reviewDecision: "", isCrossRepository: false}]'
+             headRefOid: $oid, reviewDecision: "", isCrossRepository: false, title: $title,
+             body: $body}]'
     printf '%s\n' "$url" ;;
+  "pr edit")
+    number="$(find_pr "$3" | jq -r .number)"
+    update_prs --argjson number "$number" --rawfile body "$(flag --body-file "$@")" \
+      'map(if .number == $number then .body = $body else . end)' ;;
   "pr view")
     [ ! -e "$GH_STATE/view-fails" ] || { echo "could not reach the server" >&2; exit 1; }
     if [ -e "$GH_STATE/pushes-at-view" ]; then
@@ -999,19 +1081,32 @@ case "$1 $2" in
       answer="$(head -1 "$GH_STATE/checks")"
       [ "$(wc -l <"$GH_STATE/checks")" -le 1 ] || sed -i.old 1d "$GH_STATE/checks"
     fi
-    [ "$answer" = "none" ] || flag --json "$@" >/dev/null ||
-      { printf 'build\t%s\n' "$answer"; exit 0; }
     case "$answer" in
-      passed) echo '[{"name":"build","bucket":"pass"}]' ;;
-      skipped) echo '[{"name":"build","bucket":"pass"},{"name":"docs","bucket":"skipping"}]' ;;
-      pending) echo '[{"name":"build","bucket":"pass"},{"name":"test","bucket":"pending"}]' ;;
-      failing) echo '[{"name":"build","bucket":"fail"}]' ;;
-      cancelled) echo '[{"name":"build","bucket":"cancel"}]' ;;
+      passed) checks='[{"name":"build","bucket":"pass"}]' ;;
+      skipped) checks='[{"name":"build","bucket":"pass"},{"name":"docs","bucket":"skipping"}]' ;;
+      pending) checks='[{"name":"build","bucket":"pass"},{"name":"test","bucket":"pending"}]' ;;
+      failing) checks='[{"name":"build","bucket":"fail"}]' ;;
+      cancelled) checks='[{"name":"build","bucket":"cancel"}]' ;;
       cancelled+pending)
-        echo '[{"name":"build","bucket":"cancel"},{"name":"test","bucket":"pending"}]' ;;
-      unknown) echo '[{"name":"build","bucket":"neutral"}]' ;;
-      none) echo "no checks reported on the 'head' branch" >&2; exit 1 ;;
-    esac ;;
+        checks='[{"name":"build","bucket":"cancel"},{"name":"test","bucket":"pending"}]' ;;
+      unknown) checks='[{"name":"build","bucket":"neutral"}]' ;;
+      *) checks='[]' ;;
+    esac
+    # The statuses posted at the head of the pull request are checks of it too, the
+    # newest of each context.
+    current_heads
+    checks="$(jq -c --argjson checks "$checks" --arg head "$(find_pr "$3" | jq -r .headRefOid)" '
+      $checks + ([.[] | select(.sha == $head)] | group_by(.context) | map(last)
+        | map({name: .context, description,
+               bucket: ({success: "pass", failure: "fail", error: "fail"}[.state]
+                        // "pending")}))' "$STATUSES")"
+    if [ "$checks" = "[]" ]; then
+      echo "no checks reported on the 'head' branch" >&2
+      exit 1
+    fi
+    flag --json "$@" >/dev/null ||
+      { printf '%s' "$checks" | jq -r '.[] | "\(.name)\t\(.bucket)"'; exit 0; }
+    printf '%s' "$checks" | fields "$@" ;;
   "pr merge")
     [ ! -e "$GH_STATE/refuses-merge" ] ||
       { echo "the base branch policy prohibits the merge" >&2; exit 1; }
@@ -1019,6 +1114,10 @@ case "$1 $2" in
     number="$(printf '%s' "$record" | jq -r .number)"
     head_branch="$(printf '%s' "$record" | jq -r .headRefName)"
     base_branch="$(printf '%s' "$record" | jq -r .baseRefName)"
+    if [ -e "$GH_STATE/pushes-at-merge" ]; then
+      rm "$GH_STATE/pushes-at-merge"
+      someone_pushes "$head_branch"
+    fi
     head="$(git -C "$GH_REMOTE" rev-parse "refs/heads/$head_branch")"
     match="$(flag --match-head-commit "$@")"
     if [ -n "$match" ] && [ "$match" != "$head" ]; then
@@ -1026,9 +1125,17 @@ case "$1 $2" in
       exit 1
     fi
     base="refs/heads/$base_branch"
-    git -C "$GH_REMOTE" update-ref "$base" \
-      "$(git -C "$GH_REMOTE" commit-tree "$head^{tree}" \
-        -p "$(git -C "$GH_REMOTE" rev-parse "$base")" -p "$head" -m "Merge pull request")"
+    # A squash is one commit on the base branch, with the subject and the body given.
+    case " $* " in
+      *" --squash "*)
+        merged="$(git -C "$GH_REMOTE" commit-tree "$head^{tree}" \
+          -p "$(git -C "$GH_REMOTE" rev-parse "$base")" \
+          -m "$(flag --subject "$@")" -m "$(flag --body "$@")")" ;;
+      *)
+        merged="$(git -C "$GH_REMOTE" commit-tree "$head^{tree}" \
+          -p "$(git -C "$GH_REMOTE" rev-parse "$base")" -p "$head" -m "Merge pull request")" ;;
+    esac
+    git -C "$GH_REMOTE" update-ref "$base" "$merged"
     set_pr "$number" ".state = \"MERGED\" | .headRefOid = \"$head\""
     if [ -e "$GH_STATE/moves-the-checkout" ]; then
       git switch -q "$base_branch" &&
@@ -1107,17 +1214,116 @@ land_run() {
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
 }
 
+# At push and below the work is reviewed, then landed. At pr and merge the order is
+# the other way round (TASK_LOOP.md, "The contract at the pull request levels"): the
+# work, land.sh — which commits, pushes and opens the pull request — review.sh on the
+# pull request, /qa, then publish.sh --check or --merge.
 land_change() {
   local name="$1" expected_exit="$2" expected_line="$3" level="$4"; shift 4
   set_level "$level" "$@"
-  reviewed_change
-  land_run "$name" "$expected_exit" "$expected_line"
+  case "$level" in
+    pr | merge) pr_work; pr_land "$name" "$expected_exit" "$expected_line" ;;
+    *) reviewed_change; land_run "$name" "$expected_exit" "$expected_line" ;;
+  esac
+}
+
+pr_work() {
+  edits=$((edits + 1))
+  printf 'fun answer() = %s\n' "$edits" >src/answer.kt
+}
+
+pr_land() {
+  local name="$1" expected_exit="$2" expected_line="$3"; shift 3
+  "$LIB_DIR/land.sh" --task-file .review/task.json "$@" >"$WORK/land.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
+}
+
+# review.sh on the pull request, with the reviewer's and the maintainer's answers given,
+# or none; the run it made is $run.
+pr_review() {
+  local name="$1" expected_exit="$2" expected_line="$3" runs_before
+  local reviewer_answer="${4:-}" maintainer_answer="${5:-}"
+  [ -n "$reviewer_answer" ] || reviewer_answer='{"findings":[]}'
+  [ -n "$maintainer_answer" ] || maintainer_answer='{"verdicts":[]}'
+  printf '%s' "$reviewer_answer" >"$WORK/reviewer.json"
+  printf '%s' "$maintainer_answer" >"$WORK/maintainer.json"
+  runs_before="$(ls .review/runs 2>/dev/null)"
+  REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    "$LIB_DIR/review.sh" --task-file .review/task.json >"$WORK/run.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
+  run=".review/runs/$(comm -13 <(printf '%s\n' "$runs_before") <(ls .review/runs) | tail -1)"
+}
+
+# /qa on the pull request: its record, of the work as it is and since the merge base of
+# the newest run, and its report, posted with pr-post.sh qa.
+qa_runs=0
+qa_checked() {
+  local folder
+  qa_runs=$((qa_runs + 1))
+  folder=".review/runs/qa-$qa_runs"
+  mkdir -p "$folder"
+  jq -n --arg task "$(jq -r .id .review/task.json)" --arg head "$(git rev-parse HEAD)" \
+    --arg work "$(. "$LIB_DIR/common.sh" && tree_fingerprint)" \
+    --arg since "${2:-$(jq -r '.merge_base' "$run/meta.json")}" --argjson failures "${1:-[]}" \
+    '{task: $task, time: now, head: $head, work: $work, since: $since, extent: "full",
+      reason: "the first /qa of the pull request",
+      counts: {pass: 3, fail: ($failures | length), unproven: '"${3:-0}"', not_checked: 0},
+      failures: $failures}' >"$folder/qa.json"
+  printf '# /qa\n\nEvery case it can reach passed.\n' >"$folder/report.md"
+  step "/qa posts its report" "$WORK/qa.log" "$LIB_DIR/pr-post.sh" qa "$folder"
+}
+
+# A step a case needs on its way, which must succeed; a failure is printed and counted.
+step() {
+  local name="$1" log="$2"
+  shift 2
+  "$@" >"$log" 2>&1 && return 0
+  echo "FAIL  $name: '$*' failed — log follows"
+  sed 's/^/      /' "$log"
+  FAILURES=$((FAILURES + 1))
+  return 1
+}
+
+# The task through its pull request up to the merge: the work, the landing, a clean
+# review and /qa.
+reviewed_pull_request() {
+  local level="$1"; shift
+  set_level "$level" "$@"
+  pr_work
+  step "the landing of the work" "$WORK/land.log" \
+    "$LIB_DIR/land.sh" --task-file .review/task.json || return 1
+  pr_review_quietly && qa_checked
+}
+
+pr_review_quietly() {
+  local runs_before
+  printf '{"findings":[]}' >"$WORK/reviewer.json"
+  printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+  runs_before="$(ls .review/runs 2>/dev/null)"
+  step "the review of the pull request" "$WORK/run.log" env \
+    REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    "$LIB_DIR/review.sh" --task-file .review/task.json
+  local reviewed=$?
+  run=".review/runs/$(comm -13 <(printf '%s\n' "$runs_before") <(ls .review/runs) | tail -1)"
+  return "$reviewed"
+}
+
+merged_change() {
+  local name="$1" expected_exit="$2" expected_line="$3"; shift 3
+  reviewed_pull_request merge "$@"
+  publish "$name" "$expected_exit" "$expected_line" --merge
 }
 
 publish() {
-  local name="$1" expected_exit="$2" expected_line="$3"
-  "$LIB_DIR/publish.sh" --task-file .review/task.json >"$WORK/publish.log" 2>&1
+  local name="$1" expected_exit="$2" expected_line="$3"; shift 3
+  "$LIB_DIR/publish.sh" --task-file .review/task.json "$@" >"$WORK/publish.log" 2>&1
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/publish.log"
+}
+
+pr_post() {
+  local name="$1" expected_exit="$2" expected_line="$3"; shift 3
+  "$LIB_DIR/pr-post.sh" "$@" >"$WORK/post.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/post.log"
 }
 
 holds() {
@@ -1131,6 +1337,8 @@ holds() {
 }
 
 not() { ! "$@"; }
+jq_true() { jq -e "$@" >/dev/null; }
+landing_ran() { ls -d .review/runs/land-* >/dev/null 2>&1; }
 on_branch() { [ "$(git branch --show-current)" = "$1" ]; }
 remote_has() { git -C "$GH_REMOTE" show-ref --verify --quiet "refs/heads/$1"; }
 local_has() { git show-ref --verify --quiet "refs/heads/$1"; }
@@ -1141,8 +1349,23 @@ remote_log_has() { git -C "$GH_REMOTE" log "refs/heads/$1" --format=%B \
 remote_file_has() { git -C "$GH_REMOTE" show "refs/heads/$1:$2" | grep -F -- "$3" >/dev/null; }
 gh_called() { grep -qF -- "$1" "$GH_STATE/calls" 2>/dev/null; }
 gh_count_is() { [ "$(grep -cF -- "$1" "$GH_STATE/calls" 2>/dev/null)" -eq "$2" ]; }
-gh_call_without_repository() { grep -E '^pr ' "$GH_STATE/calls" | grep -vF -- --repo >/dev/null; }
+gh_call_without_repository() {
+  grep -E '^pr ' "$GH_STATE/calls" | grep -vF -- --repo >/dev/null ||
+    grep -E '^api ' "$GH_STATE/calls" | grep -vE '^api repos/[^/ ]+/[^/ ]+/' >/dev/null
+}
 printed() { grep -qF -- "$1" "$WORK/land.log" "$WORK/publish.log" 2>/dev/null; }
+# The newest status of a context at HEAD, as the stand-in of gh keeps them.
+status_is() {
+  [ "$(jq -r --arg sha "$(git rev-parse HEAD)" --arg context "$1" \
+    '[.[] | select(.sha == $sha and .context == $context)] | last | .state // "none"' \
+    "$GH_STATE/statuses.json")" = "$2" ]
+}
+posted() { jq_true --arg text "$1" 'any(.[]; .body | contains($text))' \
+  "$GH_STATE/comments.json" >/dev/null; }
+posted_count_is() {
+  [ "$(jq --arg text "$1" '[.[] | select(.body | contains($text))] | length' \
+    "$GH_STATE/comments.json")" -eq "$2" ]
+}
 
 # What a person does on the pull request, which the loop only reads.
 on_pull_request() {
@@ -1152,7 +1375,30 @@ on_pull_request() {
     && printf '%s' "$updated" >"$GH_STATE/prs.json"
 }
 merged_by_a_person() {
-  gh pr merge "$1" --repo "x/$(basename "$GH_REMOTE" .git)" --merge --delete-branch
+  gh pr merge "$1" --repo "x/$(basename "$GH_REMOTE" .git)" --squash --subject "by a person" \
+    --body "$(jq -r --arg url "$1" '.[] | select(.url == $url) | .body' "$GH_STATE/prs.json")" \
+    --delete-branch
+}
+a_person_comments() {
+  local updated
+  updated="$(jq --arg body "$1" '. + [{id: (1000 + length), node_id: "IC_\(1000 + length)",
+    kind: "issue", pr: 1, body: $body}]' "$GH_STATE/comments.json")" \
+    && printf '%s' "$updated" >"$GH_STATE/comments.json"
+}
+# A person's answer inside the thread of the comment <id>, on its line.
+a_person_answers_in_thread() {
+  local updated
+  updated="$(jq --argjson to "$1" --arg body "$2" '
+    (.[] | select(.id == $to)) as $root
+    | . + [{id: (1000 + length), node_id: "PRRC_\(1000 + length)", kind: "line", pr: 1,
+            in_reply_to_id: $to, path: $root.path, line: $root.line, body: $body}]' \
+    "$GH_STATE/comments.json")" && printf '%s' "$updated" >"$GH_STATE/comments.json"
+}
+a_bot_comments() {
+  local updated
+  updated="$(jq --arg body "$1" '. + [{id: (1000 + length), node_id: "IC_\(1000 + length)",
+    kind: "issue", pr: 1, user: {login: "coverage[bot]", type: "Bot"}, body: $body}]' \
+    "$GH_STATE/comments.json")" && printf '%s' "$updated" >"$GH_STATE/comments.json"
 }
 pull_request_exists() {
   local updated
@@ -1396,7 +1642,7 @@ git commit -q --allow-empty -m "hand-made, never reviewed"
 start="$(git rev-parse HEAD)"
 land_change "a commit no landing made under the task refuses" 3 "commits no landing made" merge
 holds "that refusal names it" printed "hand-made, never reviewed"
-holds "that refusal comes before the gates" not test -e "$run/gates.land.json"
+holds "that refusal comes before the gates" not landing_ran
 holds "that refusal stays on main" on_branch main
 land_change "that goes for push too" 3 "commits no landing made" push
 git push -q origin main
@@ -1422,7 +1668,7 @@ land_change "at pr a person merges, and sees it" 0 "pull request: https://exampl
 
 published_project origin
 git switch -q -c feature
-land_change "merge from a branch of its own merges" 0 "merged T-001" merge
+merged_change "merge from a branch of its own merges" 0 "merged T-001"
 holds "that branch is not deleted: it is not the task's" not gh_called "--delete-branch"
 holds "that branch stays on the remote" remote_has feature
 holds "that branch stays here" local_has feature
@@ -1442,12 +1688,14 @@ project_with_a_plan() {
 }
 
 project_with_a_plan
-set_level merge
-reviewed_change
+reviewed_pull_request merge
 printf 'T-001 done\n' >>TASK_TRACKER.md
 printf 'a new case\n' >>qa/test-cases.md
-land_run "the tracker and the test cases, written after the review, do not stale it" 0 \
-  "merged T-001"
+pr_land "the tracker and the test cases, written after the review, land on its pull request" 0 \
+  "landed T-001 on task/T-001"
+holds "their commit is the loop's files alone" test "$(git log -1 --format=%s)" = "T-001: records"
+publish "the tracker and the test cases, written after the review, do not stale it" 0 \
+  "merged T-001" --merge
 holds "the tracker reaches main with the task" remote_file_has main TASK_TRACKER.md "T-001 done"
 holds "the test cases too" remote_file_has main qa/test-cases.md "a new case"
 holds "they do not wait in the tree" test -z "$(git status --porcelain -- TASK_TRACKER.md qa)"
@@ -1457,10 +1705,10 @@ printf 'T-002: what T-001 hands it\n' >>TASK_TRACKER.md
 printf 'the epic, groomed\n' >>PLAN.md
 printf 'a rule\n' >>.review/REVIEW_POLICY.md
 task_with_id T-002
-reviewed_change
+reviewed_pull_request merge
 holds "the reviewer is not shown the plan or the tracker" \
   not grep -qE 'TASK_TRACKER|PLAN' "$run/diff.patch"
-land_run "what the loop left in the tracker does not refuse the next task" 0 "merged T-002"
+publish "what the loop left in the tracker does not refuse the next task" 0 "merged T-002" --merge
 holds "what it left reaches main" remote_file_has main TASK_TRACKER.md "T-002: what T-001 hands it"
 holds "the plan is the user's to commit" not remote_file_has main PLAN.md "the epic, groomed"
 holds "that plan is still in the tree" grep -q "the epic, groomed" PLAN.md
@@ -1472,10 +1720,10 @@ holds "that rule is still in the tree" grep -q "a rule" .review/REVIEW_POLICY.md
 
 project_with_a_plan
 set_level pr
-reviewed_change
+pr_work
 printf 'T-001 done\n' >>TASK_TRACKER.md
 printf '{"task": "T-001"}\n' >>.review/decisions/tasks.jsonl
-land_run "at pr the tracker goes on the branch of the task" 0 "landed T-001 on task/T-001"
+pr_land "at pr the tracker goes on the branch of the task" 0 "landed T-001 on task/T-001"
 holds "it is in the pull request" remote_file_has task/T-001 TASK_TRACKER.md "T-001 done"
 holds "below merge the decision logs stay out of the commit" \
   not remote_file_has task/T-001 .review/decisions/tasks.jsonl '"T-001"'
@@ -1499,19 +1747,32 @@ printf 'T-001 done\n' >>TASK_TRACKER.md
 land_run "at on too" 0 "landed T-001 on work: 2 file(s)"
 
 project_with_a_plan
-set_level merge
-reviewed_change
+reviewed_pull_request merge
 printf 'more code\n' >>src/answer.kt
-land_run "a change to the code after the review still stales it" 3 "condition 2"
+publish "work changed after the review and not committed is not merged" 3 \
+  "the task's work is not all committed: src/answer.kt" --merge
+pr_land "it lands as a commit of its own on the pull request" 0 "landed T-001 on task/T-001"
+holds "that commit says it follows the review" \
+  test "$(git log -1 --format=%s)" = "T-001: changes after review 1"
+publish "a change to the code after the review still stales it" 3 \
+  "M1: the tree changed after this review ran" --merge
+holds "work the loop has not checked shows the review pending" status_is loop/review pending
 
 # ---- pull requests ---------------------------------------------------------
 
 published_project origin
 land_change "pr opens a pull request" 0 "pull request: https://example.test/pull/1" pr
+holds "the commit takes no --run at pr" not printed "--run is required"
 holds "the pull request goes from the branch of the task to the base branch" \
   gh_called "--base main --head task/T-001"
-holds "its title is the commit subject and its body the trailers" \
-  gh_called "--title T-001: Answer 42 --body Task-Id: T-001"
+holds "its title is the task" gh_called "--title T-001: Answer 42 --body-file"
+holds "its description is the loop's, ending with the trailers" \
+  jq_true '.[0].body | contains("<!-- loop:body -->") and contains("Task-Id: T-001")' \
+  "$GH_STATE/prs.json"
+holds "it is never a draft" not gh_called "--draft"
+holds "its head shows the review pending: the loop has not checked it yet" \
+  status_is loop/review pending
+holds "and /qa pending" status_is loop/qa pending
 publish "a rerun shows the open pull request" 0 "pull request: https://example.test/pull/1"
 holds "a rerun opens none" gh_count_is "pr create" 1
 land_change "a landing on an open pull request updates it" 0 \
@@ -1525,14 +1786,19 @@ holds "it never opens a second pull request" gh_count_is "pr create" 1
 rm "$GH_STATE/list-fails"
 
 earlier="$(git rev-parse HEAD)"
+landings="$(ls -d .review/runs/land-* | wc -l)"
 task_with_id T-002
-land_change "a next task leaves the branch of the earlier one" 0 "landed T-002 on task/T-002" pr
-holds "it stacks on the unmerged branch" [ "$(git rev-parse HEAD^)" = "$earlier" ]
-holds "its pull request still goes to the base branch" gh_called "--base main --head task/T-002"
+land_change "a next task on the unmerged branch of the earlier one refuses: no stacking" 3 \
+  "HEAD carries T-001 which is not on main of origin" pr
+holds "that refusal comes before the gates" [ "$(ls -d .review/runs/land-* | wc -l)" = "$landings" ]
+holds "it commits nothing on the earlier branch" [ "$(git rev-parse HEAD)" = "$earlier" ]
+holds "it opens no pull request of its own" not gh_called "--head task/T-002"
 
 published_project origin
 touch "$GH_STATE/create-fails"
 land_change "a pull request that cannot be opened ends at 4" 4 "could not open a pull request" pr
+holds "the message of 4 at pr says a change of code is landed, then reviewed" \
+  printed "the work, then land.sh, which adds a commit, then review.sh"
 rm "$GH_STATE/create-fails"
 publish "publish.sh alone opens it" 0 "pull request: https://example.test/pull/1"
 
@@ -1557,23 +1823,25 @@ holds "that rerun pushes nothing back" not remote_has task/T-001
 holds "that rerun opens none" gh_count_is "pr create" 1
 
 published_project origin
-printf 'pending\n' >"$GH_STATE/checks"
-land_change "a pull request a person will close" 4 "checks are pending" merge
+land_change "a pull request a person will close" 0 "pull request: https://example.test/pull/1" merge
+holds "at merge the landing does not merge either" not gh_called "pr merge"
 on_pull_request 1 '.state = "CLOSED"'
-printf 'passed\n' >"$GH_STATE/checks"
 publish "a closed pull request is a no, and stays one" 5 "was closed without a merge"
+publish "--merge of a closed pull request waits too" 5 "was closed without a merge" --merge
 holds "a closed pull request opens no other" gh_count_is "pr create" 1
 holds "a closed pull request merges nothing" not gh_called "pr merge"
-reviewed_change
-land_run "a landing on a closed pull request waits too" 4 "was closed without a merge"
+pr_review "the review of a closed pull request is for the person" 1 \
+  "was closed without a merge — for the person"
+pr_work
+pr_land "a landing on a closed pull request waits too" 4 "was closed without a merge"
 holds "that landing opens no other" gh_count_is "pr create" 1
 
 published_project origin
 git push -q origin main:refs/heads/hotfix
 hotfix="$(git rev-parse main)"
 pull_request_exists task/T-001 hotfix 7
-land_change "a pull request into another base is not this one" 0 \
-  "merged T-001: https://example.test/pull/2 into main" merge
+merged_change "a pull request into another base is not this one" 0 \
+  "merged T-001: https://example.test/pull/2 into main"
 holds "the base it never checked does not move" remote_is hotfix "$hotfix"
 holds "the commit reaches the base branch" remote_log_has main "Task-Id: T-001"
 
@@ -1585,35 +1853,340 @@ land_change "a pull request from a fork with the same branch name is not this on
 published_project origin
 git switch -q -c 1234
 pull_request_exists other main 1234
-land_change "a branch named like a number is not that pull request" 0 \
-  "merged T-001: https://example.test/pull/2 into main" merge
+merged_change "a branch named like a number is not that pull request" 0 \
+  "merged T-001: https://example.test/pull/2 into main"
 holds "that pull request stays open" \
   [ "$(jq -r '.[] | select(.number == 1234) | .state' "$GH_STATE/prs.json")" = "OPEN" ]
+
+# ---- the pull request levels ------------------------------------------------
+
+# A finding of the reviewer and the maintainer's verdict on it.
+pr_finding() {
+  jq -nc --arg id "$1" --arg file "$2" --argjson line "$3" --arg quote "$4" \
+    '{id: $id, file: $file, line: $line, code_quote: $quote, category: "bug",
+      severity: "major", confidence: "confirmed", rule_violated: "REQUIREMENTS.md, Answer",
+      evidence: "answer() returns another number than 42"}'
+}
+pr_verdict() {
+  jq -nc --arg id "$1" --arg verdict "$2" --arg rule "$3" \
+    '{finding_id: $id, verdict: $verdict, severity: "major", decision_rule: $rule,
+      reason: "the number the user sees is not the one asked for"}'
+}
+on_and_off_the_diff="{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()'),
+  $(pr_finding F-002 src/util.kt 1 'fun util() = 1')]}"
+accepted_and_rejected="{\"verdicts\": [$(pr_verdict F-001 accept no-rule-fired),
+  $(pr_verdict F-002 reject out-of-task-scope)]}"
+gates_that_record() {
+  cat >.review/gates.sh <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$REVIEW_BASE" >>"$WORK/review-base"
+echo '{"build":{"status":"pass","blocking":true,"command":"true","output":"","seconds":3,'\
+'"summary":"7 tests"}}' >"\$1"
+EOF
+  chmod +x .review/gates.sh
+  : >"$WORK/review-base"
+}
+person_id() {
+  jq -r '[.[] | select(.body | startswith("Why 42"))][0].id' "$GH_STATE/comments.json"
+}
+
+published_project origin
+gates_that_record
+land_change "below the pull request levels" 0 "landed T-001 on task/T-001" push
+holds "REVIEW_BASE is HEAD there, at the review and the landing" \
+  [ "$(sort -u "$WORK/review-base")" = HEAD ]
+
+published_project origin
+gates_that_record
+set_level pr
+pr_work
+pr_land "land.sh at pr takes no --run: it commits, pushes and opens the pull request" 0 \
+  "pull request: https://example.test/pull/1"
+holds "and does not merge" not gh_called "pr merge"
+holds "its gates measure the change from the merge base (REVIEW_BASE)" \
+  [ "$(tail -1 "$WORK/review-base")" = "$(git rev-parse HEAD^)" ]
+holds "its gates are kept in a landing folder, which is no review run" \
+  test -f "$(ls -d .review/runs/land-* | tail -1)/gates.json"
+publish "--merge refuses at pr: the person merges" 3 "the person merges, with squash" --merge
+publish "--check with no review run refuses" 3 "M1: no review run of T-001" --check
+pr_review "a review on the pull request" 0 "CLEAN — gates green"
+holds "REVIEW_BASE reaches gates.sh as the merge base" \
+  [ "$(tail -1 "$WORK/review-base")" = "$(jq -r .merge_base "$run/meta.json")" ]
+holds "the run records the pull request, the head it reviewed and its time" \
+  jq_true --arg head "$(git rev-parse HEAD)" \
+  '.pr_url == "https://example.test/pull/1" and .head == $head and .time > 0' "$run/meta.json"
+holds "no prompt names the pull request" not grep -q "example.test/pull" "$run/reviewer-prompt.md"
+holds "the run is posted as a review" posted "<!-- loop:review $(basename "$run") -->"
+holds "its summary gives each gate with its seconds and summary line" \
+  posted "| build | pass | 3 | 7 tests |"
+holds "and the end-to-end tests of each platform" posted "| app | 2 | 2 |"
+holds "the head shows the review green" status_is loop/review success
+holds "and each gate" status_is loop/build success
+holds "and the end-to-end tests" status_is loop/e2e-app success
+holds "a gate's status gives its summary line" jq_true 'any(.[]; .context == "loop/build"
+  and .description == "pass — 7 tests")' "$GH_STATE/statuses.json"
+holds "/qa is pending" status_is loop/qa pending
+publish "--check with no /qa of this work refuses" 3 "M5: /qa has not checked this work of T-001" \
+  --check
+qa_checked
+holds "the report of /qa is a comment" posted "<!-- loop:qa qa-$qa_runs -->"
+holds "/qa turns green" status_is loop/qa success
+holds "the description lists the runs" \
+  jq_true '.[0].body | contains("| Run | Head | Result") and contains("| qa-")' "$GH_STATE/prs.json"
+publish "--check at pr says ready" 0 "ready to merge: https://example.test/pull/1" --check
+holds "--check merges nothing" not gh_called "pr merge"
+printf '# Tracker\n\n- T-001 done\n' >TASK_TRACKER.md
+pr_land "the loop's files alone land on the open pull request" 0 \
+  "landed T-001 on task/T-001: 1 file(s)"
+holds "as the commit of the records" test "$(git log -1 --format=%s)" = "T-001: records"
+holds "their head keeps the review: the work did not change" status_is loop/review success
+holds "and /qa" status_is loop/qa success
+publish "a commit of the loop's files keeps the review valid" 0 "ready to merge" --check
+a_person_comments "$(printf 'Why 42?\nThe tracker says 41.')"
+publish "what a person wrote, unanswered, waits" 5 \
+  "are not settled, the first $(person_id) by  on the pull request, not answered" --check
+pr_post "pr-post.sh comments shows it whole" 0 "The tracker says 41." comments
+printf 'The requirements ask for 42: REQUIREMENTS.md, "Answer".\n' >"$WORK/reply.md"
+pr_post "the loop answers it" 0 "reply to $(person_id) (not-a-problem) posted" \
+  reply "$(person_id)" not-a-problem "$WORK/reply.md"
+holds "the reply names what it answers, and how" \
+  posted "<!-- loop:reply $(person_id) not-a-problem -->"
+publish "a person's comment the loop disagreed with waits for the user" 5 \
+  "answered not-a-problem: the user decides" --check
+printf 'The user: 42 it is, the tracker is wrong.\n' >"$WORK/user.md"
+pr_post "the user's decision is posted" 0 "reply to $(person_id) (user) posted" \
+  reply "$(person_id)" user "$WORK/user.md"
+pr_post "the same reply again" 0 "no second one" reply "$(person_id)" user "$WORK/user.md"
+holds "is posted once" posted_count_is "<!-- loop:reply $(person_id) user -->" 1
+a_bot_comments "Coverage: 81%"
+publish "what a person wrote, settled, and a bot's comment, no longer wait" 0 "ready to merge" \
+  --check
+a_person_reviews() {
+  local updated
+  updated="$(jq --arg state "$1" '. + [{id: (1000 + length), node_id: "PRR_\(1000 + length)",
+    kind: "review", pr: 1, user: {login: "reviewer", type: "User"}, state: $state, body: ""}]' \
+    "$GH_STATE/comments.json")" && printf '%s' "$updated" >"$GH_STATE/comments.json"
+}
+a_person_reviews CHANGES_REQUESTED
+publish "changes requested in a review wait, with no rule of the branch too" 5 \
+  "changes are requested" --check
+a_person_reviews APPROVED
+publish "the same person's approval lifts them" 0 "ready to merge" --check
+jq -n '{context: "loop/qa", state: "failure", description: "someone said so"}' >"$WORK/status.json"
+gh api "repos/x/$(basename "$GH_REMOTE" .git)/statuses/$(git rev-parse HEAD)" --method POST \
+  --input "$WORK/status.json" >/dev/null
+publish "a status of the loop that is not green at HEAD waits" 5 "loop/qa: someone said so" --check
+pr_post "pr-post.sh statuses posts them again" 0 "statuses posted" statuses
+publish "then it is ready again" 0 "ready to merge" --check
+set_level merge
+publish "at merge --merge merges" 0 "merged T-001: https://example.test/pull/1 into main" --merge
+holds "with a squash" gh_called " --squash "
+holds "whose body carries the trailers" remote_log_has main "Task-Id: T-001"
+holds "and ends on the base branch" on_branch main
+
+published_project origin
+printf 'fun util() = 1\n' >src/util.kt
+git add src/util.kt && git commit -q -m util && git push -q origin main
+set_level merge
+pr_work
+pr_land "at merge too the landing opens the pull request" 0 \
+  "pull request: https://example.test/pull/1"
+pr_review "a finding on the diff and one off it" 3 "accepted (>= major): 1" \
+  "$on_and_off_the_diff" "$accepted_and_rejected"
+first_run="$run"
+holds "the run is posted as one review" gh_count_is "/reviews --method POST" 1
+holds "the finding on the diff is a comment on its line" \
+  jq_true 'any(.[]; .kind == "line" and .path == "src/answer.kt" and .line == 1
+              and (.body | contains("F-001")))' "$GH_STATE/comments.json"
+holds "with its triage" posted "Triage: **accept**, major, by no-rule-fired"
+holds "the finding off the diff is in the body" \
+  jq_true 'any(.[]; .kind == "review" and (.body | contains("Findings off the diff")
+                                              and contains("F-002")))' "$GH_STATE/comments.json"
+holds "and on no line" \
+  not jq_true 'any(.[]; .kind == "line" and (.body | contains("F-002")))' "$GH_STATE/comments.json"
+holds "the comment of each finding is recorded" jq_true '."F-001" > 0' "$run/pr-comments.json"
+a_person_answers_in_thread "$(jq '."F-001"' "$run/pr-comments.json")" "Not a bug: 1 is a draft."
+thread_answer="$(jq '[.[] | select(.kind == "line" and .in_reply_to_id != null)] | last | .id' \
+  "$GH_STATE/comments.json")"
+printf 'It is: the requirements ask for 42.\n' >"$WORK/reply.md"
+pr_post "a person's answer inside a finding's thread is answered there" 0 \
+  "reply to $thread_answer (fixed) posted" reply "$thread_answer" fixed "$WORK/reply.md"
+holds "at the root of the thread" \
+  jq_true --argjson to "$(jq '."F-001"' "$run/pr-comments.json")" --arg marker \
+  "<!-- loop:reply $thread_answer fixed -->" \
+  'any(.[]; .in_reply_to_id == $to and (.body | startswith($marker)))' "$GH_STATE/comments.json"
+holds "the review status fails while a finding is accepted" status_is loop/review failure
+statuses_posted="$(grep -c 'statuses/' "$GH_STATE/calls")"
+pr_post "pr-post.sh run again" 0 "no second one" run "$run"
+holds "a rerun posts no second review" gh_count_is "/reviews --method POST" 1
+holds "a rerun posts the statuses again" \
+  [ "$(grep -c 'statuses/' "$GH_STATE/calls")" -gt "$statuses_posted" ]
+qa_checked
+publish "--merge with an accepted finding refuses" 3 \
+  "M3: 1 accepted finding(s) at or above major are unresolved" --merge
+pr_work
+pr_land "the fix lands as a commit after the review" 0 "landed T-001 on task/T-001"
+holds "its message says so" test "$(git log -1 --format=%s)" = "T-001: changes after review 1"
+publish "--merge of work newer than the review refuses" 3 \
+  "M1: the tree changed after this review ran" --merge
+printf '[{"finding_id": "F-001", "answer": "fixed", "text": "answer() is 42.", "commit": ""}]' \
+  >"$first_run/answers.json"
+pr_review "the review of the fix" 0 "CLEAN — gates green"
+publish "--merge with no /qa of this work refuses" 3 "M5: /qa has not checked this work" --merge
+qa_checked
+publish "--merge with an answer not posted refuses" 3 \
+  "M7: runs or findings of https://example.test/pull/1 that are not posted there: "\
+"$(basename "$first_run") F-001" --merge
+pr_post "the answers of a run are posted" 0 "answers of $(basename "$first_run") posted" \
+  answers "$first_run"
+holds "each answer is a reply to its finding's comment" \
+  jq_true --argjson to "$(jq '."F-001"' "$first_run/pr-comments.json")" \
+  'any(.[]; .in_reply_to_id == $to and (.body | contains("**fixed** in")))' \
+  "$GH_STATE/comments.json"
+holds "a fix that names no commit is HEAD's" \
+  jq_true --arg head "$(git rev-parse HEAD)" '.[0].commit == $head' \
+  "$first_run/answers-posted.json"
+pr_post "answers again" 0 "posted" answers "$first_run"
+holds "post nothing twice" posted_count_is "<!-- loop:answer $(basename "$first_run") F-001 -->" 1
+publish "--merge merges once every item holds" 0 "merged T-001" --merge
+holds "the squash counts the findings of every run" \
+  remote_log_has main "Findings: 2 reviewed, 1 rejected, 0 outstanding at major+"
+
+published_project origin
+set_level merge
+pr_work
+pr_land "a landing to escalate on" 0 "pull request: https://example.test/pull/1"
+pr_review "an escalated finding" 4 "escalated         : 1" \
+  "{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()')]}" \
+  "{\"verdicts\": [$(pr_verdict F-001 escalate needs-judgment)]}"
+qa_checked
+publish "--merge with an escalation unanswered refuses" 3 \
+  "M4: 1 escalation(s) are waiting for an answer" --merge
+holds "the review status waits for the answer" status_is loop/review pending
+printf '[{"finding_id": "F-001", "resolution": "accepted-as-is", "by": "agent", '\
+'"note": "42 is what the user asked for."}]' >"$run/escalations-answered.json"
+pr_post "the answer to an escalation is posted" 0 "answers of $(basename "$run") posted" \
+  answers "$run"
+holds "it is a reply to the escalated finding" posted "**accepted-as-is**, by agent"
+holds "the review turns green without a commit" status_is loop/review success
+pr_post "answers again" 0 "posted" answers "$run"
+holds "posts nothing twice" posted_count_is "<!-- loop:answer $(basename "$run") F-001 -->" 1
+publish "then it merges" 0 "merged T-001" --merge
+
+published_project origin
+set_level merge
+pr_work
+pr_land "a landing whose review is posted unrecorded" 0 "pull request: https://example.test/pull/1"
+pr_review "its review" 0 "CLEAN — gates green"
+rm "$run/pr-review.json"
+publish "a run whose post is not recorded refuses" 3 \
+  "M1: $(basename "$run") is not posted on https://example.test/pull/1" --merge
+pr_post "pr-post.sh run finds the review GitHub took" 0 "unrecorded: recorded now" run "$run"
+holds "and posts no second one" gh_count_is "/reviews --method POST" 1
+qa_checked '[]' "" 1
+open_qa="qa-$qa_runs"
+publish "/qa that left an item unproven waits for the user" 3 \
+  "M5: /qa left 1 unproven and 0 not checked in $open_qa — restore what failed" --merge
+holds "so does its status" status_is loop/qa pending
+qa_checked '[]' "$(git rev-parse HEAD)"
+publish "a later /qa of less than the whole pull request does not clear it" 3 \
+  "M5: /qa left 1 unproven and 0 not checked in $open_qa" --merge
+jq -n '{by: "human", answer: "accepted-as-is", words: "The emulator is broken: fine."}' \
+  >".review/runs/$open_qa/open-answered.json"
+pr_post "the statuses again" 0 "statuses posted" statuses
+holds "the user's answer turns /qa green" status_is loop/qa success
+publish "and the task merges" 0 "merged T-001" --merge
+
+published_project origin
+printf 'fun util() = 1\n' >src/util.kt
+git add src/util.kt && git commit -q -m util && git push -q origin main
+set_level pr
+pr_work
+pr_land "a landing to review" 0 "pull request: https://example.test/pull/1"
+touch "$GH_STATE/review-422"
+pr_review "a review whose comments on lines GitHub refuses" 3 "accepted (>= major): 1" \
+  "$on_and_off_the_diff" "$accepted_and_rejected"
+holds "it says so" grep -qF "422" "$WORK/run.log"
+holds "it is posted again with every finding in its body" \
+  jq_true 'any(.[]; .kind == "review" and (.body | contains("F-001") and contains("F-002")))' \
+  "$GH_STATE/comments.json"
+holds "and with none on a line" not jq_true 'any(.[]; .kind == "line")' "$GH_STATE/comments.json"
+
+published_project origin
+set_level pr
+pr_work
+printf '{"findings":[]}' >"$WORK/reviewer.json"
+printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+  "$LIB_DIR/review.sh" --task-file .review/task.json --dry-run >"$WORK/run.log" 2>&1
+check "--dry-run at pr reviews the uncommitted work" 0 "CLEAN — gates green" $? "$WORK/run.log"
+holds "and asks gh nothing" not test -e "$GH_STATE/calls"
+pr_review "the review refuses work not committed" 1 "commit it with land.sh first"
+touch "$GH_STATE/create-fails"
+pr_land "a landing whose pull request could not be opened" 4 "could not open a pull request"
+rm "$GH_STATE/create-fails"
+pr_review "the review refuses a branch with no pull request: for the person" 1 \
+  "has no open pull request into main — for the person"
+publish "publish.sh alone opens it" 0 "pull request: https://example.test/pull/1"
+publish "a review of --dry-run stands for no review on the pull request" 3 \
+  "M1: no review run of T-001 on https://example.test/pull/1" --check
+printf '#!/bin/sh\nexit 1\n' >"$GH_REMOTE/hooks/pre-receive"
+chmod +x "$GH_REMOTE/hooks/pre-receive"
+pr_work
+pr_land "a landing whose push fails" 4 "the push to origin failed"
+rm "$GH_REMOTE/hooks/pre-receive"
+pr_review "the review refuses a pull request behind HEAD" 1 \
+  "is behind HEAD — run publish.sh alone, then review again"
+publish "publish.sh alone pushes it" 0 "pull request: https://example.test/pull/1"
+pr_review "then the review runs" 0 "CLEAN — gates green"
+
+published_project origin
+set_level pr ASK_AFTER_RUNS=2
+printf '#!/usr/bin/env bash\necho %s >"$1"\nexit 1\n' \
+  "'{\"test\":{\"status\":\"fail\",\"blocking\":true,\"command\":\"false\",\"output\":\"red\"}}'" \
+  >.review/gates.sh
+pr_work
+pr_land "red gates refuse a landing at pr" 3 "gates are red at landing time" --run "$WORK"
+holds "a --run given at pr is said to be unused" printed "--run is not used"
+pr_land "a second time too" 3 "gates are red at landing time"
+pr_land "past ASK_AFTER_RUNS landings that did not commit, the user decides" 3 \
+  "2 landings of T-001 failed at or after their gates since the count started"
+pr_land "--past-limit lands once more" 3 "gates are red at landing time" --past-limit
+cp "$WORK/gates.green" .review/gates.sh
+pr_land "after it the count starts again" 0 "landed T-001 on task/T-001"
+pr_work
+pr_land "--past-limit below the limit is refused" 1 "only for a task at its limit" --past-limit
 
 # ---- merge -----------------------------------------------------------------
 
 published_project origin
-land_change "merge with clean checks merges" 0 "merged T-001" merge
+merged_change "merge with clean checks merges" 0 "merged T-001"
 holds "it merges by URL" gh_called "pr merge https://example.test/pull/1 "
-holds "it merges with a merge commit, never a squash" gh_called " --merge "
-holds "it merges the commit it pushed" gh_called "--match-head-commit"
+holds "it merges with a squash, never a merge commit" gh_called " --squash "
+holds "it merges the commit it checked" gh_called "--match-head-commit"
 holds "it deletes the branch of the task" gh_called "--delete-branch"
 holds "it ends on the base branch" on_branch main
 holds "the base branch here is the one on the remote" remote_is main "$(git rev-parse main)"
+holds "the base branch gets one commit of the task" \
+  [ "$(git rev-list --count "$(git rev-parse main^)..main")" = 1 ]
+holds "that commit is the task, with the audit trailers" \
+  test "$(git log -1 --format=%s main)" = "T-001: Answer 42"
 holds "the base branch carries the Task-Id trailer" \
   test -n "$(git log main --format=%B --grep='Task-Id: T-001')"
+holds "and the runs it rests on" \
+  test -n "$(git log main --format=%B --grep='^Review-Runs: 1, last ')"
 holds "the remote branch is gone" not remote_has task/T-001
 holds "the local branch is gone" not local_has task/T-001
 publish "publish.sh refuses on a protected branch" 3 "protected branch"
 
 published_project origin
 touch "$GH_STATE/moves-the-checkout"
-land_change "merge works with a gh that moves the checkout itself" 0 "merged T-001" merge
+merged_change "merge works with a gh that moves the checkout itself" 0 "merged T-001"
 holds "it still ends on the base branch" on_branch main
 
 published_project origin
 touch "$GH_STATE/fails-after-merge"
-land_change "a merge gh fails to tidy up after is still a merge" 0 "merged T-001" merge
+merged_change "a merge gh fails to tidy up after is still a merge" 0 "merged T-001"
 holds "that merge ends on the base branch" on_branch main
 holds "that says the remote branch may be left" printed "did not finish tidying up"
 holds "that merge leaves the remote branch, which gh deletes last" remote_has task/T-001
@@ -1622,8 +2195,8 @@ published_project origin
 git switch -q -c develop
 git push -q origin develop
 start="$(git rev-parse main)"
-land_change "merge into a BASE_BRANCH" 0 \
-  "merged T-001: https://example.test/pull/1 into develop" merge BASE_BRANCH=develop
+merged_change "merge into a BASE_BRANCH" 0 \
+  "merged T-001: https://example.test/pull/1 into develop" BASE_BRANCH=develop
 holds "it ends on that branch" on_branch develop
 holds "that branch here is the one on the remote" remote_is develop "$(tip_of develop)"
 holds "main is not touched" remote_is main "$start"
@@ -1631,33 +2204,36 @@ holds "main is not touched" remote_is main "$start"
 published_project origin
 git tag main
 git push -q origin refs/tags/main
-land_change "merge with a tag named like the base branch" 0 "merged T-001" merge
+merged_change "merge with a tag named like the base branch" 0 "merged T-001"
 holds "the base branch here takes the merge, not the tag" remote_is main "$(tip_of main)"
 
 published_project origin
 printf 'none\n' >"$GH_STATE/checks"
-land_change "merge in a repository with no checks merges" 0 "merged T-001" merge
+merged_change "merge in a repository with no checks but the loop's merges" 0 "merged T-001"
 
 published_project origin
 printf 'skipped\n' >"$GH_STATE/checks"
-land_change "skipped checks do not stop a merge" 0 "merged T-001" merge
+merged_change "skipped checks do not stop a merge" 0 "merged T-001"
 
 published_project origin
 printf 'none\npending\n' >"$GH_STATE/checks"
-land_change "checks still pending after CHECKS_WAIT stop the merge" 4 \
-  "checks are pending" merge CHECKS_WAIT=3
+merged_change "checks still pending after CHECKS_WAIT stop the merge" 5 \
+  "checks are pending" CHECKS_WAIT=3
 holds "a merge never beats the checks to it" not gh_called "pr merge"
 
 published_project origin
 printf 'none\npending\npassed\n' >"$GH_STATE/checks"
-land_change "checks that appear and finish within CHECKS_WAIT merge in one landing" 0 \
-  "merged T-001" merge CHECKS_WAIT=5
+merged_change "checks that appear and finish within CHECKS_WAIT merge in one run" 0 \
+  "merged T-001" CHECKS_WAIT=5
 
 published_project origin
 printf 'none\nnone\npassed\n' >"$GH_STATE/checks"
 printf 'THRESHOLD=major\nASK_AFTER_RUNS=100\nLANDING=merge\n' >.review/land.conf
-reviewed_change
-land_run "a land.conf with no CHECKS_WAIT still gives checks time to appear" 0 "merged T-001"
+pr_work
+step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked
+publish "a land.conf with no CHECKS_WAIT still gives checks time to appear" 0 "merged T-001" \
+  --merge
 holds "it asked until they did" gh_count_is "pr checks" 3
 
 published_project origin
@@ -1666,128 +2242,133 @@ holds "that refusal stays on main" on_branch main
 
 published_project origin
 printf 'pending\n' >"$GH_STATE/checks"
-land_change "merge with pending checks stops short of the merge" 4 \
-  "run publish.sh alone, never land.sh again" merge
-holds "the message of 4 says what a change of code takes" \
-  printed "a new pass of the loop on this branch"
-holds "the output of publish.sh is shown" \
-  grep -qF "checks are pending on https://example.test/pull/1" "$WORK/land.log"
+merged_change "merge with pending checks stops short of the merge" 5 \
+  "checks are pending on https://example.test/pull/1"
 holds "pending checks do not merge" not gh_called "pr merge"
 holds "pending checks stay on the branch" on_branch task/T-001
-publish "publish.sh waits on pending checks" 5 "checks are pending on https://example.test/pull/1"
 printf 'failing\n' >"$GH_STATE/checks"
-publish "publish.sh waits on failing checks" 5 "checks are failing on https://example.test/pull/1"
+publish "publish.sh waits on failing checks" 5 "checks are failing on https://example.test/pull/1" \
+  --merge
 holds "failing checks do not merge" not gh_called "pr merge"
 printf 'cancelled\n' >"$GH_STATE/checks"
-publish "a cancelled check did not pass" 5 "checks are failing on https://example.test/pull/1"
+publish "a cancelled check did not pass" 5 "checks are failing on https://example.test/pull/1" \
+  --merge
 holds "a cancelled check does not merge" not gh_called "pr merge"
 printf 'cancelled+pending\n' >"$GH_STATE/checks"
 publish "a cancelled check says so before a pending one" 5 \
-  "checks are failing on https://example.test/pull/1"
+  "checks are failing on https://example.test/pull/1" --merge
 printf 'unknown\n' >"$GH_STATE/checks"
 publish "a check of a kind nobody knows did not pass" 5 \
-  "checks are failing on https://example.test/pull/1"
+  "checks are failing on https://example.test/pull/1" --merge
 holds "that check does not merge" not gh_called "pr merge"
 printf 'passed\n' >"$GH_STATE/checks"
 on_pull_request 1 '.reviewDecision = "CHANGES_REQUESTED"'
 publish "publish.sh waits on requested changes" 5 \
-  "changes are requested on https://example.test/pull/1"
+  "changes are requested on https://example.test/pull/1" --merge
 holds "requested changes do not merge" not gh_called "pr merge"
 on_pull_request 1 '.reviewDecision = "APPROVED"'
 touch "$GH_STATE/view-fails"
-publish "an unreadable review decision stops the merge" 1 "could not read the review decision"
+publish "an unreadable review decision stops the merge" 1 "could not read the review decision" \
+  --merge
 holds "an unreadable review decision does not merge" not gh_called "pr merge"
 rm "$GH_STATE/view-fails"
 touch "$GH_STATE/refuses-merge"
-publish "a merge gh refuses waits with its reason" 5 "the base branch policy prohibits the merge"
+publish "a merge gh refuses waits with its reason" 5 "the base branch policy prohibits the merge" \
+  --merge
 rm "$GH_STATE/refuses-merge"
-publish "publish.sh finishes the merge once nothing stands in the way" 0 "merged T-001"
+publish "publish.sh finishes the merge once nothing stands in the way" 0 "merged T-001" --merge
 holds "the waiting opened one pull request" gh_count_is "pr create" 1
 
 published_project origin
+reviewed_pull_request merge
 touch "$GH_STATE/pushes-at-view"
-land_change "a pull request that is ahead of HEAD waits" 4 "someone else pushed to task/T-001" merge
+publish "a pull request that is ahead of HEAD waits" 5 "someone else pushed to task/T-001" --merge
 holds "that commit is not merged" not gh_called "pr merge"
 
 published_project origin
+reviewed_pull_request merge
 touch "$GH_STATE/pushes-at-checks"
-land_change "a push during the wait for checks stops the merge" 4 "gh did not merge" merge
+publish "a push during the wait for checks stops the merge: the loop never saw that head" 5 \
+  "loop/build is not posted" --merge
 holds "that commit does not reach the base branch" not remote_log_has main "someone else"
 
 published_project origin
-printf 'failing\n' >"$GH_STATE/checks"
-land_change "a stacked task: the earlier one waits on changes" 4 "checks are failing" merge
-on_pull_request 1 '.reviewDecision = "CHANGES_REQUESTED"'
-printf 'passed\n' >"$GH_STATE/checks"
+reviewed_pull_request merge
+touch "$GH_STATE/pushes-at-merge"
+publish "a push just before the merge is not merged: gh is told the head checked" 5 \
+  "gh did not merge" --merge
+holds "that push does not reach the base branch" not remote_log_has main "someone else"
+
+# A task whose branch holds another task's commits, which land.sh refuses at these
+# levels: a squash of the earlier task never puts them on the base branch.
+published_project origin
+reviewed_pull_request merge
+git switch -q -c task/T-002
+git commit -q --allow-empty -m "T-002: made on top by hand" -m "Task-Id: T-002"
 task_with_id T-002
-land_change "a stacked task waits for the earlier one" 4 "also carries T-001" merge
+step "publish.sh alone opens the stacked pull request" "$WORK/publish.log" \
+  "$LIB_DIR/publish.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked
+publish "a stacked task waits for the earlier one" 5 "also carries T-001" --merge
 holds "the earlier task does not reach the base branch through it" \
   not remote_log_has main "Task-Id: T-001"
 holds "its pull request stays open" not gh_called "pr merge"
-on_pull_request 1 '.reviewDecision = "APPROVED"'
 merged_by_a_person https://example.test/pull/1
-publish "a stacked task merges once the earlier one is in" 0 \
-  "merged T-002: https://example.test/pull/2 into main"
-holds "the base branch then holds both" remote_log_has main "Task-Id: T-002"
+publish "after a squash of the earlier one it still waits: those commits never reach main" 5 \
+  "also carries T-001" --merge
+holds "the base branch holds the earlier task, squashed" remote_log_has main "Task-Id: T-001"
+holds "and not the stacked one" not remote_log_has main "Task-Id: T-002"
 
 published_project origin
-printf 'pending\n' >"$GH_STATE/checks"
-land_change "a pull request whose base moved on" 4 "checks are pending" merge
-printf 'passed\n' >"$GH_STATE/checks"
+reviewed_pull_request merge
 git switch -q main
 printf 'from main\n' >src/other.kt
 git add src/other.kt && git commit -q -m "moved on" && git push -q origin main
 git switch -q task/T-001
 git merge -q --no-edit main
-publish "a merge of the base by a person does not stop publishing" 0 "merged T-001"
+publish "a merge of the base by a person is published" 0 "pull request: https://example.test/pull/1"
+publish "it changed the work the review saw" 3 "M1: the tree changed after this review ran" \
+  --merge
+pr_review_quietly && qa_checked
+publish "reviewed again, a merge of the base by a person does not stop the merge" 0 \
+  "merged T-001" --merge
 holds "the task reaches the base branch" remote_log_has main "Task-Id: T-001"
+holds "and what the base had" remote_file_has main src/other.kt "from main"
 
 # ---- the end of a merge ----------------------------------------------------
 
 published_project origin
-printf 'pending\n' >"$GH_STATE/checks"
-land_change "a merge that will not reach the base branch here" 4 "checks are pending" merge
-printf 'passed\n' >"$GH_STATE/checks"
-printf 'local change\n' >src/answer.kt
-publish "a checkout that cannot move after a merge is an error" 1 "could not move to main"
+reviewed_pull_request merge
+# A lock on the index stops the checkout, and nothing before the merge writes the index.
+touch .git/index.lock
+publish "a checkout that cannot move after a merge is an error" 1 "could not move to main" --merge
 holds "that error says a rerun pushes nothing" printed "pushes nothing"
 holds "that merge happened" remote_log_has main "Task-Id: T-001"
-git checkout -q -- src/answer.kt
-publish "publish.sh alone finishes the move" 0 "merged T-001"
+rm .git/index.lock
+publish "publish.sh alone finishes the move" 0 "merged T-001" --merge
 holds "that rerun pushes nothing back" not remote_has task/T-001
 holds "that rerun merges nothing twice" gh_count_is "pr merge" 1
 holds "that rerun ends on the base branch" on_branch main
 
 published_project origin
-printf 'pending\n' >"$GH_STATE/checks"
-land_change "a merge whose base branch here went its own way" 4 "checks are pending" merge
-printf 'passed\n' >"$GH_STATE/checks"
+reviewed_pull_request merge
 git branch -f main \
   "$(git commit-tree "$(git rev-parse 'main^{tree}')" -p main -m "local work on main")"
-publish "a base branch that cannot fast-forward is an error" 1 "could not fast-forward"
+publish "a base branch that cannot fast-forward is an error" 1 "could not fast-forward" --merge
 holds "it does not say merged" not printed "merged T-001"
-
-published_project origin
-printf 'pending\n' >"$GH_STATE/checks"
-land_change "the same, through land.sh" 4 "checks are pending" merge
-printf 'passed\n' >"$GH_STATE/checks"
-git branch -f main \
-  "$(git commit-tree "$(git rev-parse 'main^{tree}')" -p main -m "local work on main")"
-reviewed_change
-set_level merge
-land_run "land.sh does not send anyone to publish.sh when the merge is in" 4 \
-  "could not fast-forward"
-holds "its message stops at what publish.sh said" not printed "run publish.sh alone"
+publish "run again, it refuses on the base branch, as its message says" 3 "protected branch" \
+  --merge
+holds "nothing sends anyone to run publish.sh alone" not printed "run publish.sh alone"
 
 published_project origin
 git worktree add -q -b task/T-001 "$repository-linked" || fail_setup "linked worktree"
 cp -R .review "$repository-linked/"
 cd "$repository-linked" || fail_setup "cd linked worktree"
-land_change "merge from a linked worktree with main checked out elsewhere" 0 \
-  "checked out in another worktree" merge
+merged_change "merge from a linked worktree with main checked out elsewhere" 0 \
+  "checked out in another worktree"
 holds "that merge happened" remote_log_has main "Task-Id: T-001"
 holds "that worktree stays on its branch" on_branch task/T-001
-publish "a rerun there says the same" 0 "checked out in another worktree"
+publish "a rerun there says the same" 0 "checked out in another worktree" --merge
 holds "that rerun pushes nothing back" not remote_has task/T-001
 holds "that rerun merges nothing twice" gh_count_is "pr merge" 1
 
@@ -1798,6 +2379,9 @@ printf '#!/bin/sh\nexit 1\n' >"$GH_REMOTE/hooks/pre-receive"
 chmod +x "$GH_REMOTE/hooks/pre-receive"
 land_change "land.sh returns 4 when the push fails" 4 \
   "run publish.sh alone, never land.sh again" push
+holds "the message of 4 says what a change of code takes" \
+  printed "a new pass of the loop on this branch: the work, review.sh, then land.sh"
+holds "the output of publish.sh is shown" grep -qF "the push to origin failed" "$WORK/land.log"
 holds "that commit landed" \
   [ "$(git log -1 --format='%(trailers:key=Task-Id,valueonly)' | head -1)" = "T-001" ]
 holds "that commit is not on the remote" not remote_has task/T-001
@@ -1878,8 +2462,8 @@ holds "the commit goes to origin" \
 published_project origin
 git init -q --bare -b main "$repository-upstream.git" || fail_setup "second remote"
 git remote add upstream "$repository-upstream.git"
-land_change "gh acts on the repository of REMOTE, whatever other remotes there are" 0 \
-  "merged T-001" merge
+merged_change "gh acts on the repository of REMOTE, whatever other remotes there are" 0 \
+  "merged T-001"
 holds "every question to gh names it" not gh_call_without_repository
 
 published_project origin
@@ -1896,7 +2480,7 @@ published_project origin
 touch "$GH_STATE/logged-out"
 land_change "pr refuses when gh is not logged in" 3 "gh is not logged in" pr
 holds "that refusal stays on main" on_branch main
-holds "that refusal comes before the gates" not test -e "$run/gates.land.json"
+holds "that refusal comes before the gates" not landing_ran
 land_change "push does not need gh" 0 "landed T-001 on task/T-001" push
 
 published_project origin
@@ -1906,13 +2490,12 @@ holds "that refusal stays on main" on_branch main
 
 published_project origin
 set_level merge
-reviewed_change
-PATH="$path_without_gh" "$LIB_DIR/land.sh" --task-file .review/task.json --run "$run" \
-  >"$WORK/land.log" 2>&1
+pr_work
+PATH="$path_without_gh" "$LIB_DIR/land.sh" --task-file .review/task.json >"$WORK/land.log" 2>&1
 check "merge refuses when gh is not installed" 3 "gh is not installed" $? "$WORK/land.log"
 
 published_project github
-land_change "a remote not named origin is found" 0 "merged T-001" merge
+merged_change "a remote not named origin is found" 0 "merged T-001"
 holds "the commit reached it through a pull request" gh_called "--base main --head task/T-001"
 holds "the base branch was updated from it" remote_is main "$(git rev-parse main)"
 holds "that remote's main took the merge" remote_log_has main "Task-Id: T-001"

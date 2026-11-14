@@ -1,0 +1,26 @@
+[
+  {
+    "finding_id": "F-001",
+    "answer": "fixed",
+    "text": "parse() checks the length before it reads the header; rejects_short_header shows it.",
+    "commit": ""
+  },
+  {
+    "finding_id": "F-002",
+    "answer": "not-a-problem",
+    "text": "Deliberate: REQUIREMENTS.md, \"Offline\", keeps this path free of the cache.",
+    "commit": ""
+  },
+  {
+    "finding_id": "F-003",
+    "answer": "other-task",
+    "text": "Real, and T-031 extracts the parser; proposed there, not fixed here.",
+    "commit": ""
+  },
+  {
+    "finding_id": "F-004",
+    "answer": "unsettled",
+    "text": "Checked: it returns on the main thread in the tests. Still assumed: on a device too.",
+    "commit": ""
+  }
+]

@@ -224,7 +224,8 @@ nothing above `minor` is the last: say that the review is finished, and what was
 
 After the last round, write the commit message: one line, imperative, no period, plain text, saying
 what the change does; unrelated changes are separate commits. It is committed as EXECUTION_GUIDE.md,
-"Who writes to git", says. In the loop, `land.sh` writes it.
+"Who writes to git", says. In the loop, `land.sh` writes it; at `LANDING=pr` and `merge` the commit
+that reaches main is the squash of the task's pull request.
 
 ### Rules
 

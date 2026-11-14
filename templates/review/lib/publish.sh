@@ -14,17 +14,22 @@
 # base branch, after a merge, by fast-forward; the one it deletes is task/<id>, once
 # that is merged.
 #
-# land.sh calls it after a commit at LANDING=push, pr and merge. Run it alone to
-# finish what stopped, a push that failed or a pull request that was waiting,
-# without another commit. Run again, it does nothing twice: an open pull request is
-# left as it is, a merged one is not pushed back, and a closed one is not replaced.
-# See TASK_LOOP.md § Publishing.
+# land.sh calls it after a commit at LANDING=push, pr and merge: it pushes, and at pr
+# and merge opens the pull request and posts the loop's statuses on its head
+# (pr-post.sh); it never merges then. Run it alone to finish what stopped, a push that
+# failed or a pull request that could not be opened, without another commit. Run
+# again, it does nothing twice: an open pull request is left as it is, a merged one
+# is not pushed back, and a closed one is not replaced.
+#
+# At pr and merge, --check checks the merge contract and merges nothing; --merge, at
+# merge alone, checks it and merges the pull request with a squash. See TASK_LOOP.md
+# § Publishing and § The contract at the pull request levels.
 #
 # Usage, from the project root:
-#   publish.sh --task-file <task.json>
+#   publish.sh --task-file <task.json> [--check | --merge]
 #
 # Exit codes:
-#   0  done, as far as LANDING says
+#   0  done, as far as LANDING says; with --check, the pull request is ready to merge
 #   3  refused, with the reason on stderr
 #   5  waiting — the pull request stays as it is, and the reason and its URL are on
 #      stderr
@@ -39,10 +44,13 @@ LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" || exit 1
 . "$LIB_DIR/common.sh"
 
 TASK_FILE=""
+MODE=publish
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --task-file) require_value "--task-file" $#; TASK_FILE="$2"; shift 2 ;;
+    --check)     MODE=check; shift ;;
+    --merge)     MODE=merge; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -50,6 +58,9 @@ done
 [ -n "$TASK_FILE" ] || { echo "--task-file is required" >&2; exit 1; }
 [ -f "$TASK_FILE" ] || { echo "no such task file: $TASK_FILE" >&2; exit 1; }
 
+# Resolved before the cd below, as land.sh resolves its own: the review run records
+# the task file by its absolute path, and the merge compares the two.
+TASK_FILE="$(abspath "$TASK_FILE")" || exit 1
 PROJECT_ROOT="$(git rev-parse --show-toplevel)" || exit 1
 TASK_ID="$(jq -r '.id' "$TASK_FILE")"
 [ -n "$TASK_ID" ] && [ "$TASK_ID" != "null" ] || { echo "task file has no .id" >&2; exit 1; }
@@ -57,7 +68,17 @@ cd "$PROJECT_ROOT" || exit 1
 
 CONFIG=".review/land.conf"
 
-refuse()  { echo "PUBLISHING REFUSED — $1" >&2; exit 3; }
+# The merge contract reuses the conditions of land.sh through common.sh, which names
+# each by its number there and calls refuse with it; here it is the item of the
+# contract that holds that condition.
+refuse() {
+  if [ $# -ge 2 ]; then
+    case "$1" in 1|2) set -- "M1: $2" ;; 3) set -- "M2: $2" ;; 4) set -- "M3: $2" ;;
+                 5) set -- "M4: $2" ;; 7) set -- "M5: $2" ;; *) set -- "$1: $2" ;; esac
+  fi
+  echo "PUBLISHING REFUSED — $1" >&2
+  exit 3
+}
 fail()    { echo "PUBLISHING FAILED — $1" >&2; exit 1; }
 waiting() { echo "PUBLISHING WAITS — $1" >&2; exit 5; }
 
@@ -69,6 +90,13 @@ waiting() { echo "PUBLISHING WAITS — $1" >&2; exit 5; }
 LANDING="$(landing_level "$CONFIG")" || refuse "$LANDING"
 landing_publishes "$LANDING" || \
   refuse "LANDING=$LANDING in $CONFIG does not publish — only push, pr and merge do"
+if [ "$MODE" != publish ]; then
+  landing_opens_pull_request "$LANDING" || \
+    refuse "--$MODE is for LANDING=pr and merge, not $LANDING: there is no pull request"
+  [ "$MODE$LANDING" != mergepr ] || \
+    refuse "LANDING=pr in $CONFIG: the person merges, with squash — "\
+"publish.sh --check says whether the pull request is ready"
+fi
 
 task_id_names_branch "$TASK_ID" || \
   refuse "task id $TASK_ID cannot name a branch — "\
@@ -95,7 +123,7 @@ TASK_COMMIT="$(git rev-list -1 --no-merges --first-parent HEAD)"
 HEAD_COMMIT="$(git rev-parse HEAD)"
 
 # What the merge would take is measured against the base branch as it is now.
-if [ "$LANDING" = "merge" ]; then
+if [ "$LANDING" = "merge" ] || [ "$MODE" != publish ]; then
   git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || \
     fail "could not read $BASE from $REMOTE; git says why above"
 fi
@@ -116,6 +144,7 @@ UNLANDED="$(commits_no_landing_made "$LANDING" "$REMOTE" "$BASE")"
 # by its URL: a branch named 1234 would otherwise select pull request #1234.
 REPOSITORY=""
 PR_URL=""
+PR_NUMBER=""
 PR_STATE=""
 PR_HEAD=""
 
@@ -134,6 +163,8 @@ finish_on_base() {
   git pull --ff-only "$REMOTE" "refs/heads/$BASE" || \
     fail "$merged_note, and nothing is left to publish, but $BASE here could not fast-forward; "\
 "git says why above. That is for a person to settle: publish.sh refuses on $BASE"
+  # Not -D, which is a force: after a squash the branch is in no commit of the base, but
+  # its upstream still names the head that was merged.
   if [ "$BRANCH" = "task/$TASK_ID" ] && git show-ref --verify --quiet "refs/heads/$BRANCH"; then
     git branch -q -d "$BRANCH" || echo "$BRANCH stays here: git would not delete it"
   fi
@@ -142,13 +173,10 @@ finish_on_base() {
 
 if landing_opens_pull_request "$LANDING"; then
   REPOSITORY="$(remote_repository "$REMOTE")"
-  PULL_REQUESTS="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --base "$BASE" --state all \
-    --json url,state,headRefOid,isCrossRepository)" || \
+  LATEST="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE" all)" || \
     fail "gh could not say whether $BRANCH has a pull request into $BASE"
-  LATEST=\
-"$(printf '%s' "$PULL_REQUESTS" | jq -c '[.[] | select(.isCrossRepository | not)][0] // {}')" || \
-    fail "gh's answer about the pull requests of $BRANCH is not readable: $PULL_REQUESTS"
   PR_URL="$(printf '%s' "$LATEST" | jq -r '.url // ""')"
+  PR_NUMBER="$(printf '%s' "$LATEST" | jq -r '.number // ""')"
   PR_STATE="$(printf '%s' "$LATEST" | jq -r '.state // ""')"
   PR_HEAD="$(printf '%s' "$LATEST" | jq -r '.headRefOid // ""')"
 
@@ -158,7 +186,7 @@ if landing_opens_pull_request "$LANDING"; then
 "only a person reopens it. Nothing was pushed and no new pull request was opened" ;;
     MERGED)
       if [ "$PR_HEAD" = "$HEAD_COMMIT" ]; then
-        if [ "$LANDING" = "merge" ]; then
+        if [ "$LANDING" = "merge" ] && [ "$MODE" != check ]; then
           finish_on_base
         else
           echo "already merged: $PR_URL"
@@ -166,90 +194,218 @@ if landing_opens_pull_request "$LANDING"; then
         exit 0
       fi
       # New work on a branch whose earlier pull request was merged: a new one.
-      PR_URL="" ;;
+      PR_URL=""
+      PR_NUMBER="" ;;
   esac
 fi
 
-# ---------------------------------------------------------------------------
-# 2. Push. Never forced: a remote branch that moved is someone's work. Both sides
-#    of the refspec are written out: a bare branch name goes through
-#    remote.<name>.push, where a `+` would force it and a mapping would send it to
-#    another branch.
-# ---------------------------------------------------------------------------
+if [ "$MODE" = publish ]; then
+  # -------------------------------------------------------------------------
+  # 2. Push. Never forced: a remote branch that moved is someone's work. Both sides
+  #    of the refspec are written out: a bare branch name goes through
+  #    remote.<name>.push, where a `+` would force it and a mapping would send it to
+  #    another branch.
+  # -------------------------------------------------------------------------
 
-PUSH_OUTPUT="$(git push -u "$REMOTE" "refs/heads/$BRANCH:refs/heads/$BRANCH" 2>&1)"
-PUSH_EXIT=$?
-printf '%s\n' "$PUSH_OUTPUT"
-if [ "$PUSH_EXIT" -ne 0 ]; then
-  case "$PUSH_OUTPUT" in
-    *"[rejected]"*) fail "the remote branch $BRANCH moved on $REMOTE — "\
+  PUSH_OUTPUT="$(git push -u "$REMOTE" "refs/heads/$BRANCH:refs/heads/$BRANCH" 2>&1)"
+  PUSH_EXIT=$?
+  printf '%s\n' "$PUSH_OUTPUT"
+  if [ "$PUSH_EXIT" -ne 0 ]; then
+    case "$PUSH_OUTPUT" in
+      *"[rejected]"*) fail "the remote branch $BRANCH moved on $REMOTE — "\
 "the push was rejected, and it is never forced" ;;
-    *) fail "the push to $REMOTE failed; git says why above" ;;
-  esac
-fi
+      *) fail "the push to $REMOTE failed; git says why above" ;;
+    esac
+  fi
 
-if ! landing_opens_pull_request "$LANDING"; then
+  if ! landing_opens_pull_request "$LANDING"; then
+    echo "published $TASK_ID: $BRANCH on $REMOTE"
+    exit 0
+  fi
+
+  # -------------------------------------------------------------------------
+  # 3. One pull request, never a draft, with the task as its title and the loop's
+  #    description (pr-post.sh body); then the loop's statuses on the head just
+  #    pushed (pr-post.sh statuses): those of the newest review and /qa if they
+  #    checked the work as it is, which a commit of the loop's files alone keeps,
+  #    and otherwise pending. Never a merge: that is --merge, once the review, /qa
+  #    and the answers allow it.
+  # -------------------------------------------------------------------------
+
+  if [ -z "$PR_URL" ]; then
+    BODY_FILE="$(mktemp)" || fail "no temporary file for the description"
+    "$LIB_DIR/pr-post.sh" body --to "$BODY_FILE" --task-file "$TASK_FILE" || {
+      rm -f "$BODY_FILE"
+      fail "the description of the pull request could not be written; pr-post.sh says why above"
+    }
+    PR_URL="$(gh pr create --repo "$REPOSITORY" --base "$BASE" --head "$BRANCH" \
+      --title "$TASK_ID: $(jq -r '.title // .id' "$TASK_FILE")" --body-file "$BODY_FILE")"
+    CREATE_EXIT=$?
+    rm -f "$BODY_FILE"
+    [ "$CREATE_EXIT" -eq 0 ] || fail "gh could not open a pull request of $BRANCH into $BASE"
+  fi
+  echo "pull request: $PR_URL"
+  "$LIB_DIR/pr-post.sh" statuses --task-file "$TASK_FILE" || \
+    fail "$PR_URL is open, but the loop's statuses are not posted on it; pr-post.sh says why "\
+"above. Run pr-post.sh statuses alone"
   echo "published $TASK_ID: $BRANCH on $REMOTE"
   exit 0
 fi
 
 # ---------------------------------------------------------------------------
-# 3. One pull request.
+# 4. The merge contract (--check, --merge): what can be checked only once the
+#    review, the end-to-end tests and /qa have run on the pull request. Each item
+#    that does not hold refuses (3), naming it; M8 and M9 wait (5).
 # ---------------------------------------------------------------------------
 
-if [ -z "$PR_URL" ]; then
-  PR_URL="$(gh pr create --repo "$REPOSITORY" --base "$BASE" --head "$BRANCH" \
-    --title "$(git log -1 --format=%s "$TASK_COMMIT")" \
-    --body "$(git log -1 --format='%(trailers:only,unfold)' "$TASK_COMMIT")")" || \
-    fail "gh could not open a pull request of $BRANCH into $BASE"
-fi
-echo "pull request: $PR_URL"
+[ -n "$PR_URL" ] || \
+  refuse "$BRANCH has no open pull request into $BASE — publish.sh alone opens one"
 
-if [ "$LANDING" != "merge" ]; then
-  echo "published $TASK_ID: $BRANCH on $REMOTE"
-  exit 0
+# The description says where the task stands, at every check, refused or not.
+"$LIB_DIR/pr-post.sh" body --task-file "$TASK_FILE" || \
+  fail "the description of $PR_URL could not be refreshed; pr-post.sh says why above"
+
+# The tree: the task's work committed and pushed, the loop's files committed, and with
+# WITH_RECORDS=yes the records too; with no, the owner's files and the logs are the user's
+# to commit and may wait in the tree.
+UNCOMMITTED="$(uncommitted_task_work)"
+[ -z "$UNCOMMITTED" ] || \
+  refuse "the task's work is not all committed: $(printf '%s\n' "$UNCOMMITTED" | tr '\n' ' ')— "\
+"land.sh commits it, and the review runs on it then"
+UNCOMMITTED="$(uncommitted "${LOOP_FILES[@]}")"
+[ -z "$UNCOMMITTED" ] || \
+  refuse "the loop's files are not committed: $(printf '%s\n' "$UNCOMMITTED" | tr '\n' ' ')— "\
+"land.sh commits them"
+if [ "$(read_conf "$CONFIG" WITH_RECORDS no)" = yes ]; then
+  UNCOMMITTED="$(uncommitted "${RECORDS[@]}")"
+  [ -z "$UNCOMMITTED" ] || \
+    refuse "with WITH_RECORDS=yes the records land with the task, and these are not committed: "\
+"$(printf '%s\n' "$UNCOMMITTED" | tr '\n' ' ')— land.sh commits them"
 fi
+
+FINGERPRINT="$(tree_fingerprint)"
+MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE" HEAD)" || \
+  fail "HEAD has no commit in common with $BASE of $REMOTE"
+
+# M1 to M5: the newest review run of the task made on this pull request, by the time it
+# records, posted there, of the change since the merge base as it is now, with the
+# conditions of land.sh (common.sh); /qa checked this work, one /qa the whole pull request,
+# and nothing it left open stands unanswered. A run of --dry-run, or one never posted, is
+# no review on the pull request.
+RUN="$(review_runs_on "$TASK_ID" "$PR_URL" | tail -1)"
+[ -n "$RUN" ] || \
+  refuse M1 "no review run of $TASK_ID on $PR_URL — review.sh runs on the pull request"
+run_is_complete "$RUN"
+run_reviewed_this_tree "$RUN" "$TASK_FILE" "$FINGERPRINT"
+[ "$(jq -r '.merge_base // ""' "$RUN/meta.json")" = "$MERGE_BASE" ] || \
+  refuse M1 "$(basename "$RUN") reviewed the change from another merge base than $MERGE_BASE "\
+"— review again"
+jq -e --arg url "$PR_URL" '.pr_url == $url' "$RUN/pr-review.json" >/dev/null 2>&1 || \
+  refuse M1 "$(basename "$RUN") is not posted on $PR_URL — pr-post.sh run $RUN posts it"
+run_e2e_passed "$RUN" "$FINGERPRINT"
+run_has_no_findings "$RUN"
+run_escalations_answered "$RUN"
+criteria_verified "$TASK_FILE"
+qa_failures_proven "$RUN" "$TASK_ID"
+qa_checked_this_work "$TASK_ID" "$FINGERPRINT" "$MERGE_BASE"
+qa_left_nothing_open "$TASK_ID" "$MERGE_BASE"
+qa_reports_posted "$TASK_ID" "$MERGE_BASE" "$PR_URL"
+
+# M6: what the pull request changes stayed inside the task's scope, the loop's own files,
+# the harness and the records apart.
+OUT_OF_SCOPE="$(git -c core.quotePath=false diff --name-only --no-renames "$MERGE_BASE" HEAD \
+  | while IFS= read -r file; do
+      is_loop_file "$file" || is_harness "$file" || is_record "$file" || printf '%s\n' "$file"
+    done | outside_scope "$TASK_FILE" | tr '\n' ' ')"
+[ -z "$OUT_OF_SCOPE" ] || \
+  refuse M6 "the pull request changes files outside the scope of $TASK_ID: $OUT_OF_SCOPE"
+
+# M7: every run made on this pull request is posted there, and every finding it handed
+# over — accepted at or above the threshold, or escalated — has its answer posted there.
+# The optional ones never reach anyone.
+UNANSWERED="$(review_runs_on "$TASK_ID" "$PR_URL" | while IFS= read -r run; do
+    if ! jq -e --arg url "$PR_URL" '.pr_url == $url' "$run/pr-review.json" >/dev/null 2>&1; then
+      echo "$(basename "$run"): not posted — pr-post.sh run $run"
+      continue
+    fi
+    # A run that ended before its triage handed nothing over; a file that is there is read.
+    { cat "$run/approved.json" 2>/dev/null || echo '[]'
+      cat "$run/escalated.json" 2>/dev/null || echo '[]'
+      cat "$run/answers-posted.json" 2>/dev/null || echo '[]'; } \
+      | jq -sr --arg run "$(basename "$run")" '
+        ([.[0][].finding_id] + [.[1][].finding_id] | unique) - [.[2][].finding_id]
+        | .[] | "\($run) \(.)"' 2>/dev/null \
+      || echo "$(basename "$run"): its findings or answers are unreadable"
+  done | tr '\n' ';')"
+[ -z "$UNANSWERED" ] || \
+  refuse M7 "runs or findings of $PR_URL that are not posted there: $UNANSWERED "\
+"— a finding's answer goes into <run>/answers.json, then pr-post.sh answers <run>"
+
+# M8: whatever a person wrote on the pull request — a comment, a review, a comment on a
+# line — is settled: the loop fixed it, or the user decided it (common.sh,
+# people_comments_open). The loop's own posts carry its marker.
+OPEN_COMMENTS="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
+  fail "gh could not read the comments of $PR_URL"
+UNANSWERED="$(printf '%s' "$OPEN_COMMENTS" | jq -r 'first // empty
+  | "\(.id) by \(.author) on \(.where)"
+    + (if .answered == null then ", not answered"
+       else ", answered \(.answered): the user decides" end)')"
+[ -z "$UNANSWERED" ] || \
+  waiting "$(printf '%s' "$OPEN_COMMENTS" | jq length) comment(s) of people on $PR_URL are not "\
+"settled, the first $UNANSWERED — pr-post.sh comments shows them whole; weigh each like a "\
+"finding and answer with pr-post.sh reply <id> <answer> <text-file>"
 
 # ---------------------------------------------------------------------------
-# 4. Merge, unless something stands in the way. The commit to merge is the one just
-#    pushed: a commit someone else pushed meanwhile never went through the loop.
+# M9: on GitHub. The commit to merge is the one checked here: a commit someone else
+# pushed meanwhile never went through the loop.
 # ---------------------------------------------------------------------------
 
 # A branch stacked on an unmerged task would take that task into the base branch
 # past its own pull request, whatever review stands on it there.
-OTHER_TASKS=\
-"$(git rev-list --no-merges "refs/remotes/$REMOTE/$BASE..HEAD" | while IFS= read -r commit; do
-  commit_task="$(task_id_of "$commit")"
-  [ "$commit_task" = "$TASK_ID" ] || printf '%s\n' "$commit_task"
-done | sort -u | tr '\n' ' ')"
+OTHER_TASKS="$(other_tasks_on "refs/remotes/$REMOTE/$BASE" "$TASK_ID")"
 [ -z "$OTHER_TASKS" ] || \
   waiting "$PR_URL also carries ${OTHER_TASKS}which is not on $BASE yet: "\
-"that task's pull request goes first, then run publish.sh again"
+"that task's pull request goes first, then run publish.sh --$MODE again"
 
 PR_VIEW="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json headRefOid,reviewDecision)" || \
   fail "gh could not read the review decision of $PR_URL"
 PR_HEAD="$(printf '%s' "$PR_VIEW" | jq -r '.headRefOid')" || \
   fail "gh's answer about $PR_URL is not readable: $PR_VIEW"
 [ "$PR_HEAD" = "$HEAD_COMMIT" ] || \
-  waiting "the head of $PR_URL is $PR_HEAD, not the commit landed here, $HEAD_COMMIT — "\
-"run publish.sh again; if it stays so, someone else pushed to $BRANCH"
+  waiting "the head of $PR_URL is $PR_HEAD, not HEAD, $HEAD_COMMIT — publish.sh alone "\
+"pushes it; if it stays so, someone else pushed to $BRANCH"
 REVIEW_DECISION="$(printf '%s' "$PR_VIEW" | jq -r '.reviewDecision')"
-[ "$REVIEW_DECISION" != "CHANGES_REQUESTED" ] || \
-  waiting "changes are requested on $PR_URL"
+# GitHub gives a review decision only where a rule of the branch requires reviews, so the
+# reviews themselves are read too: each person's latest review that decides something.
+REVIEWS="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/reviews")" || \
+  fail "gh could not read the reviews of $PR_URL"
+CHANGES_REQUESTED="$(printf '%s' "$REVIEWS" | jq -r '
+  [.[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
+  | group_by(.user.login // "") | map(last) | any(.state == "CHANGES_REQUESTED")')" || \
+  fail "the reviews of $PR_URL are not readable"
+[ "$REVIEW_DECISION" != "CHANGES_REQUESTED" ] && [ "$CHANGES_REQUESTED" != true ] || \
+  waiting "changes are requested on $PR_URL — they stand until the person who asked approves "\
+"or dismisses their review: once the fix is in, for the user"
 
-# By bucket, not by gh's exit code: a cancelled check exits 0, and it did not pass.
+# By bucket, not by gh's exit code: a cancelled check exits 0, and it did not pass. The
+# loop's own statuses (loop/*) are read apart: waiting does not change them.
 read_checks() {
-  CHECKS_OUTPUT="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,bucket 2>&1)"
+  CHECKS_OUTPUT="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,bucket,description \
+    2>&1)"
+  LOOP_CHECKS='[]'
   case "$CHECKS_OUTPUT" in
     *"no checks reported"*) CHECKS_STATE=none; return ;;
   esac
+  LOOP_CHECKS="$(printf '%s' "$CHECKS_OUTPUT" \
+    | jq -c '[.[] | select(.name | startswith("loop/"))]' 2>/dev/null)" || LOOP_CHECKS='[]'
   CHECKS_STATE="$(printf '%s' "$CHECKS_OUTPUT" | jq -r '
     if type != "array" then "failing"
-    elif length == 0 then "none"
-    elif any(.bucket == "fail" or .bucket == "cancel") then "failing"
-    elif any(.bucket == "pending") then "pending"
-    elif all(.bucket == "pass" or .bucket == "skipping") then "passed"
-    else "failing" end' 2>/dev/null)" || CHECKS_STATE=failing
+    else map(select(.name | startswith("loop/") | not))
+    | if length == 0 then "none"
+      elif any(.bucket == "fail" or .bucket == "cancel") then "failing"
+      elif any(.bucket == "pending") then "pending"
+      elif all(.bucket == "pass" or .bucket == "skipping") then "passed"
+      else "failing" end end' 2>/dev/null)" || CHECKS_STATE=failing
 }
 
 # Checks appear on a commit some seconds after its push, and until then gh says "no
@@ -268,13 +424,40 @@ while { [ "$CHECKS_STATE" = "none" ] || [ "$CHECKS_STATE" = "pending" ]; } \
 done
 
 case "$CHECKS_STATE" in
-  pending) waiting "checks are pending on $PR_URL — run publish.sh again later" ;;
+  pending) waiting "checks are pending on $PR_URL — run publish.sh --$MODE again later" ;;
   failing) printf '%s\n' "$CHECKS_OUTPUT"; waiting "checks are failing on $PR_URL" ;;
 esac
 
-# Never a squash: a merge commit keeps the Task-Id trailers of the commits. Only the
-# branch of the task goes with it: any other branch is someone's.
-MERGE_ARGUMENTS=(--repo "$REPOSITORY" --merge --match-head-commit "$HEAD_COMMIT")
+# The statuses of the loop at HEAD, which pr-post.sh posts for people to see: each
+# blocking gate of the run, the end-to-end tests of each platform, the review and /qa.
+# The merge does not take its own word for them: what the people saw is what merges.
+LOOP_WANTED="$( { jq -r 'to_entries[] | select(.value.blocking != false) | "loop/\(.key)"' \
+                    "$RUN/gates.json"
+                  platforms | sed 's|^|loop/e2e-|'
+                  printf 'loop/review\nloop/qa\n'; } | jq -R . | jq -sc .)"
+NOT_GREEN="$(jq -nr --argjson wanted "$LOOP_WANTED" --argjson seen "$LOOP_CHECKS" '
+  [$wanted[] as $name | ([$seen[] | select(.name == $name)] | last) as $status
+   | if $status == null then "\($name) is not posted"
+     elif $status.bucket != "pass" then "\($name): \($status.description // $status.bucket)"
+     else empty end] | first // empty')"
+[ -z "$NOT_GREEN" ] || \
+  waiting "a status of the loop at $HEAD_COMMIT is not green on $PR_URL — $NOT_GREEN; "\
+"pr-post.sh statuses posts them again"
+
+if [ "$MODE" = check ]; then
+  echo "ready to merge: $PR_URL — with squash; its description ends with the trailers"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 5. Merge: a squash of the head checked here, so the base branch gets one commit per
+#    task, whose message carries the audit trailers. Only the branch of the task goes
+#    with it: any other branch is someone's.
+# ---------------------------------------------------------------------------
+
+MERGE_ARGUMENTS=(--repo "$REPOSITORY" --squash --match-head-commit "$HEAD_COMMIT"
+                 --subject "$TASK_ID: $(jq -r '.title // .id' "$TASK_FILE")"
+                 --body "$(squash_trailers "$TASK_FILE" "$PR_URL")")
 [ "$BRANCH" != "task/$TASK_ID" ] || MERGE_ARGUMENTS+=(--delete-branch)
 
 if ! MERGE_OUTPUT="$(gh pr merge "$PR_URL" "${MERGE_ARGUMENTS[@]}" 2>&1)"; then

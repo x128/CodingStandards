@@ -13,6 +13,7 @@ templates/
 │   │   ├── review.sh       one review pass
 │   │   ├── land.sh         the only thing that commits
 │   │   ├── publish.sh      the only thing that pushes, opens or merges a pull request
+│   │   ├── pr-post.sh      what the loop writes on a pull request: statuses, review, replies
 │   │   ├── triage.py       the user answers findings — terminal or browser
 │   │   ├── prompts/{reviewer,maintainer}.md
 │   │   └── schemas/*.json
@@ -46,8 +47,8 @@ What that gets you, and what still needs your judgment:
    effort of each role are in `.claude/agents.conf` ([TASK_LOOP.md](../TASK_LOOP.md), "Models").
 5. **Deny write-git in `.claude/settings.json`.** The reviewer subagent holds `Bash` so it can
    verify claims, and `Bash` reaches `git commit`. Deny every mutating `git` and `gh` command and
-   pre-approve the two scripts that are allowed to write — `land.sh` and `publish.sh`. The block is
-   in [TASK_LOOP.md](../TASK_LOOP.md#landing).
+   pre-approve the three scripts that are allowed to write — `land.sh`, `publish.sh` and
+   `pr-post.sh`. The block is in [TASK_LOOP.md](../TASK_LOOP.md#landing).
 6. **Set `LANDING` in `.review/land.conf`** from the requirement "Who writes to git": (a) `off`,
    (b) `push`, (c) `pr`, (d) `merge`. `/maintain --init` does this, and items 1 and 5.
 
@@ -82,10 +83,11 @@ and needs no override.
 | File | Owner | Purpose |
 |------|-------|---------|
 | `review/lib/review.sh` | submodule | One review pass: diff → gates → reviewer → quote verification → triage → filtered output |
-| `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold, and calls `publish.sh` at `LANDING=push`, `pr` and `merge` |
-| `review/lib/publish.sh` | submodule | The only thing that pushes, opens or merges a pull request; publishes only what landings made, never a protected branch |
-| `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data, branch, remote and base branch |
-| `review/lib/selftest.sh` | submodule | `review.sh`, `land.sh` and `publish.sh` on throwaway repositories with fixed answers; run after changing any of them, the schemas or the decision rules |
+| `review/lib/land.sh` | submodule | The only thing that commits; refuses unless eight conditions hold — at `pr` and `merge` three, before the review — and calls `publish.sh` at `LANDING=push`, `pr` and `merge` |
+| `review/lib/publish.sh` | submodule | The only thing that pushes, opens or merges a pull request; publishes only what landings made, never a protected branch; merges with squash once the merge contract holds |
+| `review/lib/pr-post.sh` | submodule | The only thing that writes on a pull request apart from opening and merging it: statuses, the review with its findings and verdicts, answers, replies to people, the `/qa` report, the description; and reads what people wrote that is not settled (`comments`) and the work as it is (`work`) |
+| `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data, branch, remote and base branch, the conditions `land.sh` and `publish.sh` share |
+| `review/lib/selftest.sh` | submodule | `review.sh`, `land.sh`, `publish.sh` and `pr-post.sh` on throwaway repositories with fixed answers; run after changing any of them, the schemas or the decision rules |
 | `review/lib/export-version.sh` | submodule | One version of the project into a folder of its own, by reading git only — for `/qa` replays and comparisons |
 | `review/lib/prompts/reviewer.md` | submodule | Reviewer contract: quote, evidence, confidence, silence-is-valid |
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |
@@ -96,11 +98,12 @@ and needs no override.
 | `review/project/land.conf` | project | Landing and advancing switches |
 | `review/project/task.example.json` | project | Task contract format: scope and exit criteria |
 | `review/project/escalations-answered.example.json` | project | How the answer to an escalation is recorded |
+| `review/project/answers.example.json` | project | How the answer to a finding is recorded, for the pull request |
 | `review/project/decisions/` | project | Decision log format (training data) |
 | `qa/test-cases.example.md` | project | The format of the project's `qa/test-cases.md`: every case of the product, walked by `/qa` or run by an end-to-end test |
 | `agents/agents.conf` | project | The model and effort of each role |
 | `agents/reviewer.md` | project | Reviewer subagent, least-privilege tools |
-| `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh, publish.sh and read-only git and gh |
+| `agents/maintainer.md` | project | Maintainer subagent; Bash limited to land.sh, publish.sh, pr-post.sh and read-only git and gh |
 
 ## Self-improve
 

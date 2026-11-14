@@ -32,15 +32,28 @@ A check whose tool or device is missing is reported as not checked, never as pas
 `/qa` keeps the project's test cases in `qa/test-cases.md` (format:
 `templates/qa/test-cases.example.md`): each says what the user does and sees, and how it is
 covered — by `/qa` by hand, or by a named end-to-end test. A unit or integration test does not
-take a case off `/qa`; an end-to-end test does. A full regression run (`--full`) takes every case
-of the file, when the user or the requirements ask for one; the run of a task takes the cases its
-change can reach. A project without the file starts it with the list of this run.
+take a case off `/qa`; an end-to-end test does. A project without the file starts it with the list
+of this run.
+
+**The extent.** `/qa` decides between the cases the change can reach and the full regression, every
+case of `qa/test-cases.md`, and writes the choice and its reason at the top of the list. Full when
+the change reaches what other features share — the app's start, the shared (core) part of how its
+objects are made, a binding other features resolve, navigation, the storage schema or its
+migrations, the build or its configuration, the shared theme or components, the platform versions —
+or when the cases it can reach are most of the file anyway. What a new feature only adds — its own
+bindings, its module added to the list the app starts with, its screen added to the navigation —
+stays with that feature's cases, the cases of the screen it is reached from, and the app's first and
+next launch; a change to how existing screens are reached is navigation. The user or the
+requirements can still ask for a full run (`--full`).
 
 Write the list of this run down before any check runs: what is not on the list is not checked,
 and the report says so.
 
-1. **The change**: the uncommitted work, or `--base <ref>`; the task and its exit criteria from
-   the tracker.
+1. **The change**: the uncommitted work, or `--base <ref>`; the task and its exit criteria from the
+   tracker. At `LANDING=pr` and `merge` (`.review/land.conf`) it is the pull request's: the first
+   `/qa` of a pull request checks its whole change, from the merge base the newest review run
+   records (`merge_base` in its `meta.json`); one after a fix, the change since the work the last
+   `/qa` checked (the `head` of the task's newest `qa.json`), with only the cases the fix can reach.
 2. **What the change can break.** Hold the whole app in view: the requirements, `qa/test-cases.md`,
    the code around the change. Read what the change's author wrote it may affect, and the diff.
    Judge from the whole app which features the change can reach — through shared code, state, data,
@@ -58,9 +71,9 @@ and the report says so.
    in the middle. Keep the ones the change can reach.
 5. **The numbers the requirements set** for these behaviours — time, memory, size — and where each
    is written.
-6. **The version to compare with**: `--base` or `HEAD`, taken out into its own folder ("Another
-   version of the code", below) and built there. Warnings, neighbours and numbers are compared with
-   it.
+6. **The version to compare with**: `--base` or `HEAD`, at the pull request levels the commit the
+   change is checked from, taken out into its own folder ("Another version of the code", below) and
+   built there. Warnings, neighbours and numbers are compared with it.
 7. **The time of each check**, set by what is at stake in its items, so that the whole run fits
    the time the work has.
 
@@ -123,7 +136,7 @@ Tests check are built in a folder of their own, never by changing the working tr
 `CodingStandards/templates/review/lib/export-version.sh <ref> <folder>` (or `WORKTREE` for a
 copy of the uncommitted work). Once no check or challenge of the run needs a copy any more, the
 copy and its builds are deleted, and the reports and logs cited as evidence are kept with the run's
-other evidence; recordings and frames stay until the task lands.
+other evidence; recordings and frames stay until the task is in the base branch.
 
 ### 3. Challenge every pass
 
@@ -134,12 +147,24 @@ or unproven when the evidence settles nothing.
 ### 4. Report
 
 As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
-user sees, how to reproduce it and the evidence by path; with each, the case of `qa/test-cases.md`
-that reproduces it, and the record of the run in a folder of its own,
-`.review/runs/qa-<time>/qa.json`: `{"task": "<id>", "failures": [{"case": "TC-nnn"}]}`, written when
-nothing failed too; then what is unproven and why — it does not count as passed; then what passed,
-with its evidence; then what was not checked and why. Never "everything works": the report says what
-was checked.
+user sees, how to reproduce it and the evidence by path, and with each the case of
+`qa/test-cases.md` that reproduces it; then what is unproven and why — it does not count as passed;
+then what passed, with its evidence; then what was not checked and why. Never "everything works":
+the report says what was checked.
+
+Each run, one where nothing failed too, is kept in a folder of its own, `.review/runs/qa-<time>/`:
+the report as `report.md`, and its record as `qa.json` — `task`; `time`, in seconds since 1970;
+`head`; `work`, the fingerprint of the work checked; `since`, the commit the change was checked
+from; `extent`, `reachable` or `full`, with its `reason`; `counts` of `pass`, `fail`, `unproven` and
+`not_checked`, the items of the list; and `failures`, `[{"case": "TC-nnn"}]`. At the pull request
+levels `CodingStandards/templates/review/lib/pr-post.sh work` prints `work`, `head` and `merge_base`
+as they are: a `/qa` of the whole pull request records `merge_base` as `since`, and one after a fix
+the `head` of the `qa.json` before it. The report then goes to the pull request:
+`pr-post.sh qa <qa-dir>`, in several comments when it is long. The merge waits while a `/qa` since
+the newest one of the whole pull request left anything unproven or not checked: an unproven item
+goes back to whoever does the work, an item not checked because a tool or device failed is restored
+by the loop (`/maintain`, step 8), and what is still open after that is the user's to accept or not;
+the status lists the counts.
 
 ### 5. When a defect got past
 
@@ -173,6 +198,8 @@ task — is a defect of this skill as well as of the code.
 - Write recordings, frames and reports under `.review/runs/` when the project has `.review/`, and
   otherwise under a temporary directory; write `qa/test-cases.md`; correct this file, or
   `/maintain`, after a defect got past
+- At `LANDING=pr` and `merge`, read `pr-post.sh work` and post the report with
+  `pr-post.sh qa <qa-dir>`
 - The working tree's source and tests: read only — QA reports, the work is done elsewhere
 - Git: read-only (`status`, `diff`, `log`, `show`, `ls-tree`, `cat-file`)
 

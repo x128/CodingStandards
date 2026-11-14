@@ -119,7 +119,8 @@ use cases, such as command handlers.
 **Who writes to git**
 
 > How far does an agent take a finished task? Finished means it has passed the checks and the
-> review. You can change this at any time.
+> review; with a pull request, the agent opens it first, and the review, the tests and QA run on it
+> and leave their results there. You can change this at any time.
 
 - *The agent does not touch git*: you look at the changes and commit them yourself.
 - *The agent commits and pushes to a remote branch*: you look at the branch and merge it into main
@@ -127,7 +128,8 @@ use cases, such as command handlers.
 - *The agent commits, pushes and opens a pull request*: you look at the pull request and merge it
   yourself.
 - *Full cycle up to the main branch (main or master)*: the agent commits, pushes, opens a pull
-  request, fixes what the review finds and merges it into main. You look when you want to.
+  request, fixes what the review and QA find and merges it into main as one commit. You look when
+  you want to.
 
 ---
 

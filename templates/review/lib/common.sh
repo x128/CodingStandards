@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# common.sh — helpers shared by review.sh, land.sh, publish.sh and e2e-gate.sh.
+# common.sh — helpers shared by review.sh, land.sh, publish.sh, pr-post.sh and e2e-gate.sh.
 #
 # Runs from the submodule; not overridable. Sourced, never executed.
 
@@ -29,6 +29,19 @@ for loop_file in "${LOOP_FILES[@]}" "${OWNER_FILES[@]}"; do
 done
 unset loop_file
 
+# The loop's records: the owner's files, the review policy and the decision logs. They land
+# with a task only with WITH_RECORDS=yes (land.sh).
+RECORDS=("${OWNER_FILES[@]}" .review/REVIEW_POLICY.md ':(glob).review/decisions/*.jsonl')
+
+is_record() {
+  case "$1" in .review/decisions/*.jsonl | .review/REVIEW_POLICY.md) return 0 ;; esac
+  is_owner_file "$1"
+}
+
+is_harness() {
+  case "$1" in .review/e2e.sh | .review/e2e-*) return 0 ;; *) return 1 ;; esac
+}
+
 is_loop_file() {
   local file
   for file in "${LOOP_FILES[@]}"; do
@@ -54,12 +67,13 @@ only_task_work() {
   done
 }
 
-# Fingerprint of everything the reviewer saw: HEAD, the tree outside `.review/` and
-# the loop's own files, and the end-to-end harness. review.sh records it; land.sh
-# recomputes it and refuses when it differs — a review of a tree that has since changed is not a
-# review of what is about to be committed. HEAD counts as the commit it names,
-# never as a branch name, so the task branch land.sh creates from HEAD leaves the
-# fingerprint as it was.
+# Fingerprint of everything the reviewer saw: the content of the task's work — the tree
+# outside `.review/`, the loop's own files and the owner's, and the end-to-end harness.
+# review.sh records it; land.sh and publish.sh recompute it and refuse when it differs — a
+# review of a tree that has since changed is not a review of what is about to be committed
+# or merged. It is the content alone, never a commit or a branch: committing reviewed work,
+# or the tracker, the plan or the records, leaves it as it was, and so does the task branch
+# land.sh creates from HEAD; changing a line of the work changes it.
 #
 # The tree goes through a throwaway copy of the index, so every change reads the
 # same, tracked or new, staged or not: a landing whose commit failed leaves its new
@@ -76,22 +90,33 @@ tree_fingerprint() {
   # newer than the real one would hide an edit made in the second of the last `git add`.
   cp -p "$(git rev-parse --git-path index)" "$scratch/index" 2>/dev/null
   {
-    git rev-parse HEAD
-    # `.review/` is pipeline bookkeeping and is excluded on BOTH sides, the harness
-    # apart (below): the task file is tracked and is filled in (verified_by) after the
-    # review by design, so including it here would invalidate every run before it
-    # could land.
+    # `.review/` is pipeline bookkeeping and is excluded, the harness apart (below): the
+    # task file is tracked and is filled in (verified_by) after the review by design, so
+    # including it here would invalidate every run before it could land.
     GIT_INDEX_FILE="$scratch/index" git add -A -- . "${outside[@]}" 2>/dev/null
-    GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- . "${outside[@]}"
+    GIT_INDEX_FILE="$scratch/index" git ls-files -s -- . "${outside[@]}"
     if [ "${1:-}" != --whole ]; then
       # One pathspec at a time: given several, git stages nothing when one matches no file.
       for harness in "${HARNESS[@]}"; do
         GIT_INDEX_FILE="$scratch/index" git add -A -- "$harness" 2>/dev/null
       done
-      GIT_INDEX_FILE="$scratch/index" git diff --cached --binary HEAD -- "${HARNESS[@]}"
+      GIT_INDEX_FILE="$scratch/index" git ls-files -s -- "${HARNESS[@]}"
     fi
   } | sha256_stdin
   rm -rf "$scratch"
+}
+
+# The paths under the pathspecs that differ from HEAD, tracked or new, one per line, named
+# as they are (core.quotePath=false). Only read: the index is never written.
+uncommitted() {
+  { git -c core.quotePath=false diff --name-only HEAD -- "$@"
+    git -c core.quotePath=false ls-files --others --exclude-standard -- "$@"; } | sort -u
+}
+
+# The task's work that is not committed: at the pull request levels review.sh reviews, and
+# publish.sh merges, only what is committed and pushed.
+uncommitted_task_work() {
+  { uncommitted . "${NOT_TASK_WORK[@]}"; uncommitted "${HARNESS[@]}"; } | sort -u
 }
 
 sha256_stdin() {
@@ -261,6 +286,20 @@ remote_repository() {
     ""|github.com|ssh.github.com) printf '%s' "$repository" ;;
     *) printf '%s/%s' "$host" "$repository" ;;
   esac
+}
+
+# gh api on a path of the repository remote_repository names: the owner and the repository go
+# into the path, and a host that is not github.com to --hostname, since gh api has no --repo.
+gh_repo_api() {
+  local repository="$1" path="$2" host=""
+  shift 2
+  case "$repository" in */*/*) host="${repository%%/*}"; repository="${repository#*/}" ;; esac
+  gh api "repos/$repository/$path" ${host:+--hostname "$host"} "$@"
+}
+
+# A list gh api reads page by page, as one JSON array: each page is an array of its own.
+gh_repo_api_list() {
+  gh_repo_api "$1" "$2" --paginate | jq -sc 'add // []'
 }
 
 # What stops this level from publishing, known before anything is done: land.sh
@@ -511,4 +550,417 @@ harness_blobs() {
       printf '%s %s\n' "$(git hash-object -- "$file")" "$file"
     fi
   done | sort
+}
+
+# The paths on stdin that no glob of the task's scope matches. In bash pattern matching `*`
+# also matches `/`, so `src/*` covers nested paths — write scopes accordingly.
+outside_scope() {
+  local task_file="$1" patterns=() pattern file matched
+  # Built with a read loop rather than mapfile: macOS still ships bash 3.2.
+  while IFS= read -r pattern; do
+    [ -z "$pattern" ] || patterns+=("$pattern")
+  done < <(jq -r '.scope[]?' "$task_file")
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    matched=0
+    for pattern in ${patterns[@]+"${patterns[@]}"}; do
+      # shellcheck disable=SC2053
+      if [[ "$file" == $pattern ]]; then matched=1; break; fi
+    done
+    [ "$matched" -eq 1 ] || printf '%s\n' "$file"
+  done
+}
+
+# The review runs of a task, oldest first by the time each records, one folder per line. A
+# folder of a landing (land-*) or of /qa (qa-*) is no review run, whatever it holds.
+review_runs_of() {
+  local meta
+  for meta in .review/runs/*/meta.json; do
+    [ -f "$meta" ] || continue
+    case "$meta" in .review/runs/land-*|.review/runs/qa-*) continue ;; esac
+    jq -c --arg id "$1" --arg run "${meta%/meta.json}" \
+      'select(.task == $id) | {time: (.time // 0), run: $run}' "$meta" 2>/dev/null
+  done | jq -sr 'sort_by(.time) | .[].run'
+}
+
+# The review runs of a task made on a pull request, oldest first: those whose meta.json names
+# it. A run of --dry-run, or of another level, names none, and never stands for a review on
+# the pull request.
+review_runs_on() {
+  local run
+  review_runs_of "$1" | while IFS= read -r run; do
+    if jq -e --arg url "$2" '.pr_url == $url' "$run/meta.json" >/dev/null 2>&1; then
+      printf '%s\n' "$run"
+    fi
+  done
+}
+
+# The tasks other than <task-id> whose commits are between <base-ref> and HEAD, one line,
+# each followed by a space. A commit with no Task-Id trailer is none: commits_no_landing_made
+# judges those.
+other_tasks_on() {
+  local commit commit_task
+  git rev-list --no-merges "$1..HEAD" | while IFS= read -r commit; do
+    commit_task="$(task_id_of "$commit")"
+    [ -z "$commit_task" ] || [ "$commit_task" = "$2" ] || printf '%s\n' "$commit_task"
+  done | sort -u | tr '\n' ' '
+}
+
+# The open pull request of <branch> into <base> in <repository>, from this repository and not
+# a fork, as {url, number, state, headRefOid}; {} when there is none. With "all" as the fourth
+# argument, the newest of any state.
+pull_request_of() {
+  local found
+  found="$(gh pr list --repo "$1" --head "$2" --base "$3" --state "${4:-open}" \
+    --json url,number,state,headRefOid,isCrossRepository)" || return 1
+  printf '%s' "$found" | jq -c '[.[] | select(.isCrossRepository | not)][0] // {}
+    | del(.isCrossRepository)'
+}
+
+# What people wrote on pull request <number> of <repository> that the loop has not settled, as
+# a JSON array, oldest first: each comment, review and comment on a line that is not the loop's
+# own (its marker) nor a bot's, with its id, author, where it is and its whole text. A person
+# outranks the loop: what they wrote is settled by a reply of the loop that names it with the
+# answer `fixed`, or with `user` — the user's own decision, from the chat or from what they
+# wrote. A reply of the loop that disagrees, or defers, leaves it to the person.
+people_comments_open() {
+  local repository="$1" number="$2" all
+  all="$( { gh_repo_api_list "$repository" "issues/$number/comments" || echo FAILED
+            gh_repo_api_list "$repository" "pulls/$number/reviews" || echo FAILED
+            gh_repo_api_list "$repository" "pulls/$number/comments" || echo FAILED; } )"
+  case "$all" in *FAILED*) return 1 ;; esac
+  printf '%s\n' "$all" | jq -sc '
+    add as $all
+    | [$all[] | (.body // "") | capture("<!-- loop:reply (?<id>[^ ]+) (?<answer>[a-z-]+) -->")?]
+      as $replies
+    | [$all[] | select((.body // "") != "" and ((.body | contains("<!-- loop")) | not)
+                       and (.state // "") != "PENDING" and (.user.type // "") != "Bot")
+       | (.id | tostring) as $id | (.node_id // "") as $node
+       | [$replies[] | select(.id == $id or ($node != "" and .id == $node)) | .answer] as $answers
+       | select(any($answers[]; . == "fixed" or . == "user") | not)
+       | {id: $id, author: (.user.login // ""), at: (.created_at // .submitted_at // ""),
+          where: (if .path != null then "\(.path):\(.line // .original_line // "?")"
+                  elif .pull_request_review_id == null and has("state") then "review \(.state)"
+                  else "the pull request" end),
+          answered: ($answers | last // null), text: .body}]
+    | sort_by(.at)'
+}
+
+# The qa.json records of a task as one JSON array, oldest first by the time each records,
+# each with its folder as `run`. A record that cannot be read, or that is not {task, failures:
+# [{case: TC-nnn}]}, fails the whole call: it must never read as "no failures".
+qa_records_of() {
+  local record
+  for record in .review/runs/*/qa.json; do
+    [ -f "$record" ] || continue
+    jq -c --arg run "${record%/qa.json}" '. + {run: $run}' "$record" || exit 1
+  done | jq -sc --arg id "$1" '
+    map(select(.task == $id)) | sort_by(.time // 0)
+    | if all(.[]; (.failures | type) == "array"
+                  and all(.failures[]; (.case? // "") | test("^TC-[0-9]+$")))
+      then . else error("malformed") end'
+}
+
+# ---------------------------------------------------------------------------
+# The conditions of a review run. land.sh checks them before a commit (TASK_LOOP.md, "The
+# contract"); publish.sh before a merge at the pull request levels, as items of the merge
+# contract; pr-post.sh shows them in the statuses it posts. Each reports through the caller's
+# `refuse <condition> <reason>`, which does not return, and names the condition by its number
+# in land.sh.
+# ---------------------------------------------------------------------------
+
+# 1. The run directory is a completed review run. Missing files must never read as "nothing
+#    was found" — that would let any empty directory authorise a commit.
+run_is_complete() {
+  local run="$1" artifact
+  for artifact in meta.json verdicts.json approved.json escalated.json e2e.json; do
+    [ -f "$run/$artifact" ] || \
+      refuse 1 "$run has no $artifact — this is not a completed review run"
+  done
+}
+
+# 2. The run reviewed THIS tree, for THIS task. Any edit since the review — including the fix
+#    that was supposed to be the last one — invalidates it. The run must belong to this task:
+#    the maintainer triaged against one task's scope, and landing checks another's.
+#    `.review/` (the harness apart) is outside the fingerprint, so nothing else would catch a
+#    swapped task file. Both paths are absolute: review.sh resolves the path before recording
+#    it, and the callers resolve their own argument the same way.
+run_reviewed_this_tree() {
+  local run="$1" task_file="$2" fingerprint="$3" recorded
+  recorded="$(jq -r '.task_file // ""' "$run/meta.json")"
+  [ -n "$recorded" ] || \
+    refuse 2 "this run was made without a task file — its triage never saw a scope"
+  [ "$recorded" = "$task_file" ] || refuse 2 "this run reviewed $recorded, not $task_file"
+  recorded="$(jq -r '.tree_fingerprint // ""' "$run/meta.json")"
+  [ -n "$recorded" ] || refuse 2 "$run/meta.json has no tree fingerprint"
+  [ "$recorded" = "$fingerprint" ] || \
+    refuse 2 "the tree changed after this review ran — review again before landing"
+}
+
+# 3, end-to-end half. The run's end-to-end tests passed on this tree, on every platform the
+#    tree ships, through the harness as it is now. Only files are read: the devices ran in
+#    review.sh, and condition 2 binds that run to this tree, the harness included: a change to
+#    the harness is in the reviewed diff and lands with the task.
+run_e2e_passed() {
+  local run="$1" fingerprint="$2" platforms_now harness_now
+  platforms_now="$(platforms | jq -R . | jq -sc .)"
+  jq -e --arg fingerprint "$fingerprint" --argjson need "$platforms_now" \
+    '.status == "pass" and .fingerprint == $fingerprint and (($need - .platforms) | length) == 0' \
+    "$run/e2e.json" >/dev/null 2>&1 || \
+    refuse 3 "the end-to-end tests of this run did not pass on every platform the tree ships: "\
+"$(printf '%s' "$platforms_now" | jq -r 'join(" ")')"
+
+  # The harness is `.review/e2e.sh` and any `.review/e2e-*` it calls: each must be now as it
+  # ran (recorded before the run), and `.review/e2e.sh` must be there.
+  harness_now="$(harness_blobs)"
+  case "$harness_now" in *" .review/e2e.sh"*) ;; *) harness_now="" ;; esac
+  [ -n "$harness_now" ] && [ "$(jq -r '.harness // ""' "$run/e2e.json")" = "$harness_now" ] || \
+    refuse 3 ".review/e2e.sh, or a .review/e2e-* beside it, is not as it ran — review again"
+  marks_checked_by_run "$run"
+}
+
+# Every test a case of qa/test-cases.md names now, under that case, was one the run was
+# checked against. The cases are one of the loop's own files, outside condition 2: a mark
+# written since the run names a test no run has seen pass. land.sh checks it again after the
+# gates, which run between here and the commit.
+marks_checked_by_run() {
+  local run="$1" now unchecked
+  now="$(case_marks | marks_json)" || refuse 3 "could not read the marks of qa/test-cases.md"
+  unchecked="$(jq -r --argjson now "$now" \
+    '$now - (.marks // []) | map("\(.case) \(.test)") | join(", ")' "$run/e2e.json")" || \
+    refuse 3 "$run/e2e.json is unreadable"
+  [ -z "$unchecked" ] || \
+    refuse 3 "qa/test-cases.md names end-to-end tests this run was not checked against: "\
+"$unchecked — review again before landing"
+}
+
+# 4. No accepted finding at or above the threshold of the run that produced the verdicts, so
+#    no later check applies a different bar than the review did.
+run_has_no_findings() {
+  local run="$1" threshold count
+  threshold="$(jq -r '.threshold // "major"' "$run/meta.json")"
+  count="$(require_array_length "$run/approved.json")" || \
+    refuse 4 "approved.json is unreadable — refusing to assume it is empty"
+  [ "$count" -eq 0 ] || refuse 4 "$count accepted finding(s) at or above $threshold are unresolved"
+}
+
+# 5. No pending escalation. An escalation is answered, not waited out. The answer is recorded
+#    in escalations-answered.json — one entry per escalated finding — and only then does
+#    landing proceed. Without this an escalated finding (every replication finding, for one)
+#    could never land at all: re-running the review reproduces it.
+run_escalations_answered() {
+  local run="$1" count answers="$1/escalations-answered.json" unanswered
+  count="$(require_array_length "$run/escalated.json")" || \
+    refuse 5 "escalated.json is unreadable — refusing to assume it is empty"
+  [ "$count" -gt 0 ] || return 0
+  [ -f "$answers" ] || \
+    refuse 5 "$count escalation(s) are waiting for an answer — record the answers in $answers"
+  # The same discipline conditions 4 and 5 apply above, and for the same reason: a jq that
+  # dies on a malformed answers file prints nothing, and nothing is indistinguishable from "no
+  # unanswered escalations". That is the exact fail-open this whole section exists to
+  # prevent, so the file is proved to be a JSON array first, and the query's own exit status
+  # is checked after.
+  require_array_length "$answers" >/dev/null || \
+    refuse 5 "$answers is unreadable — refusing to assume the escalations were answered"
+  unanswered="$(jq -r --slurpfile answers "$answers" '
+    [ .[] | select(.finding_id as $id
+        | ([$answers[0][] | select((.resolution // "") != "") | .finding_id] | index($id)) == null)
+      | .finding_id ] | join(", ")' "$run/escalated.json")" || \
+    refuse 5 "could not read the escalation answers in $answers — "\
+"refusing to assume they are answered"
+  [ -z "$unanswered" ] || refuse 5 "escalation(s) with no recorded answer: $unanswered"
+}
+
+# 7. Every exit criterion carries an explicit verification claim. Machine-checkable criteria
+#    belong in gates; the rest must at least be stated, so the claim lands in the commit and
+#    can be audited later. A task may have none: criteria are gathered before a task starts,
+#    never written at its start (PLANNING_GUIDE.md, "Task Rules").
+criteria_verified() {
+  local unverified
+  unverified="$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | length' "$1")"
+  [ "$unverified" -eq 0 ] || \
+    refuse 7 "$unverified exit criterion/criteria have no verified_by claim"
+}
+
+# 7, /qa. /qa checked the task, and each failure it recorded — in a qa.json, or in the
+#    qa_failures an e2e.json of this task took from one, which outlasts a qa.json rewritten or
+#    removed — has a test its case is marked with that failed in a run of this task made after
+#    /qa recorded it: passing in this run, or skipped in it under a tag of the case for the
+#    task it belongs to. Or the user answered it. No test stays skipped for the task. Every
+#    record is read: an unreadable one refuses, never reads as "no failures".
+qa_failures_proven() {
+  local run="$1" task_id="$2" records record tags task still runs failures now answered unproven
+  local case_id tests
+  records="$(qa_records_of "$task_id")" || \
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]} — "\
+"refusing to read it as no failures"
+  [ "$(printf '%s' "$records" | jq 'length')" -gt 0 ] || \
+    refuse 7 "no /qa record (qa.json) for $task_id — /qa has not checked this task"
+
+  tags="$(skip_tags)"
+  [ $? -le 1 ] || refuse 7 "could not search the tree for skipped end-to-end tests"
+  for task in $(printf '%s' "$task_id" | tr '+' ' '); do
+    still="$(printf '%s\n' "$tags" | awk -F'\t' -v task="$task" '
+      { split($1, tag, ": "); n = split(tag[1], ids, "+")
+        for (i = 1; i <= n; i++)
+          if (ids[i] == task) { cases = cases " " tag[2]; files = files " " $2 } }
+      END { if (cases != "")
+              print substr(cases, 2) " is still skipped for " task " — make it pass:" files }')"
+    [ -z "$still" ] || refuse 7 "the end-to-end test of $still"
+  done
+
+  runs="$(for record in .review/runs/*/e2e.json; do
+      [ -f "$record" ] || continue
+      jq -c . "$record" || exit 1
+    done | jq -sc --arg id "$task_id" '[.[] | select(.task == $id)
+      | {qa: (.qa_failures // []), failed: [.results[]?.failed[]?]}]')" || \
+    refuse 7 "an e2e.json is unreadable — refusing to read it as no failures"
+  failures="$(jq -nc --argjson records "$records" --argjson runs "$runs" \
+    '[$records[].failures[].case] + [$runs[].qa[]] | unique')" || \
+    refuse 7 "could not gather the /qa failures of $task_id"
+  # A run that never got as far as its end-to-end tests saw nothing pass.
+  now='{"passed": [], "skipped": []}'
+  if [ -f "$run/e2e.json" ]; then
+    now="$(jq -c '{passed: [.results[]?.passed[]?], skipped: [.results[]?.skipped[]?]}' \
+      "$run/e2e.json")" || refuse 7 "$run/e2e.json is unreadable"
+  fi
+  # Only the user's answer counts, and only one that lets the task land: `fixed` means review
+  # again (maintain, step 7).
+  answered="[]"
+  if [ -f "$run/escalations-answered.json" ]; then
+    require_array_length "$run/escalations-answered.json" >/dev/null && \
+    answered="$(jq -c '[.[] | select(.by == "human"
+        and (.resolution == "accepted-as-is" or .resolution == "deferred"))
+      | .finding_id]' "$run/escalations-answered.json")" || \
+      refuse 7 "$run/escalations-answered.json is unreadable — refusing to assume an answer"
+  fi
+
+  unproven=""
+  for case_id in $(printf '%s' "$failures" | jq -r '.[]'); do
+    tests="$(case_tests "$case_id" | while IFS= read -r test_id; do
+        tagged=false
+        skip_tag_on "$tags" "$case_id" "$test_id" && tagged=true
+        jq -nc --arg test "$test_id" --argjson tagged "$tagged" '{test: $test, tagged: $tagged}'
+      done | jq -sc .)"
+    jq -en --argjson tests "$tests" --argjson runs "$runs" --argjson now "$now" \
+          --argjson answered "$answered" --arg case "$case_id" "$JQ_HIT"'
+      def among($rows): . as $id | any($rows[]; hit($id));
+      ($answered | index($case)) != null
+        or any($tests[]; . as $mark
+               | any($runs[]; . as $run
+                     | ($run.qa | index($case)) != null and ($mark.test | among($run.failed)))
+                 and (($mark.test | among($now.passed))
+                      or ($mark.tagged and ($mark.test | among($now.skipped)))))' \
+      >/dev/null || unproven="$unproven $case_id"
+  done
+  [ -z "$unproven" ] || \
+    refuse 7 "a /qa failure without an end-to-end test seen red, then green:$unproven — "\
+"mark the case with its test (e2e: \`<test>\`), see it fail in a run of $task_id made after /qa "\
+"recorded it, then pass; where no end-to-end test can see it, the user answers it in "\
+"$run/escalations-answered.json (by: human, accepted-as-is or deferred)"
+}
+
+# 7, /qa at the pull request levels. The newest qa.json of the task, by the time inside it,
+#    checked the work as it is now, and one of them checked the whole pull request: its
+#    change since the merge base. A /qa after a fix checks only what the fix can reach.
+qa_checked_this_work() {
+  local task_id="$1" fingerprint="$2" merge_base="$3" records
+  records="$(qa_records_of "$task_id")" || \
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]} — "\
+"refusing to read it as no failures"
+  printf '%s' "$records" | jq -e --arg work "$fingerprint" 'last.work == $work' >/dev/null || \
+    refuse 7 "/qa has not checked this work of $task_id: its newest qa.json is of other work, "\
+"or there is none"
+  printf '%s' "$records" | jq -e --arg since "$merge_base" 'any(.[]; .since == $since)' \
+    >/dev/null || \
+    refuse 7 "no /qa of $task_id checked the whole pull request: no qa.json has since = "\
+"$merge_base, the merge base"
+  # How far /qa went, and why, and what came of each item, are part of the record: a /qa
+  # that never chose between the cases the change can reach and a full regression has not
+  # done its first step.
+  printf '%s' "$records" | jq -e --arg since "$merge_base" '
+    def told: (.extent == "reachable" or .extent == "full") and ((.reason // "") != "")
+      and all(["pass", "fail", "unproven", "not_checked"][] as $key
+              | .counts[$key]; type == "number");
+    (last | told) and any(.[] | select(.since == $since); told)' >/dev/null || \
+    refuse 7 "$(printf '%s' "$records" | jq -r --arg since "$merge_base" '
+      [last, (map(select(.since == $since)) | last)] | map(.run | split("/") | last)
+      | unique | join(" or ")') does not say how far /qa went and what came of it: "\
+"extent (reachable or full), reason, and counts of pass, fail, unproven and not_checked"
+}
+
+# 7, /qa at the pull request levels, continued. No /qa since the newest complete one of the
+# whole pull request left anything unproven or not checked, or the user accepted what it
+# left, in <its folder>/open-answered.json: {"by": "human", "answer": "accepted-as-is",
+# "words": "<what they said>"}. A /qa after a fix checks only what the fix can reach, so
+# what an earlier one left open goes away only with a later /qa of the whole pull request or
+# with the user's acceptance. A merge nobody looks at never stands on a check nobody made.
+qa_left_nothing_open() {
+  local task_id="$1" merge_base="$2" records open
+  records="$(qa_records_of "$task_id")" || \
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}"
+  open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" '
+    ([to_entries[] | select(.value.since == $since and (.value.counts | type) == "object")
+      | .key] | last // 0) as $from
+    | .[$from:][] | select(((.counts.unproven // 0) + (.counts.not_checked // 0)) > 0)
+    | "\(.run)\t\(.counts.unproven // 0) unproven and \(.counts.not_checked // 0) not checked"')"
+  while IFS=$'\t' read -r run counts; do
+    [ -n "$run" ] || continue
+    jq -e '.by == "human" and .answer == "accepted-as-is" and ((.words // "") != "")' \
+      "$run/open-answered.json" >/dev/null 2>&1 || \
+      refuse 7 "/qa left $counts in $(basename "$run") — restore what failed and run /qa of "\
+"the whole pull request again, or the user accepts it: $run/open-answered.json, "\
+"{\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}"
+  done <<<"$open"
+}
+
+# 7, /qa at the pull request levels, continued. The reports of the newest /qa and of the newest
+# one of the whole pull request are on it: what /qa found stays where people look.
+qa_reports_posted() {
+  local task_id="$1" merge_base="$2" pr_url="$3" records run
+  records="$(qa_records_of "$task_id")" || \
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}"
+  for run in $(printf '%s' "$records" | jq -r --arg since "$merge_base" \
+                 '[last, (map(select(.since == $since)) | last)] | map(.run) | unique | .[]'); do
+    jq -e --arg url "$pr_url" '.pr_url == $url' "$run/pr-comment.json" >/dev/null 2>&1 || \
+      refuse 7 "the report of $(basename "$run") is not on $pr_url — pr-post.sh qa $run posts it"
+  done
+}
+
+# The trailers of a task's squash commit at the pull request levels, which the description of
+# its pull request ends with too. Self-contained: the run folders are local and gitignored,
+# so the commit carries the audit facts themselves rather than a path to them.
+squash_trailers() {
+  local task_file="$1" pr_url="${2:-}" task_id runs newest run qa
+  task_id="$(jq -r '.id' "$task_file")"
+  if [ -n "$pr_url" ]; then
+    runs="$(review_runs_on "$task_id" "$pr_url")"
+  else
+    runs="$(review_runs_of "$task_id")"
+  fi
+  newest="$(printf '%s\n' "$runs" | tail -1)"
+  printf 'Task-Id: %s\n' "$task_id"
+  if [ -n "$newest" ]; then
+    [ ! -f "$newest/gates.json" ] || printf 'Gates: %s\n' \
+      "$(jq -r '[to_entries[] | "\(.key)=\(.value.status)"] | join(",")' "$newest/gates.json")"
+    printf 'Findings: %s reviewed, %s rejected, %s outstanding at %s+\n' \
+      "$(printf '%s\n' "$runs" | while IFS= read -r run; do
+           cat "$run/verdicts.json" 2>/dev/null; done | jq -s '[.[].verdicts[]?] | length')" \
+      "$(printf '%s\n' "$runs" | while IFS= read -r run; do
+           cat "$run/verdicts.json" 2>/dev/null; done \
+         | jq -s '[.[].verdicts[]? | select(.verdict == "reject")] | length')" \
+      "$(jq 'length' "$newest/approved.json" 2>/dev/null || echo "?")" \
+      "$(jq -r '.threshold // "major"' "$newest/meta.json")"
+  fi
+  printf 'Exit-Criteria: %s verified\n' \
+    "$(jq '[.exit_criteria[]? | select((.verified_by // "") != "")] | length' "$task_file")"
+  if [ -n "$newest" ]; then
+    printf 'Review-Runs: %s, last %s\n' "$(printf '%s\n' "$runs" | grep -c .)" \
+      "$(basename "$newest")"
+  else
+    printf 'Review-Runs: 0\n'
+  fi
+  qa="$(qa_records_of "$task_id" 2>/dev/null | jq -r 'last // empty
+    | "QA: \(.run | split("/") | last) (\(.extent // "extent not recorded"))"' 2>/dev/null)"
+  [ -z "$qa" ] || printf '%s\n' "$qa"
 }
