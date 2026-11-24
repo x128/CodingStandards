@@ -892,7 +892,8 @@ e2e_land "a harness committed as a link lands" 0 "For the user to commit" .revie
 # statuses posted in statuses.json and every comment and review in comments.json,
 # and answers as the files next to them say. It answers with the fields --json asks
 # for, and acts only on the repository --repo names, as real gh does with the flag,
-# or gh api its path.
+# or gh api its path. A gh api whose path matches the pattern in api-fails does not
+# reach GitHub: it prints gh's line for that and exits 1.
 # ---------------------------------------------------------------------------
 
 # A PATH with no gh on it, whatever this machine has installed. A folder that is on
@@ -986,6 +987,11 @@ esac
 # gh api names the repository in its path, repos/<owner>/<repository>/..., and has no
 # --repo; the rest of the path says what is asked.
 if [ "$1" = api ]; then
+  if [ -e "$GH_STATE/api-fails" ] &&
+     printf '%s' "$2" | grep -Eq -- "$(cat "$GH_STATE/api-fails")"; then
+    echo "error connecting to api.github.com" >&2
+    exit 1
+  fi
   if [ "$(printf '%s' "$2" | cut -d/ -f3)" != "$(basename "$GH_REMOTE" .git)" ]; then
     echo "gh: Not Found (HTTP 404)" >&2
     exit 1
@@ -1410,6 +1416,20 @@ a_person_comments() {
   local updated
   updated="$(jq --arg body "$1" '. + [{id: (1000 + length), node_id: "IC_\(1000 + length)",
     kind: "issue", pr: 1, body: $body}]' "$GH_STATE/comments.json")" \
+    && printf '%s' "$updated" >"$GH_STATE/comments.json"
+}
+a_person_comments_on_line() {
+  local updated
+  updated="$(jq --arg path "$1" --argjson line "$2" --arg body "$3" '
+    . + [{id: (1000 + length), node_id: "PRRC_\(1000 + length)", kind: "line", pr: 1,
+          path: $path, line: $line, body: $body}]' "$GH_STATE/comments.json")" \
+    && printf '%s' "$updated" >"$GH_STATE/comments.json"
+}
+a_person_reviews_with() {
+  local updated
+  updated="$(jq --arg body "$1" '. + [{id: (1000 + length), node_id: "PRR_\(1000 + length)",
+    kind: "review", pr: 1, user: {login: "reviewer", type: "User"}, state: "COMMENTED",
+    body: $body}]' "$GH_STATE/comments.json")" \
     && printf '%s' "$updated" >"$GH_STATE/comments.json"
 }
 # A person's answer inside the thread of the comment <id>, on its line.
@@ -2198,6 +2218,91 @@ holds "the status of /qa gives the reason, and not whose turn it is" \
     | .state == "failure" and .description
         == "a /qa failure without an end-to-end test seen red, then green: TC-001"' \
   "$GH_STATE/statuses.json"
+
+# ---- what people wrote, and a read that failed -------------------------------
+
+# A failed read of the comments is told by the exit code of each request, never by a
+# word in what was read: a comment may quote the log of a build.
+published_project origin
+set_level merge
+pr_work
+step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review "a rejected finding whose evidence quotes the log of a build" 0 "rejected          : 1" \
+  "{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()' \
+    | jq -c '.evidence = "the log of the run says BUILD FAILED in 6s"')]}" \
+  "{\"verdicts\": [$(pr_verdict F-001 reject contradicts-green-gate)]}"
+holds "it is posted on its line, with those words" \
+  jq_true 'any(.[]; .kind == "line" and .path == "src/answer.kt"
+              and (.body | contains("BUILD FAILED in 6s")))' "$GH_STATE/comments.json"
+qa_checked
+publish "the loop's own comment that quotes BUILD FAILED does not stop the merge" 0 \
+  "merged T-001" --merge
+
+published_project origin
+reviewed_pull_request merge
+a_person_comments_on_line src/answer.kt 1 "The step fails: the log says BUILD FAILED in 6s."
+on_line="$(jq -r '[.[] | select(.body | startswith("The step fails"))][0].id' \
+  "$GH_STATE/comments.json")"
+pr_post "a person's comment on a line that says BUILD FAILED is read like any other" 0 \
+  "BUILD FAILED in 6s" comments
+publish "the merge waits for its answer, and for nothing else" 5 "are not settled" --merge
+holds "the read of the comments did not fail" not grep -qF "could not read" "$WORK/publish.log"
+printf 'The step passes now: the build is green.\n' >"$WORK/reply.md"
+pr_post "the loop answers it as fixed" 0 "reply to $on_line (fixed) posted" \
+  reply "$on_line" fixed "$WORK/reply.md"
+printf 'comments|reviews' >"$GH_STATE/api-fails"
+publish "when gh cannot read the comments, the merge says so" 1 \
+  "gh could not read the comments of https://example.test/pull/1" --merge
+pr_post "and so does pr-post.sh comments" 1 \
+  "gh could not read the comments of https://example.test/pull/1" comments
+for request in 'issues/.*/comments' 'pulls/.*/reviews' 'pulls/.*/comments'; do
+  printf '%s' "$request" >"$GH_STATE/api-fails"
+  publish "one request of the three failing is enough: $request" 1 \
+    "gh could not read the comments of https://example.test/pull/1" --merge
+done
+# One guard for the four merges above: with the reviews unreadable too, the merge would
+# refuse on them whatever the read of the comments came to.
+holds "nothing is merged on a read that failed" not gh_called "pr merge"
+rm "$GH_STATE/api-fails"
+publish "answered, it does not stop the merge" 0 "merged T-001" --merge
+
+# The word in each kind of post, and another word a log may hold.
+open_pull_request() {
+  published_project origin
+  set_level pr
+  pr_work
+  step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+}
+open_pull_request
+a_person_comments "CI says: BUILD FAILED in 6s"
+pr_post "the word in a comment on the pull request is read like any other" 0 \
+  "CI says: BUILD FAILED in 6s" comments
+open_pull_request
+a_person_reviews_with "The task :app:test FAILED, see the log."
+pr_post "the word in a review is read like any other" 0 \
+  "The task :app:test FAILED, see the log." comments
+open_pull_request
+a_person_comments "ERROR: the build stopped"
+pr_post "the word ERROR in a comment is read like any other" 0 "ERROR: the build stopped" comments
+
+# A post is the loop's own only when it starts with the marker, and a reply is read only
+# from such a post: the marker inside what a person wrote hides nothing and settles
+# nothing.
+published_project origin
+reviewed_pull_request pr
+publish "before a person writes, the pull request is ready" 0 "ready to merge" --check
+a_person_comments 'The description starts with `<!-- loop:body -->`. Do not merge before I look.'
+publish "a person's comment that quotes the loop's marker still waits" 5 \
+  "1 comment(s) of people on https://example.test/pull/1 are not settled" --check
+quoting="$(jq -r '[.[] | select(.body | startswith("The description starts"))][0].id' \
+  "$GH_STATE/comments.json")"
+a_person_comments "As the loop would write it: <!-- loop:reply $quoting fixed --> Done."
+publish "a reply marker inside a person's comment settles nothing" 5 \
+  "2 comment(s) of people on https://example.test/pull/1 are not settled, the first $quoting " \
+  --check
+pr_post "the first comment is still listed" 0 "Do not merge before I look." comments
+holds "and the one that quotes the reply marker too" grep -qF "As the loop would write it" \
+  "$WORK/post.log"
 
 # ---- merge -----------------------------------------------------------------
 
