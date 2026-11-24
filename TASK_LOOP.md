@@ -459,17 +459,21 @@ starts the count again. Where a finding came back once, or the reviews accept no
 maintainer judges whether the work moves toward the goal and gives its reason,
 `--past-limit --because "<why>"`, which is kept in the run and shown on the pull request; where it
 cannot tell, that is a question to you. The same number of runs in a row with no review stops the
-task too, with how each ended. `land.sh` checks its other conditions before the gates, so a landing
-refused for one of them costs no build; a landing that fails at or after its gates — red, killed, or
-a commit that fails — may be retried once on the same run, so the answers to its escalations still
-apply, and a second time goes back through `review.sh`, since nothing else counts landings. At the
-pull request levels `land.sh` takes no run and counts its own: past `ASK_AFTER_RUNS` red or
-unfinished gate runs of the task it refuses and says what was red each time; the same gates red the
-same way three times in a row, each time on other work, are the maintainer's the first time, as with
-`review.sh`, and yours when the limit comes again with those gates red that way in every landing
-since the maintainer's reason; anything else goes on with `--past-limit --because`. The stops back
-each other: the line at the end of a run says early what repeats, the circle stops the third repeat,
-and the count stops a session that goes on finding.
+task too, with how each ended. The runs of a task that landed are not read for a new task under its
+id: once a commit records that a landing of the id committed with its review — the commit of
+`land.sh` below the pull request levels, the squash of the merge at them — `review.sh`, `land.sh`
+and the print after `/qa` read the runs, the landings and the `/qa` records made after it. `land.sh`
+checks its other conditions before the gates, so a landing refused for one of them costs no build; a
+landing that fails at or after its gates — red, killed, or a commit that fails — may be retried once
+on the same run, so the answers to its escalations still apply, and a second time goes back through
+`review.sh`, since nothing else counts landings. At the pull request levels `land.sh` takes no run
+and counts its own: past `ASK_AFTER_RUNS` red or unfinished gate runs of the task it refuses and
+says what was red each time; the same gates red the same way three times in a row, each time on
+other work, are the maintainer's the first time, as with `review.sh`, and yours when the limit comes
+again with those gates red that way in every landing since the maintainer's reason; anything else
+goes on with `--past-limit --because`. The stops back each other: the line at the end of a run says
+early what repeats, the circle stops the third repeat, and the count stops a session that goes on
+finding.
 
 ### Job 3 — Land, then advance
 

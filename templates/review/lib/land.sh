@@ -397,11 +397,14 @@ if landing_opens_pull_request "$LANDING"; then
       refuse 8 "ASK_AFTER_RUNS in $CONFIG must be a whole number from 1 to 999999999, "\
 "not '$ASK_AFTER_RUNS'" ;;
   esac
+  # The landings of a task that merged are not those of a new task under its id: where the
+  # tree records that the id landed with its review, the landings made after it are read.
   LANDINGS="$(for record in "$REVIEW_DIR"/runs/land-*/landing.json; do
       [ -f "$record" ] || continue
       jq -c --arg id "$TASK_ID" --arg run "${record%/landing.json}" \
         'select(.task == $id) | . + {run: $run}' "$record" 2>/dev/null
-    done | jq -sc 'sort_by(.time // 0)')"
+    done | jq -sc --argjson after "$(task_landed_at "$TASK_ID")" "$JQ_LANDED_SINCE"'
+      map(select(landed_since($after))) | sort_by(.time // 0)')"
   EPOCH="$(printf '%s' "$LANDINGS" | jq 'map(.epoch // 0) | max // 0')"
   # The landings of the count, oldest first, and those of them that did not commit.
   COUNTED_RUNS="$(printf '%s' "$LANDINGS" | jq -c --argjson epoch "$EPOCH" '
