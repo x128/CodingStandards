@@ -510,6 +510,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   printf ' %q' "${TO_COMMIT[@]}"
   printf '\n'
   landing_ends printed
+  qa_asks "$TASK_ID"
   exit 0
 fi
 
@@ -554,6 +555,7 @@ git commit --only -m "$MESSAGE" -m "$COMMIT_BODY" -- "${TO_COMMIT[@]}" || {
 
 landing_ends committed
 echo "landed $TASK_ID on $LANDING_BRANCH: ${#TO_COMMIT[@]} file(s)"
+qa_asks "$TASK_ID"
 
 landing_publishes "$LANDING" || exit 0
 

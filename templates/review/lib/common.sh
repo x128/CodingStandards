@@ -511,6 +511,49 @@ case_marks() {
     END { flush() }' qa/test-cases.md
 }
 
+# The words of the cases of qa/test-cases.md, one `TC-nnn` TAB `<words>` per line: the
+# lines of the case up to the first list item after it — a note, a line of its history —
+# without its list marker and without its mark (`e2e:` and what follows it, or `manual`
+# with what follows it), runs of blanks as one blank. They stay as they are when a mark is
+# added or grows, when the case is wrapped another way and when a note is added under it;
+# they change when what the user does and sees is written anew.
+case_words() {
+  [ -f qa/test-cases.md ] || return 0
+  awk '
+    function flush(   text) {
+      if (current == "") return
+      text = block
+      gsub(/[ \t]+/, " ", text); sub(/ $/, "", text)
+      sub(/^ ?([-*+]|[0-9]+[.)]) /, "", text)
+      sub(/ ?(—|--|-)? ?e2e:.*$/, "", text)
+      sub(/ ?(—|--|-) ?manual( ?:.*)?$/, "", text)
+      while (sub(/( |-|—)+$/, "", text)) ;
+      print current "\t" text
+      current = ""
+    }
+    /^#/ { flush(); next }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]+(\*\*)?TC-[0-9]+/ {
+      flush()
+      match($0, /TC-[0-9]+/)
+      current = substr($0, RSTART, RLENGTH)
+      block = ""
+      open = 1
+    }
+    current != "" && open && block != "" && /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ { open = 0 }
+    current != "" && open { block = block " " $0 }
+    END { flush() }' qa/test-cases.md
+}
+
+# The line of qa/test-cases.md on which a case starts, or nothing when it has no such case.
+case_line() {
+  [ -f qa/test-cases.md ] || return 0
+  awk -v wanted="$1" '
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]+(\*\*)?TC-[0-9]+/ {
+      match($0, /TC-[0-9]+/)
+      if (substr($0, RSTART, RLENGTH) == wanted) { print NR; exit }
+    }' qa/test-cases.md
+}
+
 # How a row of a JUnit report answers to a test a case names, as jq: the same
 # id, or its end after a dot (the package left out) — also with the parameters
 # of a parameterized row (shows42(int)[1], shows42[0]) left out.
@@ -682,10 +725,11 @@ people_comments_open() {
 # The first fault of a /qa record, or nothing when it holds. Beside what a record always
 # had — its task and failures: [{case: TC-nnn}] — it may list its items, one {id, verdict,
 # reason, check} for each: the verdict as counts names it, a reason for every verdict but
-# pass, and for after_merge the check that will be made then. And, apart from the items,
-# behaviour_without_requirement: [{what, where}], what the app does that no requirement,
-# exit criterion or case describes — a question, so it may name no case: what fails in a
-# case is a failure. A record with neither field reads as it always did.
+# pass, for after_merge the check that will be made then, and for fail an id that is a
+# case of failures or starts with one: no failure is recorded under no case. And, apart
+# from the items, behaviour_without_requirement: [{what, where}], what the app does that
+# no requirement, exit criterion or case describes — a question, so it may name no case:
+# what fails in a case is a failure. A record with neither field reads as it always did.
 qa_record_fault() {
   local fault unreadable="it is not one JSON object with a task and failures: [{case: TC-nnn}]"
   fault="$(jq -rs --arg unreadable "$unreadable" '
@@ -719,6 +763,11 @@ qa_record_fault() {
            | "\($listed) item(s) say \($verdict) and counts.\($verdict) is "
              + ($counted | if type == "number" then tostring
                            else "\(tojson), which is no number" end)),
+          (.items[]? | select(.verdict == "fail") | .id as $id
+           | select(any($record.failures[].case;
+                        . as $case | $id | . == $case or startswith($case + " ")) | not)
+           | "item \($id) says fail and failures does not list its case: /qa writes the case "
+             + "of every failure and lists it in failures"),
           (select(has("behaviour_without_requirement"))
            | select((.behaviour_without_requirement | type) != "array"
                     or (all(.behaviour_without_requirement[];
@@ -750,6 +799,165 @@ qa_records_of() {
     [ -z "$fault" ] || { echo "   $record/qa.json: $fault" >&2; return 1; }
   done < <(printf '%s' "$records" | jq -r '.[].run')
   printf '%s\n' "$records"
+}
+
+# On how many works /qa of a task failed each case that a record lists in failures — the
+# newest record of the task, or the one given — and in which records: a JSON array of
+# {case, times, runs}, runs being the folders, oldest first, one for each work. A /qa of
+# work that did not change is the same /qa again, and no fix lies between the two. A record
+# that does not say its `work` is not known to be of other work: beside records that say
+# theirs it counts nothing, and with none of those the newest such record counts once.
+qa_times() {
+  local records cases
+  records="$(qa_records_of "$1")" || return 1
+  if [ $# -ge 2 ]; then
+    cases="$(jq -c '[.failures[].case]' "$2")" || return 1
+  else
+    cases="$(printf '%s' "$records" | jq -c '[(last // {}).failures[]?.case]')" || return 1
+  fi
+  printf '%s' "$records" | jq -c --argjson cases "$cases" '
+    . as $records
+    | reduce $cases[] as $case ([]; if index($case) != null then . else . + [$case] end)
+    | map(. as $case
+          | [$records[] | select(any(.failures[]; .case == $case))] as $failed
+          | reduce ($failed[] | select((.work // "") != "")) as $record ([];
+              if any(.[]; .work == $record.work) then .
+              else . + [{work: $record.work, run: $record.run}] end)
+          | if length == 0 then [$failed | last | select(. != null)] else . end
+          | {case: $case, times: length, runs: map(.run | split("/") | last)})'
+}
+
+# One line of what /qa left: the items of a record with one verdict, as `   <n> <words>:
+# <id> (<reason>); …`, the ids and reasons when the record lists its items. Nothing, and
+# exit 1, when there is no such item.
+qa_left_items() {
+  local line
+  line="$(jq -r --arg verdict "$2" --arg words "$3" '
+    ((.counts | objects | .[$verdict]) // 0) as $count
+    | select($count > 0)
+    | ([.items[]? | select(.verdict == $verdict) | "\(.id) (\(.reason))"] | join("; ")) as $list
+    | "   \($count) \($words)" + (if $list == "" then "" else ": \($list)" end)' "$1")" \
+    || return 1
+  [ -n "$line" ] || return 1
+  printf '%s\n' "$line"
+}
+
+# What a /qa left and whose turn each thing is: `pr-post.sh qa <qa-dir>` prints it after
+# every /qa, at every level. Each thing is on stdout and ends with its line of `turn`, on
+# stderr. A failing case says what is to be seen, so it is the loop's to fix, however
+# often /qa was red; the same case failing on three works — after each of two fixes — does
+# not converge, and that is the user's. An unproven item and one not checked are the
+# loop's. What the app does that nothing written describes is the one question, and it
+# holds nothing.
+qa_left() {
+  local task_id="$1" qa_dir="$2" record="$2/qa.json" times entry case_id count runs line
+  local words tests next said=false
+  times="$(qa_times "$task_id" "$record")" || return 1
+  echo "── what /qa left in $(basename "$qa_dir"), and whose it is:"
+  while IFS=$'\t' read -r case_id count runs; do
+    [ -n "$case_id" ] || continue
+    said=true
+    line="$(case_line "$case_id")"
+    tests=""
+    if [ -z "$line" ]; then
+      echo "   $case_id failed, and qa/test-cases.md has no $case_id"
+      next="have /qa write the case of $case_id, then fix it"
+    else
+      words="$(case_words | awk -F'\t' -v wanted="$case_id" '$1 == wanted { print $2; exit }')"
+      tests="$(case_tests "$case_id" | awk 'NR > 1 { printf ", " } { printf "%s", $0 }')"
+      echo "   $case_id failed. What should be is written (qa/test-cases.md:$line):"
+      echo "      \"$words\""
+      if [ -n "$tests" ]; then
+        echo "      its end-to-end test: $tests"
+        next="fix $case_id — it is no question: see its test fail in a run of review.sh made "\
+"now, then fix, then see it pass (condition 7)"
+      else
+        echo "      no end-to-end test is marked for it"
+        next="fix $case_id — it is no question: write its end-to-end test and mark the case "\
+"(e2e: \`<test>\`), see it fail in a run of review.sh made now, then fix, then see it pass"
+      fi
+    fi
+    [ "$count" -lt 2 ] || \
+      echo "      it failed in $count /qa of this task, each on other work: $runs"
+    if [ "$count" -ge 3 ]; then
+      turn user:not-converging "$case_id failed again after each of $((count - 1)) fixes — "\
+"whether to go on trying, to stop the task here, or to change what the case expects; say "\
+"what /qa saw each time and what each fix changed"
+    elif [ "$count" -eq 2 ]; then
+      turn loop "$next; it failed after a fix before: find why that fix did not hold first"
+    else
+      turn loop "$next"
+    fi
+  done < <(printf '%s' "$times" | jq -r '.[] | [.case, .times, (.runs | join(", "))] | @tsv')
+
+  # Failures counted under no case: /qa writes the case of every failure. A record that
+  # lists its items cannot hold one (qa_record_fault); one with counts alone says so when
+  # it lists no case at all.
+  line="$(jq -r '
+    select((has("items") | not) and .failures == [])
+    | ((.counts | objects | .fail) // 0) as $count
+    | select($count > 0)
+    | "   \($count) failed with no case among the failures"' "$record")" || return 1
+  if [ -n "$line" ]; then
+    said=true
+    printf '%s\n' "$line"
+    turn loop "have /qa write the case of each, then fix it"
+  fi
+  if qa_left_items "$record" unproven "unproven"; then
+    said=true
+    turn loop "an unproven item goes back to the work, which makes it provable"
+  fi
+  if qa_left_items "$record" not_checked "not checked"; then
+    said=true
+    turn loop "restore what failed — a tool, a device — and run /qa again"
+  fi
+  ! qa_left_items "$record" after_merge "put off until after the merge" || said=true
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    said=true
+    qa_question "$entry"
+  done < <(jq -c '.behaviour_without_requirement[]?' "$record")
+  [ "$said" = true ] || echo "   nothing: every item passed"
+}
+
+# What the /qa of a task saw that no requirement, exit criterion or case describes, each
+# once, the oldest first: a JSON array of {what, where}.
+qa_questions() {
+  local records
+  records="$(qa_records_of "$1" 2>/dev/null)" || return 1
+  printf '%s' "$records" | jq -c '
+    reduce .[].behaviour_without_requirement[]? as $seen ([];
+      if any(.[]; .what == $seen.what) then . else . + [$seen] end)'
+}
+
+# One of them, as a line of `turn`: the one question a /qa leaves the user. `pr-post.sh qa`,
+# right after /qa, is where it is said and where it is asked. With `named`, for the ends
+# that come later and come again: the line names the question and says that it is not
+# asked again there.
+qa_question() {
+  local seen
+  seen="$(printf '%s' "$1" | jq -r '"\(.what) (\(.where))" | gsub("\\s+"; " ")')"
+  seen="$seen — /qa saw it, and"
+  if [ "${2:-}" = named ]; then
+    turn user:what-should-be "$seen pr-post.sh qa, right after that /qa, is where it is "\
+"asked, once: it is not asked again here"
+  else
+    turn user:what-should-be "$seen no requirement, exit criterion or case says what should "\
+"happen: ask it once, in their words; the task does not wait for the answer unless one of its "\
+"own criteria does"
+  fi
+}
+
+# Those questions of a task, named at the end of a landing, of --check and of a merge. It
+# prints nothing when there is none, and never stops what calls it: the conditions read the
+# records. No record says that a question was asked or answered, so every such end names
+# it, and none asks it.
+qa_asks() {
+  local questions entry
+  questions="$(qa_questions "$1")" || return 0
+  while IFS= read -r entry; do
+    [ -z "$entry" ] || qa_question "$entry" named
+  done < <(printf '%s' "$questions" | jq -c '.[]')
 }
 
 # ---------------------------------------------------------------------------
