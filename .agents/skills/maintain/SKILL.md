@@ -127,10 +127,12 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    came back after its fix. `The loop goes on`: reviews that found different things, each fixed, are
    no question — run again with `--past-limit`, which runs once more and starts the count again;
    where the line asks for it, with `--because "<what moves toward the goal>"`, which is kept in the
-   run and shown on the pull request. `For the user, the work does not converge`: ask once, with
-   what the script printed; when they decide to go on, run again with `--past-limit --user-decided`,
-   which takes no words: the run records that they decided, and the pull request shows it. A count
-   alone is never a question.
+   run and shown on the pull request. Where the findings do not get fewer and you cannot tell
+   whether the work moves, that line makes it a question: ask it with what the script printed, and
+   when the user decides to go on, `--past-limit --user-decided` passes that stop too.
+   `For the user, the work does not converge`: ask once, with what the script printed; when they
+   decide to go on, run again with `--past-limit --user-decided`, which takes no words: the run
+   records that they decided, and the pull request shows it. A count alone is never a question.
 
    At the pull request levels it reviews the pull request's change, from its merge base to HEAD, and
    refuses, exit `1`, what it cannot review there: work not committed — commit it with `land.sh`

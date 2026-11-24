@@ -149,7 +149,8 @@ fi
 # common.sh) and stops, with exit 6 and nothing run, in five cases:
 #   a finding in a circle  a finding of the newest review was accepted at the same
 #                          place in three reviews in a row, each of other work than
-#                          the one before
+#                          the one before; once the user decided to go on, the stop
+#                          is lifted until the next review
 #   a case in a circle     a case the newest /qa failed has failed on three works of
 #                          the task, counted as pr-post.sh qa counts them; once the
 #                          user decided to go on, the stop is lifted until the next
@@ -165,15 +166,14 @@ fi
 # (turn). A circle of the work — the finding, the case, or gates or end-to-end
 # tests that stayed red while the work changed each time — is the user's: --past-limit
 # --user-decided runs once more when they decided to go on, and takes no reason
-# beside it. Every other stop is
-# the loop's, since a count alone is never a question. Where the script reads that
-# the work converges — no finding came back and the reviews do not accept as many
-# as before or more — --past-limit alone runs once more; where it cannot read that,
-# --past-limit takes the loop's own reason, --because <why>. What passed a stop is
-# kept in the run and shown on the pull request. A run with --past-limit starts
-# the count of reviews again from zero, and the flag is accepted only at a stop,
-# so one left in the command fails on the next run instead of switching the count
-# off.
+# beside it. Every other stop is the loop's, since a count alone is never a
+# question. Where the script reads that the work converges — no finding came back
+# and the reviews do not accept as many as before or more — --past-limit alone runs
+# once more; where it cannot read that, --past-limit takes the loop's own reason,
+# --because <why>. What passed a stop is kept in the run and shown on the pull
+# request. A run with --past-limit starts the count of reviews again from zero, and
+# the flag is accepted only at a stop, so one left in the command fails on the next
+# run instead of switching the count off.
 ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
 case "$ASK_AFTER_RUNS" in
   ''|*[!0-9]*|0*|??????????*)

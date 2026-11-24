@@ -434,12 +434,15 @@ the same output, the same end-to-end failures. It runs nothing and exits 6. Wher
 each time and a check of the code stayed red, the fixes do not close it, and that is yours: the
 output says what does not converge, and the next run takes your decision to go on
 (`--past-limit --user-decided`), and no words of yours. Where nothing changed between the runs, or
-the failure is outside the code — a simulator that will not boot, a review that cannot quote a
-deleted file — a retry does not mend it, and the maintainer finds the cause before it runs again,
-with its reason (`--past-limit --because`). A cause only you can remove is told to you once, with
-what was tried. Checks still running are not a failure, and have their own count
-([Publishing](#publishing)). A failing case of `/qa` is no question either until `review.sh` stops
-for it: the loop fixes it as often as it fails (`/maintain`, step 8).
+what failed was no check of the code — no test ran, as with a simulator that will not boot, or the
+review could not be used, as when it cannot quote a deleted file — a retry does not mend it, and the
+maintainer finds the cause before it runs again, with its reason (`--past-limit --because`). Tests
+that ran and failed the same way while the work changed read as a check of the code that stayed red,
+whatever made them fail — a device that went away under them too: the script cannot tell the two
+apart. A cause only you can remove is told to you once, with what was tried. Checks still running
+are not a failure, and have their own count ([Publishing](#publishing)). A failing case of `/qa` is
+no question either until `review.sh` stops for it: the loop fixes it as often as it fails
+(`/maintain`, step 8).
 
 **`review.sh` stops after `ASK_AFTER_RUNS` reviews of one task** (`.review/land.conf`, 5 by
 default). It counts the runs that made a review — rounds, and the reviews again after `/qa`, an
