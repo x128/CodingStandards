@@ -125,6 +125,27 @@ check() {
   fi
 }
 
+# The newest review run, by the time each records — the names of two runs made in one
+# second do not sort by time — and what its meta.json holds: run_records <name> <jq filter>.
+newest_run() {
+  local meta
+  for meta in .review/runs/*/meta.json; do
+    [ -f "$meta" ] || continue
+    jq -c --arg run "${meta%/meta.json}" '{time: (.time // 0), run: $run}' "$meta"
+  done | jq -sr 'sort_by(.time) | last | .run'
+}
+run_records() {
+  local run
+  run="$(newest_run)"
+  if jq -e "$2" "$run/meta.json" >/dev/null 2>&1; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: «$2» does not hold in $run/meta.json — it follows"
+    sed 's/^/      /' "$run/meta.json"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
 review() {
   local name="$1" expected_exit="$2" expected_line="$3" reviewer_answer="$4" maintainer_answer="$5"
   printf '%s' "$reviewer_answer" >"$WORK/reviewer.json"
@@ -163,6 +184,8 @@ check "outside a git repository /qa is held back, not let through" 2 \
   "is not inside a git repository" "$check_exit" "$WORK/check.log"
 review "no findings is clean" 0 "CLEAN — gates green, no verified findings." \
   '{"findings":[]}' '{"verdicts":[]}'
+# A run records how it ended: its end, its exit code and the stage it had reached.
+run_records "a clean run records its end" '.end == "clean" and .exit == 0'
 e2e_check "after a passing end-to-end run /qa may go on" 0 "check exited 0"
 review "an accepted finding goes to the executor" 3 "accepted (>= major): 1" \
   "$(finding '"bug"')" "$(verdict '"accept"' no-rule-fired)"
@@ -170,6 +193,8 @@ review "an escalated finding waits for an answer" 4 "escalated         : 1" \
   "$(finding '"bug"')" "$(verdict '"escalate"' needs-judgment)"
 review "a category outside the schema fails closed" 1 "reviewer output does not match" \
   "$(finding '"opinion"')" "$(verdict '"accept"' no-rule-fired)"
+run_records "a run that an agent's answer ended records the stage" \
+  '.end == "error" and .stage == "reviewer"'
 review "a category given as a list fails closed" 1 "reviewer output does not match" \
   "$(finding '["bug"]')" "$(verdict '"accept"' no-rule-fired)"
 review "a verdict outside the schema fails closed" 1 "maintainer output is malformed" \
@@ -311,6 +336,13 @@ check "landing the same run may be retried once after red gates" 3 \
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
 check "red gates at landing twice send the work back to review.sh" 3 \
   "failed at or after its gates twice" $? "$WORK/land.log"
+printf '{"id": "T-050", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' >.review/T-050.json
+REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+  "$LIB_DIR/review.sh" --task-file .review/T-050.json >"$WORK/run.log" 2>&1
+check "red gates end a run before its review" 2 "GATES RED — no LLM review" $? "$WORK/run.log"
+run_records "a run with red gates records where it ended" \
+  '.end == "gates-red" and .exit == 2 and .stage == "gates"'
 
 cp "$WORK/gates.green" .review/gates.sh
 runs_listed="$(ls .review/runs)"

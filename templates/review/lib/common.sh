@@ -761,6 +761,130 @@ review_runs_on() {
   done
 }
 
+# What a review run came to, in a few words.
+run_result() {
+  local run="$1"
+  if [ ! -f "$run/gates.json" ]; then
+    echo "did not finish"
+  elif jq -e 'any(.[]; .status == "fail" and .blocking != false)' "$run/gates.json" \
+       >/dev/null 2>&1; then
+    echo "gates red"
+  elif [ ! -f "$run/e2e.json" ]; then
+    echo "did not finish"
+  elif ! jq -e '.status == "pass"' "$run/e2e.json" >/dev/null 2>&1; then
+    case "$(jq -r '.status' "$run/e2e.json" 2>/dev/null)" in
+      red) echo "end-to-end tests red" ;;
+      *) echo "no end-to-end harness" ;;
+    esac
+  elif [ ! -f "$run/approved.json" ] || [ ! -f "$run/escalated.json" ]; then
+    if [ -f "$run/findings.json" ] && [ "$(jq '.findings | length' "$run/findings.json")" -eq 0 ]
+    then echo "unusable: no finding located"; else echo "did not finish"; fi
+  else
+    jq -rn --slurpfile approved "$run/approved.json" --slurpfile escalated "$run/escalated.json" '
+      ($approved[0] | length) as $a | ($escalated[0] | length) as $e
+      | if $a + $e == 0 then "clean"
+        else [if $a > 0 then "\($a) accepted" else empty end,
+              if $e > 0 then "\($e) escalated" else empty end] | join(", ") end'
+  fi
+}
+
+# One run of a task as task_runs_json gives it, read from its meta.json and the files beside
+# it; $run, $approved, $escalated, $gates, $e2e and $findings are the folder and the text of
+# each file, empty when it is not there. `same` is here the text that says what failed; its
+# digest takes its place.
+JQ_RUN='
+def parsed: if . == "" then null else (try fromjson catch null) end;
+def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
+($approved | parsed) as $approved | ($escalated | parsed) as $escalated
+| ($gates | parsed) as $gates
+| ($e2e | parsed | if type == "object" then . else {} end) as $e2e
+| ($findings | parsed) as $findings
+| (($approved | type) == "array") as $reviewed
+| [$gates | objects | to_entries[]
+   | select((.value | type) == "object" and .value.status == "fail" and .value.blocking != false)]
+    as $red_gates
+| (.end
+   // (if $reviewed then
+         (if (($escalated | arrays | length) // 0) > 0 then "escalations"
+          elif ($approved | length) > 0 then "findings" else "clean" end)
+       elif ($red_gates | length) > 0 then "gates-red"
+       elif $e2e.status == "red" then "e2e-red"
+       elif $e2e.status == "no-harness" then "no-harness"
+       elif (($findings | objects | .findings | arrays | length) // -1) == 0 then "unusable"
+       else "error" end)) as $ending
+| (if ($red_gates | length) > 0 then "gates"
+   elif $e2e.status == "red" then "e2e"
+   elif $e2e.status == "no-harness" then "harness"
+   elif $ending == "unusable" then "unusable"
+   else null end) as $failed
+| {run: $run, time: (.time // 0), epoch: (.epoch // 0), past_limit: (.past_limit == true),
+   user_decided: (.user_decided == true), work: .tree_fingerprint, reviewed: $reviewed,
+   accepted: [$approved | arrays | .[] | objects
+              | {id: .finding_id}
+                + (.finding | objects
+                   | {file, line, category,
+                      quote: ([(.code_quote // "" | tostring | split("\n")[]
+                                | gsub("^\\s+|\\s+$"; "") | select(. != ""))] | first // "")})],
+   end: $ending, failed: $failed,
+   same: (if $failed == "gates"
+            then [$failed, [$red_gates[] | [.key, (.value.output // "" | no_digits)]]]
+          elif $failed == "e2e" or $failed == "harness"
+            then [$failed, ([$e2e.reasons[]? | no_digits] | sort)]
+          elif $failed == "unusable" then [$failed]
+          else null end
+          | if . == null then null else tojson end)}'
+
+# The runs of a task as one JSON array, oldest first by the time each records: for each
+# folder under .review/runs whose meta.json names the task — a folder of a landing (land-*)
+# or of /qa (qa-*) is no review run —
+#   {run, time, epoch, past_limit, user_decided, work, reviewed, accepted, end, failed, same}
+# `work` is the fingerprint of the tree the run looked at. `reviewed`: the run made a review
+# — its approved.json is there and is a list, which review.sh writes only when the triage
+# ended. `accepted`: what the review accepted, each {id, file, line, category, quote}, the
+# quote being the first line of the finding's quote that is not blank, trimmed. `end`: how
+# the run ended, as review.sh records it (record_end); for a run that does not say — one
+# made before review.sh recorded it, or one that was killed — it is read from what the run
+# left: clean, findings or escalations when it is reviewed, gates-red when a blocking gate
+# failed, e2e-red or no-harness by the status of its e2e.json, unusable when its
+# findings.json holds no finding, and error otherwise. `failed`: which check of the run was
+# not green, whether or not it made a review — gates, e2e, harness, unusable — or null.
+# `same`: a digest of `failed` and of what failed, null when `failed` is: the name and the
+# output of each failing blocking gate, or the reasons of e2e.json, sorted, each with its
+# digits taken out, so that two runs that end the same way but for a time or a count have
+# one digest. A run that ended in an error has none: two errors at one stage may be two
+# errors. A meta.json that cannot be read fails the whole call and says which: it must
+# never read as "no run".
+task_runs_json() {
+  local meta run task entry entries same approved escalated gates e2e findings
+  entries="$(for meta in .review/runs/*/meta.json; do
+      [ -f "$meta" ] || continue
+      case "$meta" in .review/runs/land-*|.review/runs/qa-*) continue ;; esac
+      task="$(jq -r 'if type == "object" then "task:\(.task // "")" else error("no object") end' \
+        "$meta" 2>/dev/null)" && [ -n "$task" ] || {
+        echo "$meta is not readable — the runs of a task are read from these files: repair "\
+"it or remove that run folder" >&2
+        exit 1
+      }
+      [ "$task" = "task:$1" ] || continue
+      run="${meta%/meta.json}"
+      approved="$run/approved.json" escalated="$run/escalated.json" gates="$run/gates.json"
+      e2e="$run/e2e.json" findings="$run/findings.json"
+      [ -f "$approved" ] || approved=/dev/null
+      [ -f "$escalated" ] || escalated=/dev/null
+      [ -f "$gates" ] || gates=/dev/null
+      [ -f "$e2e" ] || e2e=/dev/null
+      [ -f "$findings" ] || findings=/dev/null
+      entry="$(jq -c --arg run "$run" --rawfile approved "$approved" \
+        --rawfile escalated "$escalated" --rawfile gates "$gates" --rawfile e2e "$e2e" \
+        --rawfile findings "$findings" "$JQ_RUN" "$meta")" && [ -n "$entry" ] || exit 1
+      same="$(printf '%s' "$entry" | jq -r '.same // empty')" || exit 1
+      [ -z "$same" ] || entry="$(printf '%s' "$entry" \
+        | jq -c --arg same "$(printf '%s' "$same" | sha256_stdin)" '.same = $same')" || exit 1
+      printf '%s\n' "$entry"
+    done)" || return 1
+  printf '%s' "$entries" | jq -sc 'sort_by(.time)'
+}
+
 # The tasks other than <task-id> whose commits are between <base-ref> and HEAD, one line,
 # each followed by a space. A commit with no Task-Id trailer is none: commits_no_landing_made
 # judges those.

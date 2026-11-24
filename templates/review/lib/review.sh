@@ -610,7 +610,9 @@ fi
 
 # `time` orders the runs of a task (M1 of the merge takes the newest), `count` is its
 # place among the ASK_AFTER_RUNS, and `head`, `pr_url` and `merge_base` say what was
-# reviewed at the pull request levels.
+# reviewed at the pull request levels. `end`, `exit` and `stage` say how the run ended and
+# are written when it does (record_end); `past_limit_kind`, `stop`, `because` and
+# `user_decided` say what a run past the limit passed, and are null on a plain run.
 COUNT=null
 [ -z "$TASK_ID" ] || [ "$PAST_LIMIT" = true ] || COUNT=$((RUNS_SO_FAR + 1))
 REVIEWED_FINGERPRINT="$(tree_fingerprint)"
@@ -626,21 +628,45 @@ jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
         past_limit: $past_limit, epoch: $epoch, count: $count, time: now, head: $head,
         pr_url: (if $pr_url == "" then null else $pr_url end),
         merge_base: (if $merge_base == "" then null else $merge_base end),
-        models: $models, reviewer: $reviewer, maintainer: $maintainer}' >"$RUN_DIR/meta.json"
+        models: $models, reviewer: $reviewer, maintainer: $maintainer,
+        end: null, exit: null, stage: null,
+        past_limit_kind: null, stop: null, because: null, user_decided: null}' \
+  >"$RUN_DIR/meta.json"
+
+# How the run ended, written into its meta.json whatever ends it: the next run of the task
+# reads there what repeats (task_runs_json). STAGE is how far the run came — gates, e2e,
+# reviewer, verify, maintainer, triage — and END what it came to, set where the script
+# knows it: gates-red, e2e-red, no-harness, unusable, clean, findings or escalations. A run
+# that ends anywhere else — an agent's answer that does not hold, a gate runner that did
+# not run, a signal — ended in an error.
+STAGE=""
+END=""
+record_end() {
+  jq --arg ending "${END:-error}" --argjson exit "$1" --arg stage "$STAGE" \
+    '.end = $ending | .exit = $exit | .stage = (if $stage == "" then null else $stage end)' \
+    "$RUN_DIR/meta.json" >"$RUN_DIR/meta.json.new" 2>/dev/null \
+    && mv "$RUN_DIR/meta.json.new" "$RUN_DIR/meta.json" \
+    || { rm -f "$RUN_DIR/meta.json.new"
+         echo "   how the run ended could not be written into $RUN_DIR/meta.json" >&2; }
+}
 
 # At the pull request levels every run is posted there, whatever its end: red checks and
 # findings are what the people on the pull request need to see. A post that fails is
 # said, and a clean run then exits 1.
-post_run() {
+end_run() {
   local code=$?
   trap - EXIT
-  if ! "$LIB_DIR/pr-post.sh" run "$RUN_DIR"; then
+  record_end "$code"
+  if [ -n "$PR_URL" ] && ! "$LIB_DIR/pr-post.sh" run "$RUN_DIR"; then
     echo "   the run is not posted on $PR_URL — run $LIB_DIR/pr-post.sh run $RUN_DIR alone" >&2
-    [ "$code" -ne 0 ] || code=1
+    if [ "$code" -eq 0 ]; then
+      code=1
+      record_end "$code"
+    fi
   fi
   exit "$code"
 }
-[ -z "$PR_URL" ] || trap post_run EXIT
+trap end_run EXIT
 
 # ---------------------------------------------------------------------------
 # 2. Layer 0 — gates. Ground truth, and a hard stop.
@@ -648,6 +674,7 @@ post_run() {
 
 # REVIEW_BASE: where the change under review starts, for a gate that looks at the
 # change alone — on a pull request whose work is all committed, HEAD would show none.
+STAGE=gates
 REVIEW_BASE="$DIFF_FROM" "$REVIEW_DIR/gates.sh" "$RUN_DIR/gates.json" >/dev/null
 GATES_EXIT=$?
 
@@ -681,6 +708,7 @@ if [ "$GATES_EXIT" -ne 0 ]; then
   jq -r 'to_entries[] | select(.value.status == "fail")'\
 ' | "  \(.key): \(.value.command)\n\(.value.output)"' \
     "$RUN_DIR/gates.json"
+  END=gates-red
   exit 2
 fi
 
@@ -688,8 +716,20 @@ fi
 # because they need the build. Green gates say nothing about the app as its
 # user drives it, so a tree with no working harness stops here as well — in
 # every project, whatever its gates.sh holds, since this file is the
-# submodule's. e2e-gate.sh exits 2 when red and 1 without a harness.
-"$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID" || exit $?
+# submodule's. e2e-gate.sh exits 2 when red and 1 without a harness, and has written
+# e2e.json then: with none, it ended in an error.
+STAGE=e2e
+"$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID"
+E2E_EXIT=$?
+if [ "$E2E_EXIT" -ne 0 ]; then
+  if [ -f "$RUN_DIR/e2e.json" ]; then
+    case "$E2E_EXIT" in
+      2) END=e2e-red ;;
+      1) END=no-harness ;;
+    esac
+  fi
+  exit "$E2E_EXIT"
+fi
 
 # The requirements, the plan and the loop's records are not reviewed. With
 # WITH_RECORDS=yes they land in the task's commit all the same, and a review that
@@ -731,6 +771,7 @@ say_records_landing() {
   say_records_landing
 } >"$RUN_DIR/reviewer-prompt.md"
 
+STAGE=reviewer
 run_agent "$REVIEWER_CMD" "$RUN_DIR/reviewer-prompt.md" "$RUN_DIR/findings.raw.json" \
   "reviewer" || exit 1
 
@@ -774,6 +815,7 @@ jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VA
   exit 1
 }
 
+STAGE=verify
 RAW_COUNT="$(jq '.findings | length' "$RUN_DIR/findings.raw.json")"
 verify_quotes "$RUN_DIR/findings.raw.json" "$RUN_DIR/findings.json" || {
   echo "   quote verification failed — see $RUN_DIR" >&2
@@ -806,6 +848,7 @@ if [ "$RAW_COUNT" -gt 0 ] && [ "$FINDING_COUNT" -eq 0 ]; then
   echo
   echo "REVIEW UNUSABLE — all $RAW_COUNT finding(s) failed quote verification."
   echo "Not a clean run: nothing was actually reviewed. Run the review again."
+  END=unusable
   exit 5
 fi
 
@@ -817,6 +860,7 @@ if [ "$FINDING_COUNT" -eq 0 ]; then
   echo
   echo "── review complete: $RUN_DIR"
   echo "CLEAN — gates green, no verified findings."
+  END=clean
   exit 0
 fi
 
@@ -860,6 +904,7 @@ fi
   cat "$RUN_DIR/findings.json"
 } >"$RUN_DIR/maintainer-prompt.md"
 
+STAGE=maintainer
 run_agent "$MAINTAINER_CMD" "$RUN_DIR/maintainer-prompt.md" "$RUN_DIR/verdicts.json" \
   "maintainer" || exit 1
 validate_verdicts "$RUN_DIR/verdicts.json" "$RUN_DIR/findings.json" || exit 1
@@ -868,6 +913,7 @@ validate_verdicts "$RUN_DIR/verdicts.json" "$RUN_DIR/findings.json" || exit 1
 # 5. Filter — only accepted findings at or above the threshold reach the executor
 # ---------------------------------------------------------------------------
 
+STAGE=triage
 jq --argjson rank "$RANKS" --arg threshold "$THRESHOLD" \
   --slurpfile findings "$RUN_DIR/findings.json" '
   [ .verdicts[]
@@ -896,6 +942,13 @@ echo "   accepted (below)  : $OPTIONAL_COUNT   → optional.json, not acted on"
 echo "   escalated         : $ESCALATED_COUNT   → escalated.json, to answer"
 echo "   rejected          : $REJECTED_COUNT"
 
-[ "$ESCALATED_COUNT" -gt 0 ] && exit 4
-[ "$APPROVED_COUNT" -gt 0 ] && exit 3
+if [ "$ESCALATED_COUNT" -gt 0 ]; then
+  END=escalations
+  exit 4
+fi
+if [ "$APPROVED_COUNT" -gt 0 ]; then
+  END=findings
+  exit 3
+fi
+END=clean
 exit 0
