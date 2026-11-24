@@ -42,8 +42,9 @@ escalated. Otherwise send the accepted findings back to the executor, round afte
 round accepts fewer findings than the one before. A finding accepted in two rounds in a row, or a
 round that accepts as many as the one before or more, is escalated: the fix is not converging and
 another attempt will not help. The same failure twice in a row — gates red for the same reason,
-`review.sh` exit 5 or 1 again, the same refusal of `land.sh` — goes to the user as well. `review.sh`
-exit 6 means the task has had `ASK_AFTER_RUNS` runs: the user decides whether to go on.
+`review.sh` exit 5 or 1 again, the same refusal of `land.sh` — goes to the user as well. A failing
+case of `/qa` is no such failure: the loop fixes it as often as it fails (`/maintain`, step 8).
+`review.sh` exit 6 means the task has had `ASK_AFTER_RUNS` runs: the user decides whether to go on.
 
 ## 3. Land, then advance
 

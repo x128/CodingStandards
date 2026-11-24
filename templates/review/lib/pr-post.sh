@@ -120,8 +120,18 @@ cd "$PROJECT_ROOT" || exit 1
 
 CONFIG=".review/land.conf"
 
-refuse() { echo "POSTING REFUSED — $1" >&2; exit 3; }
-fail()   { echo "POSTING FAILED — $1" >&2; exit 1; }
+# Each takes <reason> [<whose> <what>]: with the last two, the last line says whose turn
+# it is (turn, common.sh).
+refuse() {
+  echo "POSTING REFUSED — $1" >&2
+  [ $# -lt 3 ] || turn "$2" "$3"
+  exit 3
+}
+fail() {
+  echo "POSTING FAILED — $1" >&2
+  [ $# -lt 3 ] || turn "$2" "$3"
+  exit 1
+}
 
 SCRATCH="$(mktemp -d)" || exit 1
 trap 'rm -rf "$SCRATCH"' EXIT

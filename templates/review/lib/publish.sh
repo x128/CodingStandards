@@ -71,16 +71,33 @@ CONFIG=".review/land.conf"
 # The merge contract reuses the conditions of land.sh through common.sh, which names
 # each by its number there and calls refuse with it; here it is the item of the
 # contract that holds that condition.
+# refuse <reason>, refuse <condition> <reason>, and either with <whose> <what> after it:
+# then the last line says whose turn it is (turn, common.sh). fail and waiting take
+# <reason> [<whose> <what>] the same way.
 refuse() {
+  local whose="" what=""
+  case $# in
+    3) whose="$2"; what="$3"; set -- "$1" ;;
+    4) whose="$3"; what="$4"; set -- "$1" "$2" ;;
+  esac
   if [ $# -ge 2 ]; then
     case "$1" in 1|2) set -- "M1: $2" ;; 3) set -- "M2: $2" ;; 4) set -- "M3: $2" ;;
                  5) set -- "M4: $2" ;; 7) set -- "M5: $2" ;; *) set -- "$1: $2" ;; esac
   fi
   echo "PUBLISHING REFUSED — $1" >&2
+  [ -z "$whose" ] || turn "$whose" "$what"
   exit 3
 }
-fail()    { echo "PUBLISHING FAILED — $1" >&2; exit 1; }
-waiting() { echo "PUBLISHING WAITS — $1" >&2; exit 5; }
+fail() {
+  echo "PUBLISHING FAILED — $1" >&2
+  [ $# -lt 3 ] || turn "$2" "$3"
+  exit 1
+}
+waiting() {
+  echo "PUBLISHING WAITS — $1" >&2
+  [ $# -lt 3 ] || turn "$2" "$3"
+  exit 5
+}
 
 # ---------------------------------------------------------------------------
 # 1. Only what a landing made, at a level that publishes.

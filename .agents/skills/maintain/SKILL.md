@@ -138,7 +138,8 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    finding accepted in two runs in a row, or a run that accepts as many as the one before or more,
    is escalated. The same failure twice in a row — checks red for the same reason, `5` or `1` again,
    the same refusal of `land.sh` — goes to the user too: say what failed and ask; never a third try
-   alone. Hand the findings to whoever does the work with this text, word for word; this is its only
+   alone. A failing case of `/qa` is no such failure: the loop fixes it as often as it fails (step
+   8). Hand the findings to whoever does the work with this text, word for word; this is its only
    copy:
 
    > This is AI review output. Much of it may be wrong, misread, or about code that is fine. Do not
@@ -161,8 +162,10 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 7. **Escalations** (exit `4`): answer each yourself. Find out first — read the code, run the check
    that settles it — then decide. How the code is written — copies, names, constants, test tags,
    where a file lives, a design inside the plan's decisions — never reaches the user, as a question
-   or in the report. Only what changes what they see in the app, what a task covers or costs, a
-   decision of the plan, or a library the plan does not name goes to them, in their words. Record
+   or in the report. Only what should be in the app where nothing written says it, what a task
+   covers or costs beyond what was agreed, a decision of the plan, or a library the plan does not
+   name goes to them, in their words; a change of what they see that a requirement, an exit
+   criterion or a case of `qa/test-cases.md` already describes is decided by that text. Record
    the answer in `<run-dir>/escalations-answered.json` — `accepted-as-is`, `deferred` (proposed as
    its own task), or `fixed` (then review again), `by: agent` or `by: human`; format:
    `templates/review/project/escalations-answered.example.json`. Append one line to
@@ -175,20 +178,23 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 8. **Check as the user:** run `/qa` on the task once `review.sh` exits `0`, or every escalation of
    step 7 is answered; at the pull request levels it checks the pull request and posts its report
    there. What it reports as failing or unproven goes back to whoever does the work, with the text
-   of step 6, and the task is reviewed again (step 5; at the pull request levels after `land.sh`) —
-   once; a second failing `/qa` is escalated as in step 7, and a failing case of `qa/test-cases.md`
-   is what the user sees, so its answer is theirs (`by: human`). Each failure goes back with its
-   case; the end-to-end test of that case is written and seen failing before the fix, the case is
-   marked `e2e: <test>` with it, and the fix makes it pass; the second `/qa` takes from
-   `qa/test-cases.md` only the cases the fix can reach. A defect `/qa` finds that the change did not
-   bring is fixed now, or its end-to-end test stays skipped as `"<task>: <case>"` until that task
-   lands. A defect the user finds later that `/qa` passed goes to `/qa` as a defect of that skill
-   too. If `/qa` is not among the skills of the session, link it (.agents/skills/README.md, "Setup")
-   and tell the user; the step is never skipped silently. At the pull request levels the merge waits
-   on what `/qa` left unproven or not checked. An item not checked because a tool or device failed
-   is the loop's: restore it — boot or erase the simulator — and run `/qa` of the whole pull request
-   again. What is still open after that goes to the user, who decides: another `/qa`, or their
-   acceptance in `open-answered.json` beside its `qa.json`, written as
+   of step 6, and the task is reviewed again (step 5; at the pull request levels after `land.sh`),
+   and `/qa` checks the fix — as often as it fails: the case of `qa/test-cases.md` says what the
+   user should see, so a failing case is a defect to fix, never a question. A failure the fix itself
+   brought is fixed the same way, at once, in this task. Each failure goes back with its case; the
+   end-to-end test of that case is written and seen failing before the fix, the case is marked
+   `e2e: <test>` with it, and the fix makes it pass; the next `/qa` takes from `qa/test-cases.md`
+   only the cases the fix can reach. An answer `by: human` in `escalations-answered.json` records a
+   decision the user made themselves; the loop never asks for one to get past a
+   failing case. A defect `/qa` finds that the change did not bring is fixed now, or its end-to-end
+   test stays skipped as `"<task>: <case>"` until that task lands. A defect the user finds later
+   that `/qa` passed goes to `/qa` as a defect of that skill too. If `/qa` is not among the skills
+   of the session, link it (.agents/skills/README.md, "Setup") and tell the user; the step is never
+   skipped silently. At the pull request levels the merge waits on what `/qa` left unproven or not
+   checked. An item not checked because a tool or device failed is the loop's: restore it — boot or
+   erase the simulator — and run `/qa` of the whole pull request again. What is still open after
+   that goes to the user, who decides: another `/qa`, or their acceptance in `open-answered.json`
+   beside its `qa.json`, written as
    `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`. A `/qa` after a fix
    does not clear what an earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test

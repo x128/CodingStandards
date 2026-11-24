@@ -744,6 +744,19 @@ e2e_land "a /qa failure with no case refuses" 3 "not {task, failures: [{case: TC
 printf '{"task": "T-007", "failures": [{"case": "TC-001"}]}' >.review/runs/0-qa-T-007/qa.json
 e2e_land "a /qa failure whose test never failed refuses" 3 "seen red, then green: TC-001" \
   .review/T-007.json "$run_of_t007"
+# The case says what is to be seen, so the refusal is the loop's: its last line says
+# whose turn it is, and nothing in it sends anyone to the user.
+e2e_land "a /qa failure is the loop's to fix" 3 "   The loop goes on: fix it" \
+  .review/T-007.json "$run_of_t007"
+if grep -qF "the user" "$WORK/land.log"; then
+  echo "FAIL  the refusal of a /qa failure names the user — log follows"
+  sed 's/^/      /' "$WORK/land.log"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok    its refusal names no user"
+fi
+( . "$LIB_DIR/common.sh"; turn user:anything x ) >"$WORK/turn.log" 2>&1
+check "a kind that is not the user's is refused" 1 "is neither loop nor user:" $? "$WORK/turn.log"
 printf '[{"finding_id": "TC-001", "resolution": "accepted-as-is", "by": "human"}]' \
   >"$run_of_t007/escalations-answered.json"
 e2e_land "a /qa failure the user answered lands" 0 "For the user to commit" \
@@ -2170,6 +2183,21 @@ cp "$WORK/gates.green" .review/gates.sh
 pr_land "after it the count starts again" 0 "landed T-001 on task/T-001"
 pr_work
 pr_land "--past-limit below the limit is refused" 1 "only for a task at its limit" --past-limit
+
+# A failure of /qa at the pull request levels: item M5 says the same as condition 7.
+published_project origin
+reviewed_pull_request merge
+qa_checked '[{"case": "TC-001"}]'
+publish "at merge too a /qa failure is the loop's to fix" 3 "   The loop goes on: fix it" --merge
+holds "there it is item M5 of the merge" grep -qF \
+  "M5: a /qa failure without an end-to-end test seen red, then green: TC-001" "$WORK/publish.log"
+holds "and its refusal names no user" not grep -qF "the user" "$WORK/publish.log"
+holds "the status of /qa gives the reason, and not whose turn it is" \
+  jq_true --arg sha "$(git rev-parse HEAD)" '
+    [.[] | select(.sha == $sha and .context == "loop/qa")] | last
+    | .state == "failure" and .description
+        == "a /qa failure without an end-to-end test seen red, then green: TC-001"' \
+  "$GH_STATE/statuses.json"
 
 # ---- merge -----------------------------------------------------------------
 

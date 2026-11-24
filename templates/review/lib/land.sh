@@ -83,8 +83,11 @@ CONFIG="$REVIEW_DIR/land.conf"
 # redefine a command or a guard in the one script with commit authority.
 PROTECTED_BRANCHES="$(protected_branches "$CONFIG")"
 
+# refuse <condition> <reason> [<whose> <what>]: with the last two, the last line says
+# whose turn it is (turn, common.sh).
 refuse() {
   echo "LANDING REFUSED — condition $1: $2" >&2
+  [ $# -lt 4 ] || turn "$3" "$4"
   exit 3
 }
 

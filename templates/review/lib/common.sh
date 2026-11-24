@@ -405,6 +405,34 @@ require_array_length() {
   printf '%s' "$length"
 }
 
+# Whose turn it is after a stop. A script that stops for the user says so through
+# `turn user:<kind>`; <kind> is one of USER_DECIDES: what only the user decides, or only the
+# user can do. Every other stop is the loop's, and `turn loop` names its next step. A stop
+# that can name none of the kinds goes on. The line goes to stderr, after the script's own.
+USER_DECIDES="what-should-be beyond-agreed not-converging only-theirs a-person-said"
+
+turn_words() {
+  case "$1" in
+    loop)                printf 'The loop goes on' ;;
+    user:what-should-be) printf 'For the user, what should be' ;;
+    user:beyond-agreed)  printf 'For the user, beyond what was agreed' ;;
+    user:not-converging) printf 'For the user, the work does not converge' ;;
+    user:only-theirs)    printf 'For the user, only they can' ;;
+    user:a-person-said)  printf 'For the user, what a person wrote' ;;
+    *) return 1 ;;
+  esac
+}
+
+turn() {
+  local words
+  words="$(turn_words "$1")" || {
+    echo "turn: '$1' is neither loop nor user:<one of: $USER_DECIDES>" >&2
+    exit 1
+  }
+  shift
+  printf '   %s: %s\n' "$words" "$*" >&2
+}
+
 # The platforms the tree ships, one per line: `android` for an Android app with a
 # launcher activity (a phone's or a TV's), `ios` for an iOS application target
 # (built for iphoneos alone or among other platforms), `app` for anything else.
@@ -665,8 +693,9 @@ qa_records_of() {
 # The conditions of a review run. land.sh checks them before a commit (TASK_LOOP.md, "The
 # contract"); publish.sh before a merge at the pull request levels, as items of the merge
 # contract; pr-post.sh shows them in the statuses it posts. Each reports through the caller's
-# `refuse <condition> <reason>`, which does not return, and names the condition by its number
-# in land.sh.
+# `refuse <condition> <reason> [<whose> <what>]`, which does not return, and names the
+# condition by its number in land.sh; with the last two the caller ends with the line of
+# `turn`.
 # ---------------------------------------------------------------------------
 
 # 1. The run directory is a completed review run. Missing files must never read as "nothing
@@ -786,8 +815,9 @@ criteria_verified() {
 #    qa_failures an e2e.json of this task took from one, which outlasts a qa.json rewritten or
 #    removed — has a test its case is marked with that failed in a run of this task made after
 #    /qa recorded it: passing in this run, or skipped in it under a tag of the case for the
-#    task it belongs to. Or the user answered it. No test stays skipped for the task. Every
-#    record is read: an unreadable one refuses, never reads as "no failures".
+#    task it belongs to. Or the user answered it. The loop never asks for that answer. No
+#    test stays skipped for the task. Every record is read: an unreadable one refuses, never
+#    reads as "no failures".
 qa_failures_proven() {
   local run="$1" task_id="$2" records record tags task still runs failures now answered unproven
   local case_id tests
@@ -854,10 +884,9 @@ qa_failures_proven() {
       >/dev/null || unproven="$unproven $case_id"
   done
   [ -z "$unproven" ] || \
-    refuse 7 "a /qa failure without an end-to-end test seen red, then green:$unproven — "\
-"mark the case with its test (e2e: \`<test>\`), see it fail in a run of $task_id made after /qa "\
-"recorded it, then pass; where no end-to-end test can see it, the user answers it in "\
-"$run/escalations-answered.json (by: human, accepted-as-is or deferred)"
+    refuse 7 "a /qa failure without an end-to-end test seen red, then green:$unproven" loop \
+"fix it — the case says what is to be seen, so this is no question: mark the case with its "\
+"test (e2e: \`<test>\`), see it fail in a run of $task_id made after /qa recorded it, then pass"
 }
 
 # 7, /qa at the pull request levels. The newest qa.json of the task, by the time inside it,

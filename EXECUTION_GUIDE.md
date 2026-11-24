@@ -145,9 +145,11 @@ worse next to the skill ([MEASURED.md](./.agents/skills/write/MEASURED.md)).
 
 - **During long work, say what runs and what comes next** when a step starts or ends, in the user's
   terms: what it does to their product, not a step name. Never leave the user without word.
-- **Keep working while the next step serves the request.** Ask only what the user must decide. Never
-  stop to ask whether to run the next step of the work they asked for, or whether it is worth its
-  tokens.
+- **Keep working while the next step serves the request.** Ask only what the user must decide: what
+  should be, where nothing written says it — a requirement, an exit criterion, a case of
+  `qa/test-cases.md` — and a price or a scope beyond what was agreed. A question with one reasonable
+  answer is not asked: take that answer, and say so in the report. Never stop to ask whether to run
+  the next step of the work they asked for, or whether it is worth its tokens.
 - **Ask in the chat, one thing at a time**, except where a guide or skill gathers them: the planning
   questions come a block at a time (PLANNING_GUIDE.md, Step 0); review findings go where
   `/code-review` sends them; books are asked for in one list. A long file does not replace the
