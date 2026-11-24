@@ -430,19 +430,23 @@ round n: execute → gates → review → triage → accepted findings? → fix,
 **Three times in a row is a circle, and `review.sh` stops**: a finding accepted at the same place in
 three reviews in a row, each after a change of the work; a case that failed in three `/qa` of the
 task, each on other work; or three runs in a row that ended the same way — the same gates red with
-the same output, the same end-to-end failures. It runs nothing and exits 6. Where the work changed
-each time and a check of the code stayed red, the fixes do not close it, and that is yours: the
-output says what does not converge, and the next run takes your decision to go on
-(`--past-limit --user-decided`), and no words of yours. Where nothing changed between the runs, or
-what failed was no check of the code — no test ran, as with a simulator that will not boot, or the
-review could not be used, as when it cannot quote a deleted file — a retry does not mend it, and the
-maintainer finds the cause before it runs again, with its reason (`--past-limit --because`). Tests
-that ran and failed the same way while the work changed read as a check of the code that stayed red,
-whatever made them fail — a device that went away under them too: the script cannot tell the two
-apart. A cause only you can remove is told to you once, with what was tried. Checks still running
-are not a failure, and have their own count ([Publishing](#publishing)). A failing case of `/qa` is
-no question either until `review.sh` stops for it: the loop fixes it as often as it fails
-(`/maintain`, step 8).
+the same output, the same end-to-end failures. It runs nothing and exits 6. A finding or a case that
+the fixes do not close is yours: the output says what does not converge, and the next run takes your
+decision to go on (`--past-limit --user-decided`), and no words of yours. Three runs that ended the
+same way are the maintainer's the first time. Where the work changed each time and the same gates or
+tests stayed red, the script cannot tell fixes that do not close the failure from a machine that
+failed each time — a device that went away under the tests, a stale build, a service that was down —
+and the maintainer can: it has the logs. It finds the cause, mends it and runs again with what the
+cause was and what was done about it (`--past-limit --because`); your decision is not taken there.
+When the runs end that way three more times in a row after that, each after a change of the work,
+the reason did not hold, and that is yours, with the reason that was given. A different end between
+starts the row again. Where nothing changed between the runs, or what failed was no check of the
+code — no test ran, as with a simulator that will not boot, or the review could not be used, as when
+it cannot quote a deleted file — a retry does not mend it, and the maintainer finds the cause before
+it runs again, with its reason (`--past-limit --because`). A cause only you can remove is told to
+you once, with what was tried. Checks still running are not a failure, and have their own count
+([Publishing](#publishing)). A failing case of `/qa` is no question either until `review.sh` stops
+for it: the loop fixes it as often as it fails (`/maintain`, step 8).
 
 **`review.sh` stops after `ASK_AFTER_RUNS` reviews of one task** (`.review/land.conf`, 5 by
 default). It counts the runs that made a review — rounds, and the reviews again after `/qa`, an
@@ -461,9 +465,11 @@ a commit that fails — may be retried once on the same run, so the answers to i
 apply, and a second time goes back through `review.sh`, since nothing else counts landings. At the
 pull request levels `land.sh` takes no run and counts its own: past `ASK_AFTER_RUNS` red or
 unfinished gate runs of the task it refuses and says what was red each time; the same gates red the
-same way three times in a row, each time on other work, are yours, and anything else goes on with
-`--past-limit --because`. The stops back each other: the line at the end of a run says early what
-repeats, the circle stops the third repeat, and the count stops a session that goes on finding.
+same way three times in a row, each time on other work, are the maintainer's the first time, as with
+`review.sh`, and yours when the limit comes again with those gates red that way in every landing
+since the maintainer's reason; anything else goes on with `--past-limit --because`. The stops back
+each other: the line at the end of a run says early what repeats, the circle stops the third repeat,
+and the count stops a session that goes on finding.
 
 ### Job 3 — Land, then advance
 

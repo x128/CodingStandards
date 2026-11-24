@@ -377,13 +377,19 @@ fi
 # the count started, land.sh refuses and says what was red in each. When the newest
 # three landings of the count, with none that committed between them, failed the
 # same way — the same gates red with the same output but for its numbers — each of
-# other work than the one before, the fixes do not close it, and that is the user's:
-# --past-limit --user-decided lands once more when they decided to go on, and takes
-# no reason beside it. Anything else is the loop's — the same work again, other
-# gates each time, gates that did not run, a landing that committed between:
-# --past-limit takes its reason, --because <why>. A landing with --past-limit starts
-# the count again, and the flag is accepted only at the limit. What passed it is
-# kept in the landing's record.
+# other work than the one before, that is the loop's the first time, as review.sh
+# reads its runs: the script cannot tell fixes that do not close a failure from a
+# machine that failed each time, and the loop can. It lands with the cause it found,
+# --past-limit --because <why>, and --user-decided is refused there. When the limit
+# comes again with the gates red that way, and every landing since the one that
+# passed it ended so, the reason did not hold, and that is the user's: --past-limit
+# --user-decided lands once more when they decided to go on, and takes no reason
+# beside it. A landing that ended another way between — one that committed, other
+# gates red — starts the row again. Anything else is the loop's — the same work
+# again, other gates each time, gates that did not run, a landing that committed
+# between: --past-limit takes its reason, --because <why>. A landing with
+# --past-limit starts the count again, and the flag is accepted only at the limit.
+# What passed it is kept in the landing's record.
 if landing_opens_pull_request "$LANDING"; then
   ASK_AFTER_RUNS="$(read_conf "$CONFIG" ASK_AFTER_RUNS 5)"
   case "$ASK_AFTER_RUNS" in
@@ -404,28 +410,67 @@ if landing_opens_pull_request "$LANDING"; then
     map(select(.result != "committed" and .result != "printed"))')"
   NOT_LANDED="$(printf '%s' "$NOT_LANDED_RUNS" | jq 'length')"
   PAST_LIMIT_KIND=""
+  STOP=""
   if [ "$NOT_LANDED" -ge "$ASK_AFTER_RUNS" ]; then
-    # Whose the stop is: the user's for a circle of the work, the loop's otherwise. The
-    # newest three landings are read whatever came of them: one that committed between
-    # two red ones shows that the gates do go green, and that is no circle.
+    # Which stop it is, and whose. The newest three landings are read whatever came of
+    # them: one that committed between two red ones shows that the gates do go green.
+    # Three that failed the same way, each of other work than the one before, are the
+    # loop's the first time. They are the user's when the landings ended that way ever
+    # since one that passed this stop with the loop's reason: PASSED is that landing,
+    # the newest of the row that is not its oldest, as review.sh reads its runs
+    # (JQ_READING, common.sh). After such a landing the oldest of the three is compared
+    # with the landing before it as well, which is PASSED when no other came between: a
+    # landing again on the work of that one is a retry, so the three are not each after
+    # a change, and the stop is the limit alone.
+    STOP=landings
+    STOP_WHOSE=loop
+    PASSED=""
     if printf '%s' "$COUNTED_RUNS" | jq -e '
          .[-3:] | length == 3 and (.[2].same // null) != null
          and .[0].same == .[2].same and .[1].same == .[2].same
          and (.[0].work // null) != null and (.[1].work // null) != null
          and (.[2].work // null) != null
          and .[0].work != .[1].work and .[1].work != .[2].work' >/dev/null; then
-      STOP_WHOSE=user
-    else
-      STOP_WHOSE=loop
+      STOP=same-end-after-changes
+      PASSED="$(printf '%s' "$LANDINGS" | jq -c \
+        --arg oldest "$(printf '%s' "$COUNTED_RUNS" | jq -r '.[-3].run')" '
+        reverse | . as $newest_first
+        | ([.[] | (.same // null) == $newest_first[0].same] | (index(false) // length)) as $row
+        | ([$newest_first[0:$row][]
+            | .past_limit == true and .stop == "same-end-after-changes"
+              and .user_decided != true] | index(true)) as $at
+        | ([.[] | .run == $oldest] | index(true)) as $oldest_at
+        | if $at != null and $at < $row - 1
+          then $newest_first[$at] | {run, because}
+            + {retry: ($newest_first[$oldest_at].work == $newest_first[$oldest_at + 1].work)}
+          else empty end')"
+      # `retry` is the last key of what jq prints here.
+      case "$PASSED" in
+        '') ;;
+        *'"retry":true}') STOP=landings PASSED="" ;;
+        *) STOP_WHOSE=user ;;
+      esac
     fi
     COUNT_SAYS="$NOT_LANDED landings of $TASK_ID failed at or after their gates since the "\
 "count started (ASK_AFTER_RUNS=$ASK_AFTER_RUNS)"
-    if [ "$PAST_LIMIT" = false ] && [ "$STOP_WHOSE" = user ]; then
-      refuse 3 "$COUNT_SAYS, the last 3 the same way after changes of the work: "\
-"$(red_gates_words "$(printf '%s' "$NOT_LANDED_RUNS" | jq -r 'last.run')/gates.json")" \
-        user:not-converging "the same gates stayed red through 2 fixes — whether to go on "\
-"trying, to stop the task here, or to change what is asked of it; land.sh --past-limit "\
-"--user-decided then lands once more"
+    if [ "$PAST_LIMIT" = false ] && [ "$STOP" = same-end-after-changes ]; then
+      WAS_RED="$(red_gates_words \
+        "$(printf '%s' "$NOT_LANDED_RUNS" | jq -r 'last.run')/gates.json")"
+      if [ "$STOP_WHOSE" = loop ]; then
+        refuse 3 "$COUNT_SAYS, the last 3 the same way after changes of the work: $WAS_RED" \
+          loop "the changes between those landings did not move it, and land.sh cannot tell "\
+"fixes that do not close a failure from a machine that failed each time — a device that went "\
+"away, a stale build, a service that was down: find the cause in the output of the gates and "\
+"mend it, then land with --past-limit --because \"<what the cause was, and what was done "\
+"about it>\"; the same gates red that way at the next limit show that the reason did not hold"
+      fi
+      refuse 3 "$COUNT_SAYS, the last 3 the same way after changes of the work: $WAS_RED — "\
+"$(printf '%s' "$PASSED" | jq -r '"as before \(.run | split("/") | last) passed this limit "
+          + "with the loop'"'"'s reason, which did not hold: "
+          + (.because // "none is recorded" | gsub("\\s+"; " "))')" \
+        user:not-converging "the same gates stayed red through the cause the loop found and "\
+"the fixes after it — whether to go on trying, to stop the task here, or to change what is "\
+"asked of it; land.sh --past-limit --user-decided then lands once more"
     elif [ "$PAST_LIMIT" = false ]; then
       WAS_RED="$(printf '%s' "$NOT_LANDED_RUNS" | jq -r '.[].run' \
         | while IFS= read -r landed; do
@@ -446,6 +491,18 @@ if landing_opens_pull_request "$LANDING"; then
 "of its own, and nothing keeps words where the user decided — land again without it" >&2
         exit 1
       }
+    elif [ "$STOP" = same-end-after-changes ]; then
+      [ "$USER_DECIDED" = false ] || {
+        echo "this stop is the loop's: --user-decided is for a stop that is the user's, and "\
+"nothing is theirs to decide here — find the cause and land with --past-limit --because "\
+"\"<what the cause was, and what was done about it>\"" >&2
+        exit 1
+      }
+      [ -n "$BECAUSE" ] || {
+        echo "--past-limit at this stop needs --because \"<what the cause was, and what was "\
+"done about it>\" — run without --past-limit to read the stop" >&2
+        exit 1
+      }
     else
       [ -n "$BECAUSE" ] || [ "$USER_DECIDED" = true ] || {
         echo "--past-limit at this stop needs --because \"<what was mended>\" — run without "\
@@ -464,16 +521,18 @@ if landing_opens_pull_request "$LANDING"; then
   mkdir -p "$LAND_DIR" || exit 1
   # landing_ends <result> [<same>]: the record of this landing. `work` is the fingerprint
   # of what it was to commit; `same`, after red gates, what failed (red_gates_same), null
-  # otherwise. What a landing with --past-limit passed: `past_limit_kind` says whose the
-  # stop was, user or loop, `because` is the loop's reason, and `user_decided` is true
-  # when the user decided to go on. All three are null on a plain landing.
+  # otherwise. What a landing with --past-limit passed: `stop` names it — landings, the
+  # limit alone, or same-end-after-changes — `past_limit_kind` says whose the stop was,
+  # user or loop, `because` is the loop's reason, and `user_decided` is true when the
+  # user decided to go on. All four are null on a plain landing.
   landing_ends() {
     jq -n --arg task "$TASK_ID" --argjson epoch "$EPOCH" --argjson past_limit "$PAST_LIMIT" \
       --arg result "$1" --arg work "$CURRENT_FINGERPRINT" --arg same "${2:-}" \
-      --arg kind "$PAST_LIMIT_KIND" --arg because "$BECAUSE" \
+      --arg kind "$PAST_LIMIT_KIND" --arg stop "$STOP" --arg because "$BECAUSE" \
       --argjson user_decided "$USER_DECIDED" \
       '{task: $task, time: now, epoch: $epoch, past_limit: $past_limit, result: $result,
         work: $work, same: (if $same == "" then null else $same end),
+        stop: (if $past_limit and $stop != "" then $stop else null end),
         past_limit_kind: (if $kind == "" then null else $kind end),
         because: (if $because == "" then null else $because end),
         user_decided: (if $user_decided then true else null end)}' >"$LAND_DIR/landing.json"

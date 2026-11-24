@@ -157,23 +157,31 @@ fi
 #                          /qa
 #   the same end           three runs in a row ended the same way: the same gates
 #                          red with the same output, the same end-to-end tests red,
-#                          the same missing harness, an unusable review
+#                          the same missing harness, an unusable review; after a run
+#                          that passed it where the work had changed each time,
+#                          three more
 #   the limit of reviews   ASK_AFTER_RUNS reviews since the count started: the runs
 #                          that made a review, not those that ended before one
 #   the limit of runs      ASK_AFTER_RUNS runs in a row with no review, whatever
 #                          ended them
 # Each stop prints what was read and ends with one line that says whose turn it is
-# (turn). A circle of the work — the finding, the case, or gates or end-to-end
-# tests that stayed red while the work changed each time — is the user's: --past-limit
+# (turn). A circle of the work — the finding or the case — is the user's: --past-limit
 # --user-decided runs once more when they decided to go on, and takes no reason
-# beside it. Every other stop is the loop's, since a count alone is never a
-# question. Where the script reads that the work converges — no finding came back
-# and the reviews do not accept as many as before or more — --past-limit alone runs
-# once more; where it cannot read that, --past-limit takes the loop's own reason,
-# --because <why>. What passed a stop is kept in the run and shown on the pull
-# request. A run with --past-limit starts the count of reviews again from zero, and
-# the flag is accepted only at a stop, so one left in the command fails on the next
-# run instead of switching the count off.
+# beside it. Gates or end-to-end tests that stayed red the same way while the work
+# changed each time are the loop's the first time: the script cannot tell fixes that
+# do not close a failure from a device that went away each time, a stale build or a
+# service that was down, and the loop has the logs. It passes that stop with the
+# cause it found, --past-limit --because <why>, and --user-decided is refused
+# there. Three more runs in a row with that end after such a pass, each after a
+# change, show that the reason did not hold: then it is the user's. Every other
+# stop is the loop's, since a count alone is never a question. Where the script
+# reads that the work converges — no finding came back and the reviews do not accept
+# as many as before or more — --past-limit alone runs once more; where it cannot
+# read that, --past-limit takes the loop's own reason, --because <why>. What passed
+# a stop is kept in the run and shown on the pull request. A run with --past-limit
+# starts the count of reviews again from zero, and the flag is accepted only at a
+# stop, so one left in the command fails on the next run instead of switching the
+# count off.
 ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
 case "$ASK_AFTER_RUNS" in
   ''|*[!0-9]*|0*|??????????*)
@@ -286,23 +294,38 @@ say_stop() {
 "whether to go on trying, to stop the task here, or to change what the case expects; "\
 "--past-limit --user-decided then runs once more"
       ;;
-    same-end)
+    same-end-after-changes)
       what="$(what_failed "$newest" "$failed")"
       if [ "$STOP_WHOSE" = user ]; then
-        echo "NOT CONVERGING — $TASK_ID ended the same way in $row runs in a row, each after "\
-"a change of the work; nothing ran."
+        echo "NOT CONVERGING — $TASK_ID ended the same way in $row more runs in a row, each "\
+"after a change of the work, since "\
+"$(printf '%s' "$READING" | jq -r '.passed.run | split("/") | last') passed this stop; nothing ran."
         echo "   $what ($(basename "$newest"))"
-        turn user:not-converging "the same check stayed red through $((row - 1)) fixes — "\
-"whether to go on trying, to stop the task here, or to change what is asked of it; "\
-"--past-limit --user-decided then runs once more"
+        printf '%s' "$READING" | jq -r '"   the loop'"'"'s reason then, which did not hold: "
+          + (.passed.because // "none is recorded" | gsub("\\s+"; " "))'
+        turn user:not-converging "the same check stayed red through the cause the loop found "\
+"and $row more fixes — whether to go on trying, to stop the task here, or to change what is "\
+"asked of it; --past-limit --user-decided then runs once more"
       else
-        echo "STOPPED — $TASK_ID ended the same way in "\
-"$(printf '%s' "$READING" | jq -r '.same_end_row') runs in a row; nothing ran."
+        echo "STOPPED — $TASK_ID ended the same way in $row runs in a row, each after a "\
+"change of the work; nothing ran."
         echo "   $what ($(basename "$newest"))"
-        turn loop "a retry does not mend it — find the cause in that output: in the code, "\
+        turn loop "the changes between those runs did not move it, and review.sh cannot tell "\
+"fixes that do not close a failure from a machine that failed each time — a device that went "\
+"away, a stale build, a service that was down: find the cause in the output of those runs and "\
+"mend it, then run again with --past-limit --because \"<what the cause was, and what was done "\
+"about it>\"; three more runs in a row that end this way after it, each after a change, show "\
+"that the reason did not hold"
+      fi ;;
+    same-end)
+      what="$(what_failed "$newest" "$failed")"
+      echo "STOPPED — $TASK_ID ended the same way in "\
+"$(printf '%s' "$READING" | jq -r '.same_end_row') runs in a row; nothing ran."
+      echo "   $what ($(basename "$newest"))"
+      turn loop "a retry does not mend it — find the cause in that output: in the code, "\
 "fix it; in the machine, restore the tool or the device; then run again with --past-limit "\
 "--because \"<what was mended>\""
-      fi ;;
+      ;;
     runs)
       printf '%s' "$READING" | jq -r --arg id "$TASK_ID" --arg limit "$ASK_AFTER_RUNS" '
         {"gates-red": "gates red", "e2e-red": "end-to-end tests red",
@@ -365,6 +388,19 @@ if [ -n "$TASK_ID" ]; then
           exit 1
         } ;;
       loop)
+        if [ "$STOP" = same-end-after-changes ]; then
+          [ "$USER_DECIDED" = false ] || {
+            echo "this stop is the loop's: --user-decided is for a stop that is the user's, "\
+"and nothing is theirs to decide here — find the cause and run again with --past-limit "\
+"--because \"<what the cause was, and what was done about it>\"" >&2
+            exit 1
+          }
+          [ -n "$BECAUSE" ] || {
+            echo "--past-limit at this stop needs --because \"<what the cause was, and what "\
+"was done about it>\" — run without --past-limit to read the stop" >&2
+            exit 1
+          }
+        fi
         [ -n "$BECAUSE" ] || [ "$USER_DECIDED" = true ] || {
           echo "--past-limit at this stop needs --because \"<what moves toward the goal>\" "\
 "— run without --past-limit to read the stop" >&2
@@ -868,7 +904,7 @@ record_end() {
 # review accepted again after a change of the work, and an end that is the same as that of
 # the run before. A third time in a row the next run stops.
 say_what_repeats() {
-  local this runs reading row before failed
+  local this runs reading row before failed passed
   [ -n "$TASK_ID" ] || return 0
   this="$(task_run_json "$RUN_DIR" 2>/dev/null)" || return 0
   runs="$(printf '[%s, [%s]]' "$RUNS" "$this" | jq -c 'add' 2>/dev/null)" || return 0
@@ -885,9 +921,15 @@ say_what_repeats() {
          then "   a third time in a row review.sh stops (maintain, step 5)"
          else empty end)' ;;
   esac
-  IFS=$'\t' read -r row before failed < <(printf '%s' "$reading" | jq -r '
-    [.same_end_row, (.same_end_runs[-2] // "-" | split("/") | last), .newest.failed // "-"]
-    | @tsv')
+  IFS=$'\t' read -r row before failed passed < <(printf '%s' "$reading" | jq -r '
+    [.same_end_row, (.same_end_runs[-2] // "-" | split("/") | last), .newest.failed // "-",
+     (.passed.run // "-")] | @tsv')
+  # This run passed the stop of the same end after changes, and ended that way again.
+  if [ "${row:-0}" -eq 0 ] && [ "$passed" = "$RUN_DIR" ]; then
+    echo "── the same end as before this stop was passed: "\
+"$(what_failed "$RUN_DIR" "$failed"); three more times in a row and review.sh stops again"
+    return 0
+  fi
   [ "${row:-0}" -ge 2 ] || return 0
   if [ "$row" -eq 2 ]; then
     echo "── the same end as the run before ($before): $(what_failed "$RUN_DIR" "$failed"); "\

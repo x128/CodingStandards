@@ -850,7 +850,8 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
    elif $ending == "unusable" then "unusable"
    else null end) as $failed
 | {run: $run, time: (.time // 0), epoch: (.epoch // 0), past_limit: (.past_limit == true),
-   user_decided: (.user_decided == true), stop: (.stop // null), work: .tree_fingerprint,
+   user_decided: (.user_decided == true), stop: (.stop // null),
+   because: (.because // null), work: .tree_fingerprint,
    reviewed: $reviewed,
    accepted: [$approved | arrays | .[] | objects
               | .finding_id as $id
@@ -871,10 +872,11 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
 # The runs of a task as one JSON array, oldest first by the time each records: for each
 # folder under .review/runs whose meta.json names the task — a folder of a landing (land-*)
 # or of /qa (qa-*) is no review run —
-#   {run, time, epoch, past_limit, user_decided, stop, work, reviewed, accepted, end, failed,
-#    same}
-# `stop` names the stop a run with --past-limit passed, and `user_decided` says that the
-# user decided to go on there. `work` is the fingerprint of the tree the run looked at.
+#   {run, time, epoch, past_limit, user_decided, stop, because, work, reviewed, accepted,
+#    end, failed, same}
+# `stop` names the stop a run with --past-limit passed, `user_decided` says that the user
+# decided to go on there, and `because` is the loop's reason. `work` is the fingerprint of
+# the tree the run looked at.
 # `reviewed`: the run made a review — its approved.json is there and is a list, which
 # review.sh writes only when the triage ended. `accepted`: what the review accepted, each
 # {id, file, line, category, quote, quote_lines}, the quote being the first line of the
@@ -974,14 +976,28 @@ JQ_WORKS_FAILED='def works_failed($records; $case):
 # not use it up;
 # `case` — a case the newest /qa failed has failed on three works (works_failed), until a
 # run newer than that /qa passed this stop on the user's decision: the decision holds
-# until the next /qa, and one taken at another stop is none on the case; `same-end` —
-# three runs in a row ended the same way (`same`); `reviews` — `limit` reviews since the
-# count started;
+# until the next /qa, and one taken at another stop is none on the case;
+# `same-end-after-changes` — three runs in a row ended the same way (`same`) with the same
+# gates or end-to-end tests red, each of other work than the one before; `same-end` — three
+# runs in a row ended the same way otherwise: on the same work, or with no check of the
+# code red; `reviews` — `limit` reviews since the count started;
 # `runs` — `limit` runs in a row with no review. `whose`: `user` for a circle of the work —
-# the finding, the case, or the same gates or end-to-end tests red through the newest three
-# runs, each of other work than the one before; `loop` where the script cannot read that
-# the work converges; `converging` at the limit of reviews when no finding came back and
-# the reviews accept fewer.
+# the finding, the case, or the same end after changes once the loop's reason did not hold;
+# `loop` where the script cannot read that the work converges; `converging` at the limit of
+# reviews when no finding came back and the reviews accept fewer.
+#
+# The same end after changes is the loop's the first time: the script cannot tell fixes
+# that do not close a failure from a machine that failed each time, and the loop can. The
+# run that passes that stop with the loop's reason starts the row again: `same_end_row`
+# then counts the runs after it, and three more that end the same way, each of other work
+# than the one before, show that the reason did not hold — that is the user's, and
+# `passed` names the run and the reason. The one before the oldest run of that row is the
+# run that passed: a run on the work of that run is a retry, and none of the three. With
+# no such run the oldest of the row is compared with nothing. Such a run starts the row
+# again only while the run before it is of the row: after a different end the same end is
+# the first time once more. A run that passed the stop on the user's decision, or
+# `same-end`, starts nothing again: those stops stay in force while the runs end the same
+# way.
 #
 # The same place of two findings: the same file and category, and the same quote or lines
 # no more than five apart. A quote names a place only where the file held it on one line
@@ -1016,12 +1032,17 @@ def same_place($a; $b):
 | ($runs | reverse) as $newest_first
 | (if ($newest_first | length) == 0 or $newest_first[0].same == null then 0
    else ([$newest_first[] | .same == $newest_first[0].same] | (index(false) // length)) end)
-    as $same_end_row
-| ($newest_first[0:$same_end_row]
+    as $whole_row
+| ([$newest_first[0:$whole_row][]
+    | .past_limit == true and .stop == "same-end-after-changes" and .user_decided != true]
+   | index(true) | if . != null and . < $whole_row - 1 then . else null end) as $passed_at
+| ($passed_at // $whole_row) as $same_end_row
+| (if $passed_at == null then 0 else 1 end) as $with_pass
+| ($newest_first[0:$same_end_row + $with_pass]
    | [range(0; length - 1) as $i | .[$i].work != .[$i + 1].work]
-   | (index(false) // length) + 1) as $changed_row
+   | (index(false) // length) + 1 - $with_pass) as $changed_row
 | (($newest_first[0].failed // "") as $failed
-   | $changed_row >= 3 and ($failed == "gates" or $failed == "e2e")) as $same_end_of_the_work
+   | $changed_row >= 3 and ($failed == "gates" or $failed == "e2e")) as $same_end_after_changes
 | (($reviews[-1].time // 0) as $newest
    | any($runs[]; .user_decided == true and .stop == "finding" and (.time // 0) > $newest))
     as $finding_answered
@@ -1037,8 +1058,10 @@ def same_place($a; $b):
 | (if ($finding_answered | not) and any($came_back[]; .row >= 3)
      then {stop: "finding", whose: "user"}
    elif ($qa_answered | not) and any($qa_back[]; .times >= 3) then {stop: "case", whose: "user"}
-   elif $same_end_row >= 3
-     then {stop: "same-end", whose: (if $same_end_of_the_work then "user" else "loop" end)}
+   elif $same_end_row >= 3 and $same_end_after_changes
+     then {stop: "same-end-after-changes",
+           whose: (if $passed_at != null then "user" else "loop" end)}
+   elif $same_end_row >= 3 then {stop: "same-end", whose: "loop"}
    elif $counted >= $limit
      then {stop: "reviews",
            whose: (if ($came_back | length) > 0 or $not_fewer then "loop" else "converging" end)}
@@ -1049,6 +1072,8 @@ def same_place($a; $b):
    ends: [$newest_first[0:$no_review_row] | reverse | .[].end],
    same_end_row: $same_end_row, same_end_changed: $changed_row,
    same_end_runs: [$newest_first[0:$same_end_row] | reverse | .[].run],
+   passed: (if $passed_at == null then null
+            else $newest_first[$passed_at] | {run, because} end),
    newest: ($newest_first[0] // {} | {run, failed}), qa_back: $qa_back}
   + $stop'
 

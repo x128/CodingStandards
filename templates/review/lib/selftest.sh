@@ -1936,15 +1936,105 @@ round "the third run that ends the same way says that the next run stops" 2 \
   "── the same end as the 2 runs before: gates red: test, the same output each time but for "\
 "its numbers; the next run of review.sh stops and says whose turn it is" T-069 new -
 round "three runs in a row that end the same way after changes stop the fourth" 6 \
-  "NOT CONVERGING — T-069 ended the same way in 3 runs in a row, each after a change" \
-  T-069 new -
+  "STOPPED — T-069 ended the same way in 3 runs in a row, each after a change of the work; "\
+"nothing ran." T-069 new -
 says "it names the gates that stayed red" \
   "   gates red: test, the same output each time but for its numbers (" "$WORK/run.log"
-says "and that is the user's" \
-  "   For the user, the work does not converge: the same check stayed red through 2 fixes" \
+says "the first time that stop is the loop's, which finds the cause" \
+  "   The loop goes on: the changes between those runs did not move it, and review.sh cannot "\
+"tell fixes that do not close a failure from a machine that failed each time" "$WORK/run.log"
+says "it says what passes the stop" \
+  'run again with --past-limit --because "<what the cause was, and what was done about it>"' \
   "$WORK/run.log"
-round "there too --past-limit takes --user-decided" 1 "this stop takes --user-decided" \
+never_says "the same end the first time is no question" "the user" "$WORK/run.log"
+round "with no reason that stop is not passed" 1 \
+  '--past-limit at this stop needs --because "<what the cause was, and what was done about it>"' \
+  T-069 same - --past-limit
+round "the user's decision does not pass it: nothing is theirs to decide there" 1 \
+  "this stop is the loop's: --user-decided is for a stop that is the user's" \
+  T-069 same - --past-limit --user-decided
+round "nor does their decision beside a reason" 1 \
+  "this stop is the loop's: --user-decided is for a stop that is the user's" \
+  T-069 same - --past-limit --user-decided --because "the build was stale"
+round "the cause the loop found passes it" 2 "GATES RED" \
+  T-069 same - --past-limit --because "the build was stale and is made from nothing"
+pass_of_t069="$(basename "$(newest_run)")"
+run_records "and the run records which stop it passed, and the reason" \
+  '.stop == "same-end-after-changes" and .past_limit_kind == "loop" and .user_decided == null
+   and .because == "the build was stale and is made from nothing"'
+says "a run past that stop that ends the same way again says so" \
+  "── the same end as before this stop was passed: gates red: test, the same output each time "\
+"but for its numbers; three more times in a row and review.sh stops again" "$WORK/run.log"
+# After such a pass the row starts again: three more runs in a row that end the same way,
+# each after a change, and the reason did not hold. Only then is it the user's.
+round "after the pass the next run that ends the same way runs" 2 "GATES RED" T-069 new -
+never_says "one more of the same end is said nowhere yet" "the same end as" "$WORK/run.log"
+round "the second more says that it ended as the run before" 2 \
+  "── the same end as the run before (" T-069 new -
+round "the third more says that the next run stops" 2 \
+  "── the same end as the 2 runs before: gates red: test, the same output each time but for "\
+"its numbers; the next run of review.sh stops and says whose turn it is" T-069 new -
+round "the same end three more times after the loop's reason stops the next run" 6 \
+  "NOT CONVERGING — T-069 ended the same way in 3 more runs in a row, each after a change of "\
+"the work, since $pass_of_t069 passed this stop; nothing ran." T-069 new -
+says "it says which reason did not hold" \
+  "   the loop's reason then, which did not hold: the build was stale and is made from nothing" \
+  "$WORK/run.log"
+says "and now it is the user's" \
+  "   For the user, the work does not converge: the same check stayed red through the cause "\
+"the loop found and 3 more fixes" "$WORK/run.log"
+says "with what they decide, and the way on" \
+  "whether to go on trying, to stop the task here, or to change what is asked of it; "\
+"--past-limit --user-decided then runs once more" "$WORK/run.log"
+round "there the loop's reason passes no more" 1 "this stop takes --user-decided" \
   T-069 same - --past-limit --because "the gate is mended"
+round "once the user decided to go on at that stop it runs once more" 2 "GATES RED" \
+  T-069 same - --past-limit --user-decided
+run_records "and the run records that they decided" \
+  '.stop == "same-end-after-changes" and .past_limit_kind == "user" and .user_decided == true
+   and .because == null'
+# Each of the three more comes after a change: the oldest of them is compared with the run
+# that passed the stop as well. A run on the work of that run is a retry and none of the
+# three, so the stop after it is the stop of a retry, the loop's, and the user's comes once
+# three runs since the pass each came after a change.
+for attempt in first second third; do on_the_way 2 T-088 new -; done
+on_the_way 6 T-088 new -
+on_the_way 2 T-088 new - --past-limit --because "the build was stale and is made from nothing"
+pass_of_t088="$(basename "$(newest_run)")"
+on_the_way 2 T-088 same -
+on_the_way 2 T-088 new -
+on_the_way 2 T-088 new -
+round "a retry on the work of the run that passed the stop is none of the three more" 6 \
+  "STOPPED — T-088 ended the same way in 3 runs in a row; nothing ran." T-088 new -
+says "the stop after such a retry is the loop's" \
+  "   The loop goes on: a retry does not mend it" "$WORK/run.log"
+never_says "two runs after a change since the loop's reason are no question" "the user" \
+  "$WORK/run.log"
+round "the loop's reason passes the stop after such a retry" 2 "GATES RED" \
+  T-088 same - --past-limit --because "the simulator is booted again"
+round "three runs since the pass, each after a change, are then the user's" 6 \
+  "NOT CONVERGING — T-088 ended the same way in 3 more runs in a row, each after a change of "\
+"the work, since $pass_of_t088 passed this stop; nothing ran." T-088 new -
+says "the line counts a fix before each of the three" \
+  "   For the user, the work does not converge: the same check stayed red through the cause "\
+"the loop found and 3 more fixes" "$WORK/run.log"
+# A different end between starts the row again: the same end three times after it is the
+# first time once more, and the loop's.
+for attempt in first second third; do on_the_way 2 T-087 new -; done
+on_the_way 6 T-087 new -
+on_the_way 2 T-087 same - --past-limit --because "the service was down and is up again"
+on_the_way 2 T-087 new -
+on_the_way 2 T-087 new -
+red_gates "another test fails"
+on_the_way 2 T-087 new -
+red_gates "the pickup test fails"
+for attempt in first second third; do on_the_way 2 T-087 new -; done
+round "a different end between starts the row again" 6 \
+  "STOPPED — T-087 ended the same way in 3 runs in a row, each after a change of the work; "\
+"nothing ran." T-087 new -
+says "and the stop is the loop's again" \
+  "   The loop goes on: the changes between those runs did not move it" "$WORK/run.log"
+never_says "the first time after another end is no question" "the user" "$WORK/run.log"
 on_the_way 2 T-070 new -
 on_the_way 2 T-070 same -
 on_the_way 2 T-070 same -
@@ -1955,9 +2045,20 @@ says "and the loop's to find the cause of" "   The loop goes on: a retry does no
 never_says "a retry is no question" "the user" "$WORK/run.log"
 round "the loop's reason passes that stop" 2 "GATES RED" \
   T-070 same - --past-limit --because "the simulator is booted again"
-# End-to-end tests that ran and failed are a check of the code that stayed red, whatever
-# made them fail: the script cannot tell a device that went away under them from the code.
-# A harness that ran no test checked nothing: that is the loop's to restore.
+# A pass of the stop on the same work is no such pass, and that stop stays in force while
+# the runs end the same way: the same end through changes after it is the first time that
+# the work changed, and the loop's.
+on_the_way 6 T-070 new -
+on_the_way 2 T-070 same - --past-limit --because "the simulator is erased and booted again"
+on_the_way 2 T-070 new - --past-limit --because "the test waits for the screen now"
+round "after passes on the same work the same end through changes is the loop's the first time" \
+  6 "STOPPED — T-070 ended the same way in 3 runs in a row, each after a change of the work; "\
+"nothing ran." T-070 new -
+never_says "a retry passed before makes it no question" "the user" "$WORK/run.log"
+# End-to-end tests that ran and failed the same way through changes are read as red gates
+# are: the script cannot tell a device that went away under them from the code, so the
+# first time the loop finds the cause, and after its reason three more are the user's. A
+# harness that ran no test checked nothing: that is the loop's to restore, every time.
 green_gates
 no_device='<testsuite hostname="app"><testcase classname="AnswerE2E" name="shows42">'\
 '<failure message="no device"/></testcase><testcase classname="AnswerE2E" name="starts"/>'\
@@ -1966,14 +2067,25 @@ for attempt in first second third; do
   E2E_XML="$no_device" E2E_EXIT=1 on_the_way 2 T-085 new -
 done
 round "end-to-end tests that failed the same way through changes of the work stop the fourth run" \
-  6 "NOT CONVERGING — T-085 ended the same way in 3 runs in a row, each after a change" \
+  6 "STOPPED — T-085 ended the same way in 3 runs in a row, each after a change" \
   T-085 new -
 says "it names the tests that stayed red" \
   "   end-to-end tests red: app: .review/e2e.sh exited 1; app: failed: AnswerE2E.shows42" \
   "$WORK/run.log"
-says "tests that ran and failed are the user's, whatever made them fail" \
-  "   For the user, the work does not converge: the same check stayed red through 2 fixes" \
-  "$WORK/run.log"
+says "tests that ran and failed are the loop's to find the cause of, the first time" \
+  "   The loop goes on: the changes between those runs did not move it" "$WORK/run.log"
+never_says "a device that went away under the tests is no question" "the user" "$WORK/run.log"
+E2E_XML="$no_device" E2E_EXIT=1 on_the_way 2 T-085 same - --past-limit \
+  --because "the emulator had gone away and is booted again"
+for attempt in first second third; do
+  E2E_XML="$no_device" E2E_EXIT=1 on_the_way 2 T-085 new -
+done
+round "the same tests red three more times after the loop's reason are the user's" 6 \
+  "NOT CONVERGING — T-085 ended the same way in 3 more runs in a row, each after a change" \
+  T-085 new -
+says "tests that stayed red through the cause the loop found do not converge" \
+  "   For the user, the work does not converge: the same check stayed red through the cause "\
+"the loop found and 3 more fixes" "$WORK/run.log"
 for attempt in first second third; do
   E2E_ONLY=none E2E_EXIT=1 on_the_way 1 T-086 new -
 done
@@ -1988,7 +2100,7 @@ for seconds in 6 7 9; do
   red_gates "BUILD FAILED in ${seconds}s"
   on_the_way 2 T-071 new -
 done
-round "numbers alone do not make another output" 6 "NOT CONVERGING — T-071 ended the same way" \
+round "numbers alone do not make another output" 6 "STOPPED — T-071 ended the same way" \
   T-071 new -
 for output in "a is undefined" "b is undefined" "c is undefined"; do
   red_gates "$output"
@@ -2554,13 +2666,18 @@ pr_land() {
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
 }
 
-# What the newest landing of the project recorded: landing_records <name> <jq filter>.
+# The record of the newest landing of the project, and what it holds: landing_records
+# <name> <jq filter>.
+newest_landing() {
+  local record
+  for record in .review/runs/land-*/landing.json; do
+    [ -f "$record" ] || continue
+    jq -c --arg record "$record" '{time: (.time // 0), record: $record}' "$record"
+  done | jq -sr 'sort_by(.time) | last | .record'
+}
 landing_records() {
   local record
-  record="$(for record in .review/runs/land-*/landing.json; do
-      [ -f "$record" ] || continue
-      jq -c --arg record "$record" '{time: (.time // 0), record: $record}' "$record"
-    done | jq -sr 'sort_by(.time) | last | .record')"
+  record="$(newest_landing)"
   if jq -e "$2" "$record" >/dev/null 2>&1; then
     echo "ok    $1"
   else
@@ -3538,7 +3655,9 @@ pr_land "and so is --user-decided at a landing" 1 "--user-decided goes with --pa
 
 # land.sh reads its landings as review.sh reads its runs. At the limit, the newest three
 # that failed the same way — the same gates red with the same output but for its
-# numbers — each after a change of the work, do not converge, and that is the user's.
+# numbers — each after a change of the work, are the loop's the first time: it finds
+# the cause and lands with its reason. When the limit comes again with the gates red
+# that way after such a landing, the reason did not hold, and that is the user's.
 # Anything else is the loop's: the same work again, or other gates each time.
 published_project origin
 set_level pr ASK_AFTER_RUNS=3
@@ -3566,14 +3685,47 @@ for seconds in 6 7 9; do
 done
 landing_records "a landing records its work and what was red" \
   '(.work | type) == "string" and (.same | type) == "string" and .result == "red"
-   and .past_limit_kind == null and .because == null and .user_decided == null'
+   and .past_limit_kind == null and .because == null and .user_decided == null
+   and .stop == null'
 pr_work
-pr_land "three landings red the same way after changes are the user's" 3 \
+pr_land "three landings red the same way after changes stop the next" 3 \
   "3 landings of T-001 failed at or after their gates since the count started "\
 "(ASK_AFTER_RUNS=3), the last 3 the same way after changes of the work: test red"
-says "it says that the work does not converge" \
-  "   For the user, the work does not converge: the same gates stayed red through 2 fixes" \
+says "the first time that limit is the loop's, which finds the cause" \
+  "   The loop goes on: the changes between those landings did not move it, and land.sh "\
+"cannot tell fixes that do not close a failure from a machine that failed each time" \
   "$WORK/land.log"
+says "it says what passes the limit" \
+  'land with --past-limit --because "<what the cause was, and what was done about it>"' \
+  "$WORK/land.log"
+never_says "the same gates red the first time are no question" "the user" "$WORK/land.log"
+pr_land "with no reason that limit is not passed" 1 \
+  '--past-limit at this stop needs --because "<what the cause was, and what was done about it>"' \
+  --past-limit
+pr_land "the user's decision does not pass it at a landing either" 1 \
+  "this stop is the loop's: --user-decided is for a stop that is the user's" \
+  --past-limit --user-decided
+pr_land "the cause the loop found passes the limit" 3 "gates are red at landing time" \
+  --past-limit --because "the build was stale and is made from nothing"
+landing_records "and the landing records which stop it passed, and the reason" \
+  '.stop == "same-end-after-changes" and .past_limit_kind == "loop" and .user_decided == null
+   and .because == "the build was stale and is made from nothing" and .past_limit == true'
+pass_of_the_landings="$(basename "$(dirname "$(newest_landing)")")"
+for seconds in 3 4 5; do
+  red_at_landing "the pickup test fails in ${seconds}s"
+  pr_work
+  refused_landing
+done
+pr_work
+pr_land "the same gates red through three more changes after the loop's reason stop it again" 3 \
+  "3 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=3), the last 3 the same way after changes of the work: test red"
+says "it says which reason did not hold" \
+  "test red — as before $pass_of_the_landings passed this limit with the loop's reason, which "\
+"did not hold: the build was stale and is made from nothing" "$WORK/land.log"
+says "it says that the work does not converge" \
+  "   For the user, the work does not converge: the same gates stayed red through the cause "\
+"the loop found and the fixes after it" "$WORK/land.log"
 says "what they decide" \
   "whether to go on trying, to stop the task here, or to change what is asked of it" \
   "$WORK/land.log"
@@ -3591,7 +3743,7 @@ pr_land "once the user decided to go on the landing runs" 3 "gates are red at la
   --past-limit --user-decided
 landing_records "and the landing records that they decided, and no words" \
   '.user_decided == true and .past_limit_kind == "user" and .because == null
-   and .past_limit == true'
+   and .past_limit == true and .stop == "same-end-after-changes"'
 for attempt in first second third; do
   refused_landing
 done
@@ -3642,6 +3794,77 @@ pr_land "a gate red now and then, with landings that commit between, is no circl
 "(ASK_AFTER_RUNS=3): test red; test red; test red"
 says "that limit is the loop's" "   The loop goes on: run .review/gates.sh alone" "$WORK/land.log"
 never_says "a gate that goes green between is no question" "the user" "$WORK/land.log"
+
+# A different end between starts the row again: after a landing that passed the limit with
+# the loop's reason, a landing that commits, and then the same gates red three more times
+# after changes, are the first time once more, and the loop's.
+published_project origin
+set_level pr ASK_AFTER_RUNS=3
+for attempt in first second third; do
+  red_at_landing "the pickup test fails"
+  pr_work
+  refused_landing
+done
+pr_work
+refused_landing --past-limit --because "the service was down and is up again"
+cp "$WORK/gates.green" .review/gates.sh
+pr_land "after the loop's reason the work lands with green gates" 0 "landed T-001 on task/T-001"
+for attempt in first second third; do
+  red_at_landing "the pickup test fails"
+  pr_work
+  refused_landing
+done
+pr_work
+pr_land "a landing that committed between starts the row again" 3 \
+  "(ASK_AFTER_RUNS=3), the last 3 the same way after changes of the work: test red"
+says "and that limit is the loop's again" \
+  "   The loop goes on: the changes between those landings did not move it" "$WORK/land.log"
+never_says "the first time after a landing that committed is no question" "the user" \
+  "$WORK/land.log"
+
+# Each of the three comes after a change: once a landing passed the limit with the loop's
+# reason, the oldest of the newest three is compared with the landing before it as well,
+# which is the one that passed when no other came between. A landing again on the work of
+# the one that passed is a retry: the limit after it is the limit alone, the loop's, and
+# the user's comes when the limit is there again with three landings after changes.
+published_project origin
+set_level pr ASK_AFTER_RUNS=3
+for attempt in first second third; do
+  red_at_landing "the pickup test fails"
+  pr_work
+  refused_landing
+done
+pr_work
+refused_landing --past-limit --because "the build was stale and is made from nothing"
+pass_of_the_landings="$(basename "$(dirname "$(newest_landing)")")"
+refused_landing
+for attempt in second third; do
+  pr_work
+  refused_landing
+done
+pr_work
+pr_land "a landing again on the work of the one that passed the limit is none of the three" 3 \
+  "3 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=3): test red; test red; test red"
+says "the limit after such a retry is the loop's" \
+  "   The loop goes on: run .review/gates.sh alone" "$WORK/land.log"
+never_says "two landings after a change since the loop's reason are no question" "the user" \
+  "$WORK/land.log"
+pr_land "the loop's reason passes the limit after such a retry" 3 \
+  "gates are red at landing time" --past-limit --because "the cache is cleared"
+landing_records "and that landing records that it passed the limit alone" \
+  '.stop == "landings" and .past_limit_kind == "loop" and .because == "the cache is cleared"'
+for attempt in first second third; do
+  pr_work
+  refused_landing
+done
+pr_work
+pr_land "three landings since, each after a change, are then the user's" 3 \
+  "test red — as before $pass_of_the_landings passed this limit with the loop's reason, which "\
+"did not hold: the build was stale and is made from nothing"
+says "and the landing says that the work does not converge" \
+  "   For the user, the work does not converge: the same gates stayed red through the cause "\
+"the loop found and the fixes after it" "$WORK/land.log"
 
 # On the pull request the summary of a run counts reviews, and says what passed a stop.
 published_project origin

@@ -129,7 +129,13 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    where the line asks for it, with `--because "<what moves toward the goal>"`, which is kept in the
    run and shown on the pull request. Where the findings do not get fewer and you cannot tell
    whether the work moves, that line makes it a question: ask it with what the script printed, and
-   when the user decides to go on, `--past-limit --user-decided` passes that stop too.
+   when the user decides to go on, `--past-limit --user-decided` passes that stop too. Three runs in
+   a row that ended the same way are the loop's the first time, also where the work changed each
+   time: the script cannot tell fixes that do not close a failure from a device that went away, a
+   stale build or a service that was down, and you have the logs. Find the cause, mend it and run
+   again with `--past-limit --because "<what the cause was, and what was done about it>"`;
+   `--user-decided` is refused there. When the runs end that way three more times in a row after
+   that pass, each after a change of the work, the reason did not hold, and that is the user's.
    `For the user, the work does not converge`: ask once, with what the script printed; when they
    decide to go on, run again with `--past-limit --user-decided`, which takes no words: the run
    records that they decided, and the pull request shows it. A count alone is never a question.
@@ -275,8 +281,11 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    pull request, or updates it. It runs after step 4; in a fix round, when files changed; and after
    step 10, for the records alone. Past `ASK_AFTER_RUNS` red or unfinished checks of the task it
    refuses and says what was red each time: the same gates red the same way three times in a row,
-   each time on other work, are the user's, and anything else goes on with
-   `--past-limit --because "<what was mended>"`, as in step 5. Then the merge contract, M1–M9:
+   each time on other work, are the loop's the first time, as in step 5 — find the cause, mend it
+   and land with `--past-limit --because "<what the cause was, and what was done about it>"` — and
+   the user's when the limit comes again with those gates red that way in every landing since;
+   anything else goes on with `--past-limit --because "<what was mended>"`. Then the merge contract,
+   M1–M9:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json --merge
