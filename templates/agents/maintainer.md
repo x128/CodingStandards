@@ -44,9 +44,13 @@ as the one before: find the cause before another attempt, never a third try that
 third time in a row it stops with exit 6, and so it does at `ASK_AFTER_RUNS` reviews of the task.
 Its last line says whose turn it is: `The loop goes on` names the next step, and `--past-limit` runs
 once more, with `--because "<why>"` where the line asks for it; `For the user` is asked once, and
-when they decide to go on, `--past-limit --user-decided` runs once more: it takes no words. A
-failing case of `/qa` is no question until `review.sh` stops for it: the loop fixes it as often as
-it fails (`/maintain`, step 8).
+when they decide to go on, `--past-limit --user-decided` runs once more: it takes no words. Runs
+that ended the same way three times in a row are the loop's the first time, also where the work
+changed each time: find the cause in their output — a fix that does not close the failure, a device
+that went away, a stale build, a service that was down — mend it and give it as the reason; three
+more in a row after that, each after a change of the work, are the user's. A failing case of `/qa`
+is no question until `review.sh` stops for it: the loop fixes it as often as it fails (`/maintain`,
+step 8).
 
 ## 3. Land, then advance
 
