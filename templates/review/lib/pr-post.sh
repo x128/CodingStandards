@@ -291,33 +291,6 @@ why_not() {
   esac
 }
 
-# What a review run came to, in a few words.
-run_result() {
-  local run="$1"
-  if [ ! -f "$run/gates.json" ]; then
-    echo "did not finish"
-  elif jq -e 'any(.[]; .status == "fail" and .blocking != false)' "$run/gates.json" \
-       >/dev/null 2>&1; then
-    echo "gates red"
-  elif [ ! -f "$run/e2e.json" ]; then
-    echo "did not finish"
-  elif ! jq -e '.status == "pass"' "$run/e2e.json" >/dev/null 2>&1; then
-    case "$(jq -r '.status' "$run/e2e.json" 2>/dev/null)" in
-      red) echo "end-to-end tests red" ;;
-      *) echo "no end-to-end harness" ;;
-    esac
-  elif [ ! -f "$run/approved.json" ] || [ ! -f "$run/escalated.json" ]; then
-    if [ -f "$run/findings.json" ] && [ "$(jq '.findings | length' "$run/findings.json")" -eq 0 ]
-    then echo "unusable: no finding located"; else echo "did not finish"; fi
-  else
-    jq -rn --slurpfile approved "$run/approved.json" --slurpfile escalated "$run/escalated.json" '
-      ($approved[0] | length) as $a | ($escalated[0] | length) as $e
-      | if $a + $e == 0 then "clean"
-        else [if $a > 0 then "\($a) accepted" else empty end,
-              if $e > 0 then "\($e) escalated" else empty end] | join(", ") end'
-  fi
-}
-
 # ---------------------------------------------------------------------------
 # statuses
 # ---------------------------------------------------------------------------
