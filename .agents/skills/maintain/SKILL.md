@@ -122,14 +122,15 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    unless `.review/land.conf` says otherwise) — reviews: a run that ended before its review is not
    counted, and as many of those in a row stop the task too — and at any count when it reads a
    circle: a finding accepted at the same place in three reviews in a row, each after a change of
-   the work, or three runs in a row that ended the same way. At the count it prints how many
-   findings each review accepted and whether one came back after its fix. `The loop goes on`:
-   reviews that found different things, each fixed, are no question — run again with `--past-limit`,
-   which runs once more and starts the count again; where the line asks for it, with
-   `--because "<what moves toward the goal>"`, which is kept in the run and shown on the pull
-   request. `For the user, the work does not converge`: ask once, with what the script printed; when
-   they decide to go on, run again with `--past-limit --user-decided`, which takes no words: the run
-   records that they decided, and the pull request shows it. A count alone is never a question.
+   the work, a case that failed in three `/qa`, each on other work, or three runs in a row that
+   ended the same way. At the count it prints how many findings each review accepted and whether one
+   came back after its fix. `The loop goes on`: reviews that found different things, each fixed, are
+   no question — run again with `--past-limit`, which runs once more and starts the count again;
+   where the line asks for it, with `--because "<what moves toward the goal>"`, which is kept in the
+   run and shown on the pull request. `For the user, the work does not converge`: ask once, with
+   what the script printed; when they decide to go on, run again with `--past-limit --user-decided`,
+   which takes no words: the run records that they decided, and the pull request shows it. A count
+   alone is never a question.
 
    At the pull request levels it reviews the pull request's change, from its merge base to HEAD, and
    refuses, exit `1`, what it cannot review there: work not committed — commit it with `land.sh`
@@ -203,7 +204,8 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    and the fix makes it pass; where no end-to-end test can see it, `/qa` says so in the case,
    `— manual: <why>`, and the next `/qa` after the fix proves it; the next `/qa` takes from
    `qa/test-cases.md` only the cases the fix can reach. A case that failed in three `/qa` of the
-   task, each on other work, is the user's: `pr-post.sh qa` says so, with what does not converge.
+   task, each on other work, stops `review.sh` (step 5): the fixes do not close it, and that is the
+   user's, with what does not converge; `pr-post.sh qa` says so right after the third `/qa`.
    What `/qa` saw that no requirement, exit criterion or case describes is no failure: `/qa` records
    it apart, and it is a question for the user — what should be — written into the task that waits
    on it (step 10) and asked once; this task does not wait for the answer unless one of its own
