@@ -168,12 +168,13 @@ the verdict as `counts` names it, and the reason for every verdict but `pass`; `
 does that nothing written describes. At the pull request levels
 `CodingStandards/templates/review/lib/pr-post.sh work` prints `work`, `head` and `merge_base`
 as they are: a `/qa` of the whole pull request records `merge_base` as `since`, and one after a fix
-the `head` of the `qa.json` before it. The report then goes to the pull request:
-`pr-post.sh qa <qa-dir>`, in several comments when it is long. The merge waits while a `/qa` since
-the newest one of the whole pull request left anything unproven or not checked: an unproven item
-goes back to whoever does the work, an item not checked because a tool or device failed is restored
-by the loop (`/maintain`, step 8), and what is still open after that is the user's to accept or not;
-the status lists the counts.
+the `head` of the `qa.json` before it. Then, at every level,
+`CodingStandards/templates/review/lib/pr-post.sh qa <qa-dir>`: it checks the record, prints what
+each thing `/qa` left needs next and whose it is, and at the pull request levels posts the report,
+in several comments when it is long. The merge waits while a `/qa` since the newest one of the whole
+pull request left anything unproven or not checked: an unproven item goes back to whoever does the
+work, an item not checked because a tool or device failed is restored by the loop (`/maintain`, step
+8), and what is still open after that is the user's to accept or not; the status lists the counts.
 
 ### 5. When a defect got past
 
@@ -207,8 +208,8 @@ task — is a defect of this skill as well as of the code.
 - Write recordings, frames and reports under `.review/runs/` when the project has `.review/`, and
   otherwise under a temporary directory; write `qa/test-cases.md`; correct this file, or
   `/maintain`, after a defect got past
-- At `LANDING=pr` and `merge`, read `pr-post.sh work` and post the report with
-  `pr-post.sh qa <qa-dir>`
+- At every level, run `pr-post.sh qa <qa-dir>`; at `LANDING=pr` and `merge`, read `pr-post.sh work`
+  first
 - The working tree's source and tests: read only — QA reports, the work is done elsewhere
 - Git: read-only (`status`, `diff`, `log`, `show`, `ls-tree`, `cat-file`)
 

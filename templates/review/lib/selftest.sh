@@ -957,6 +957,18 @@ record_refuses "an item put off until after the merge that names a case refuses"
     "check": "the run of the build workflow on main, at the merge commit"}]}'
 record_refuses "items with no counts beside them refuse" \
   "2 item(s) say pass and counts.pass is 0" "{\"failures\": [], \"items\": [$two_passes]}"
+record_refuses "a failing item under no case refuses" \
+  "item the build says fail and failures does not list its case: /qa writes the case of every "\
+"failure and lists it in failures" \
+  '{"counts": {"pass": 1, "fail": 1}, "failures": [],
+    "items": [{"id": "TC-001", "verdict": "pass"},
+              {"id": "the build", "verdict": "fail",
+               "reason": "the release build stops at the linker"}]}'
+record_refuses "a failing item of a case the failures do not list refuses" \
+  "item TC-002 on iOS says fail and failures does not list its case" \
+  '{"counts": {"fail": 2}, "failures": [{"case": "TC-001"}],
+    "items": [{"id": "TC-001", "verdict": "fail", "reason": "it shows 41"},
+              {"id": "TC-002 on iOS", "verdict": "fail", "reason": "it opens with an error"}]}'
 record_refuses "a behaviour nothing written describes with no place refuses" \
   "behaviour_without_requirement is not a list of {what, where}" \
   "{\"counts\": {\"pass\": 2}, \"failures\": [], \"items\": [$two_passes],
@@ -971,6 +983,202 @@ qa_record T-020 items "{\"counts\": {\"pass\": 2, \"not_checked\": 1}, \"failure
 e2e_land "what nothing written describes, recorded apart, holds no landing" 0 \
   "For the user to commit" .review/T-020.json "$last_run"
 rm -rf .review/runs/0-qa-T-020-items
+
+# What /qa left, and whose it is. After every /qa, at every level, pr-post.sh qa <qa-dir>
+# checks the record and prints what each thing /qa left needs next, with a last line that
+# says whose turn it is. A failing case says what is to be seen, so it is the loop's to
+# fix, however often /qa was red; the same case failing on three works, each after a fix,
+# is the user's, and so is what nothing written describes: there, right after /qa, the
+# question is said and asked, and a landing names it and does not ask it again. Below the
+# pull request levels it posts nothing and says where the report stays.
+qa_says() {
+  local name="$1" expected_exit="$2" expected_line="$3" qa_dir="$4"
+  "$LIB_DIR/pr-post.sh" qa "$qa_dir" >"$WORK/post.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/post.log"
+}
+qa_record T-021 clean '{"failures": []}'
+qa_says "below the pull request levels pr-post.sh qa posts nothing and says so" 0 \
+  "LANDING=off opens no pull request: the report stays in" .review/runs/0-qa-T-021-clean
+says "a /qa that left nothing says so" "   nothing: every item passed"
+never_says "and gives nobody a turn" "The loop goes on"
+mkdir -p .review/runs/0-qa-T-021-empty
+qa_says "a folder with no record of /qa is no /qa" 1 "has no qa.json" \
+  .review/runs/0-qa-T-021-empty
+rmdir .review/runs/0-qa-T-021-empty
+
+qa_record T-022 first '{"failures": [{"case": "TC-001"}], "work": "w1"}'
+qa_says "a failing case is the loop's to fix: what should be is written" 0 \
+  "   TC-001 failed. What should be is written (qa/test-cases.md:5):" \
+  .review/runs/0-qa-T-022-first
+says "it quotes the case" '      "**TC-001 Answer.** Open the app: it shows 42."'
+says "it names the end-to-end test of the case" "      its end-to-end test: AnswerE2E.shows42"
+says "it says the loop goes on" "   The loop goes on: fix TC-001 — it is no question: see its test fail"
+never_says "it names no user" "For the user"
+never_says "a case that failed once has no fix before it" "it failed in"
+qa_record T-022 second '{"failures": [{"case": "TC-001"}], "work": "w2"}'
+qa_says "a second failing /qa of the same case is still the loop's" 0 \
+  "   The loop goes on: fix TC-001 — it is no question" .review/runs/0-qa-T-022-second
+says "it says in which /qa the case failed" \
+  "      it failed in 2 /qa of this task, each on other work: 0-qa-T-022-first, 0-qa-T-022-second"
+says "and sends the loop to why the fix before did not hold" \
+  "; it failed after a fix before: find why that fix did not hold first"
+never_says "a second failing /qa names no user" "For the user"
+
+qa_record T-023 first '{"failures": [{"case": "TC-001"}], "work": "w1"}'
+qa_record T-023 second '{"failures": [{"case": "TC-002"}], "work": "w2"}'
+qa_record T-023 third '{"failures": [{"case": "TC-001"}], "work": "w3"}'
+qa_says "a third failing /qa of other cases is still the loop's" 0 \
+  "   The loop goes on: fix TC-001 — it is no question" .review/runs/0-qa-T-023-third
+says "its case failed in two of them" "      it failed in 2 /qa of this task"
+never_says "a third failing /qa of other cases names no user" "For the user"
+
+for work in w1 w2 w3; do
+  qa_record T-024 "$work" "{\"failures\": [{\"case\": \"TC-002\"}], \"work\": \"$work\"}"
+done
+qa_says "the same case failing in three /qa, each on other work, is the user's" 0 \
+  "   For the user, the work does not converge: TC-002 failed again after each of 2 fixes" \
+  .review/runs/0-qa-T-024-w3
+says "it says what the user decides" \
+  "whether to go on trying, to stop the task here, or to change what the case expects"
+says "it lists the three /qa" \
+  "it failed in 3 /qa of this task, each on other work: 0-qa-T-024-w1, 0-qa-T-024-w2, 0-qa-T-024-w3"
+never_says "nothing sends the loop on with that case" "The loop goes on"
+for name in first second third; do
+  qa_record T-025 "$name" '{"failures": [{"case": "TC-002"}], "work": "w1"}'
+done
+qa_says "on unchanged work the same case is no circle" 0 \
+  "   The loop goes on: fix TC-002 — it is no question" .review/runs/0-qa-T-025-third
+never_says "on unchanged work nothing is the user's" "For the user"
+never_says "and no fix is counted" "it failed in"
+
+# A record that does not say which work /qa checked is not known to be of other work: no fix
+# is counted from it, and no circle is read from it. Beside such records the works that are
+# known count as they are.
+for name in first second third; do
+  qa_record T-040 "$name" '{"failures": [{"case": "TC-002"}]}'
+done
+qa_says "three /qa that do not say which work they checked are no circle" 0 \
+  "   The loop goes on: fix TC-002 — it is no question" .review/runs/0-qa-T-040-third
+never_says "nothing of them is the user's" "For the user"
+never_says "and no fix is counted between them" "it failed in"
+qa_record T-040 fourth '{"failures": [{"case": "TC-002"}], "work": "w1"}'
+qa_record T-040 fifth '{"failures": [{"case": "TC-002"}], "work": "w2"}'
+qa_says "beside them two works that are known count as two" 0 \
+  "      it failed in 2 /qa of this task, each on other work: 0-qa-T-040-fourth, 0-qa-T-040-fifth" \
+  .review/runs/0-qa-T-040-fifth
+never_says "and two are no circle" "For the user"
+qa_record T-040 sixth '{"failures": [{"case": "TC-002"}], "work": "w3"}'
+qa_says "a third work that is known is the circle" 0 \
+  "   For the user, the work does not converge: TC-002 failed again after each of 2 fixes" \
+  .review/runs/0-qa-T-040-sixth
+double_tap='"behaviour_without_requirement": [{"what": "a double tap on a shelf opens it twice",
+  "where": "Shelves"}]'
+qa_record T-026 asks "{\"failures\": [], $double_tap}"
+qa_says "what nothing written describes is the user's" 0 \
+  "   For the user, what should be: a double tap on a shelf opens it twice (Shelves) — /qa saw it" \
+  .review/runs/0-qa-T-026-asks
+says "the question is asked once, and holds nothing" \
+  "ask it once, in their words; the task does not wait for the answer"
+says "the task waits for the answer only where one of its own criteria does" \
+  "the task does not wait for the answer unless one of its own criteria does"
+never_says "a question is not a thing that passed" "nothing: every item passed"
+
+qa_record T-027 items "{\"counts\": {\"pass\": 3}, \"failures\": [], \"items\": [$two_passes]}"
+qa_says "a record that does not hold says what" 1 \
+  "qa.json does not hold: 2 item(s) say pass and counts.pass is 3" .review/runs/0-qa-T-027-items
+never_says "and nothing is said of what it left" "what /qa left"
+rm -rf .review/runs/0-qa-T-027-items
+
+printf -- '- **TC-003 Launch.** Start the app: the launch screen shows its name. — manual\n' \
+  >>qa/test-cases.md
+qa_record T-028 launch '{"failures": [{"case": "TC-003"}]}'
+qa_says "a case with no test is told to get one" 0 \
+  "      no end-to-end test is marked for it" .review/runs/0-qa-T-028-launch
+says "its words are quoted without the mark" \
+  '      "**TC-003 Launch.** Start the app: the launch screen shows its name."'
+says "the loop writes the test and marks the case" \
+  "   The loop goes on: fix TC-003 — it is no question: write its end-to-end test and mark the case (e2e: \`<test>\`)"
+cp "$WORK/test-cases.md" qa/test-cases.md
+qa_says "a failure whose case is not written goes back to /qa first" 0 \
+  "   TC-003 failed, and qa/test-cases.md has no TC-003" .review/runs/0-qa-T-028-launch
+says "the loop has /qa write the case, then fixes" \
+  "   The loop goes on: have /qa write the case of TC-003, then fix it"
+
+qa_record T-029 open '{"counts": {"pass": 1, "unproven": 1, "not_checked": 2}, "failures": [],
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "TC-002", "verdict": "unproven", "reason": "the frames do not show the start"},
+            {"id": "TC-001 on iOS", "verdict": "not_checked", "reason": "the simulator did not boot"},
+            {"id": "TC-002 on iOS", "verdict": "not_checked", "reason": "the simulator did not boot"}]}'
+qa_says "what /qa left unproven is listed with its reason" 0 \
+  "   1 unproven: TC-002 (the frames do not show the start)" .review/runs/0-qa-T-029-open
+says "an unproven item is the loop's" \
+  "   The loop goes on: an unproven item goes back to the work, which makes it provable"
+says "what /qa could not check is listed with its reason" \
+  "   2 not checked: TC-001 on iOS (the simulator did not boot); TC-002 on iOS (the simulator did not boot)"
+says "an item not checked is the loop's" \
+  "   The loop goes on: restore what failed — a tool, a device — and run /qa again"
+never_says "neither is the user's" "For the user"
+qa_record T-029 counts '{"counts": {"pass": 1, "unproven": 2, "not_checked": 0}, "failures": []}'
+qa_says "a record with counts alone says how many" 0 "   2 unproven" \
+  .review/runs/0-qa-T-029-counts
+never_says "and lists no count that is zero" "not checked"
+qa_record T-029 build '{"counts": {"pass": 1, "fail": 1}, "failures": [],
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "the build", "verdict": "fail", "reason": "the release build stops at the linker"}]}'
+qa_says "a failing item under no case does not hold, and pr-post.sh qa says what" 1 \
+  "qa.json does not hold: item the build says fail and failures does not list its case" \
+  .review/runs/0-qa-T-029-build
+rm -rf .review/runs/0-qa-T-029-build
+qa_record T-029 platform '{"counts": {"pass": 1, "fail": 1}, "failures": [{"case": "TC-001"}],
+  "items": [{"id": "TC-001 on Android", "verdict": "pass"},
+            {"id": "TC-001 on iOS", "verdict": "fail", "reason": "it shows 41"}]}'
+qa_says "a failing item of a case the failures list holds" 0 \
+  "   TC-001 failed. What should be is written" .review/runs/0-qa-T-029-platform
+qa_record T-029 count '{"counts": {"pass": 1, "fail": 2}, "failures": []}'
+qa_says "failures counted with no case at all are said too" 0 \
+  "   2 failed with no case among the failures" .review/runs/0-qa-T-029-count
+says "the loop has /qa write its case" \
+  "   The loop goes on: have /qa write the case of each, then fix it"
+never_says "a failure is not a thing that passed" "nothing: every item passed"
+qa_record T-029 platforms '{"counts": {"pass": 1, "fail": 2}, "failures": [{"case": "TC-001"}]}'
+qa_says "a case that failed on two platforms is one failure with its case" 0 \
+  "   TC-001 failed. What should be is written" .review/runs/0-qa-T-029-platforms
+never_says "and no failure is said to have no case" "with no case among the failures"
+qa_record T-029 later '{"counts": {"pass": 1, "after_merge": 1}, "failures": [],
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "the build of main", "verdict": "after_merge",
+             "reason": "the workflow runs only on a push to the base branch",
+             "check": "the run of the build workflow on main, at the merge commit"}]}'
+qa_says "an item put off until after the merge is listed with its reason" 0 \
+  "   1 put off until after the merge: the build of main (the workflow runs only on a push to the base branch)" \
+  .review/runs/0-qa-T-029-later
+never_says "an item put off is not a thing that passed" "nothing: every item passed"
+
+new_task T-030
+qa_record T-030 asks "{\"failures\": [], $double_tap}"
+qa_record T-030 again "{\"failures\": [], $double_tap}"
+e2e_review "a run of a task whose /qa saw what nothing written describes goes on" 0 \
+  "CLEAN — gates green" .review/T-030.json
+e2e_land "a landing ends with what nothing written describes" 0 \
+  "   For the user, what should be: a double tap on a shelf opens it twice (Shelves)" \
+  .review/T-030.json "$last_run"
+if [ "$(grep -cF "For the user, what should be" "$WORK/land.log")" -eq 1 ] \
+   && tail -1 "$WORK/land.log" | grep -qF "For the user, what should be"; then
+  echo "ok    it is the last line, once for what two /qa saw"
+else
+  echo "FAIL  the question is not the last line of the landing, once — log follows"
+  sed 's/^/      /' "$WORK/land.log"
+  FAILURES=$((FAILURES + 1))
+fi
+not_asked_again="— /qa saw it, and pr-post.sh qa, right after that /qa, is where it is asked, "\
+"once: it is not asked again here"
+says "the landing names the question, and says that it is not asked again there" \
+  "(Shelves) $not_asked_again" "$WORK/land.log"
+never_says "nothing at a landing tells the loop to ask it" "ask it" "$WORK/land.log"
+rm -rf .review/runs/0-qa-T-030-asks .review/runs/0-qa-T-030-again
+e2e_land "the landing of a task with no such question ends as before" 0 \
+  "For the user to commit" .review/T-030.json "$last_run"
+never_says "and asks nothing" "For the user, what" "$WORK/land.log"
 
 # Last in this repository, since it commits: the harness as a link to a file in
 # the reviewed tree.
@@ -1389,22 +1597,29 @@ pr_review() {
 }
 
 # /qa on the pull request: its record, of the work as it is and since the merge base of
-# the newest run, and its report, posted with pr-post.sh qa.
+# the newest run, and its report, posted with pr-post.sh qa. qa_recorded [<failures>]
+# [<since>] [<unproven>] [<more>] writes the two into $qa_folder, <more> being a JSON
+# object merged into the record; qa_checked posts the report too.
 qa_runs=0
-qa_checked() {
-  local folder
+qa_recorded() {
+  local more="${4:-}"
+  [ -n "$more" ] || more='{}'
   qa_runs=$((qa_runs + 1))
-  folder=".review/runs/qa-$qa_runs"
-  mkdir -p "$folder"
+  qa_folder=".review/runs/qa-$qa_runs"
+  mkdir -p "$qa_folder"
   jq -n --arg task "$(jq -r .id .review/task.json)" --arg head "$(git rev-parse HEAD)" \
     --arg work "$(. "$LIB_DIR/common.sh" && tree_fingerprint)" \
     --arg since "${2:-$(jq -r '.merge_base' "$run/meta.json")}" --argjson failures "${1:-[]}" \
+    --argjson more "$more" \
     '{task: $task, time: now, head: $head, work: $work, since: $since, extent: "full",
       reason: "the first /qa of the pull request",
       counts: {pass: 3, fail: ($failures | length), unproven: '"${3:-0}"', not_checked: 0},
-      failures: $failures}' >"$folder/qa.json"
-  printf '# /qa\n\nEvery case it can reach passed.\n' >"$folder/report.md"
-  step "/qa posts its report" "$WORK/qa.log" "$LIB_DIR/pr-post.sh" qa "$folder"
+      failures: $failures} + $more' >"$qa_folder/qa.json"
+  printf '# /qa\n\nEvery case it can reach passed.\n' >"$qa_folder/report.md"
+}
+qa_checked() {
+  qa_recorded "$@"
+  step "/qa posts its report" "$WORK/qa.log" "$LIB_DIR/pr-post.sh" qa "$qa_folder"
 }
 
 # A step a case needs on its way, which must succeed; a failure is printed and counted.
@@ -2313,6 +2528,8 @@ publish "at merge too a /qa failure is the loop's to fix" 3 "   The loop goes on
 holds "there it is item M5 of the merge" grep -qF \
   "M5: a /qa failure without an end-to-end test seen red, then green: TC-001" "$WORK/publish.log"
 holds "and its refusal names no user" not grep -qF "the user" "$WORK/publish.log"
+holds "there too pr-post.sh qa said first that the failing case is the loop's" grep -qF \
+  "   The loop goes on: have /qa write the case of TC-001, then fix it" "$WORK/qa.log"
 holds "the status of /qa gives the reason, and not whose turn it is" \
   jq_true --arg sha "$(git rev-parse HEAD)" '
     [.[] | select(.sha == $sha and .context == "loop/qa")] | last
@@ -2336,6 +2553,56 @@ jq '. + {items: [{id: "TC-001", verdict: "pass"}, {id: "TC-002", verdict: "pass"
                  {id: "the build", verdict: "pass"}]}' \
   "$WORK/qa.json" >".review/runs/qa-$qa_runs/qa.json"
 publish "with the items its counts give, it merges" 0 "merged T-001" --merge
+
+# What /qa left, at the pull request levels: pr-post.sh qa says it first, then posts the
+# report. What nothing written describes is asked there, once, and holds no merge: --check
+# and the merge end with a line that names it and says that it is not asked again there,
+# and the description of the pull request carries it.
+ends_with() { tail -1 "$1" | grep -qF -- "$2"; }
+what_should_be="For the user, what should be: a double tap on a shelf opens it twice (Shelves)"
+double_tap_seen='{"behaviour_without_requirement":
+  [{"what": "a double tap on a shelf opens it twice", "where": "Shelves"}]}'
+published_project origin
+reviewed_pull_request merge
+qa_recorded '[]' "" 0 "$double_tap_seen"
+pr_post "at the pull request levels pr-post.sh qa says what /qa left too" 0 \
+  "   $what_should_be — /qa saw it" qa "$qa_folder"
+says "right after /qa is where the question is asked" \
+  "no requirement, exit criterion or case says what should happen: ask it once, in their words"
+holds "it says so before it asks gh for anything" \
+  [ "$(grep -n -m1 -F "$what_should_be" "$WORK/post.log" | cut -d: -f1)" -lt \
+    "$(grep -n -m1 -F "report of $(basename "$qa_folder") posted" "$WORK/post.log" | cut -d: -f1)" ]
+holds "then it posts the report" posted "<!-- loop:qa $(basename "$qa_folder") -->"
+holds "the description of the pull request carries the question" \
+  jq_true --arg line "- $what_should_be" '.[0].body | contains($line)' "$GH_STATE/prs.json"
+publish "what nothing written describes leaves the pull request ready to merge" 0 \
+  "ready to merge" --check
+holds "--check ends with the question" ends_with "$WORK/publish.log" "   $what_should_be"
+says "--check names it, and says that it is not asked again there" \
+  "$what_should_be $not_asked_again" "$WORK/publish.log"
+never_says "nothing at --check tells the loop to ask it" "ask it" "$WORK/publish.log"
+publish "what nothing written describes does not hold the merge" 0 "merged T-001" --merge
+holds "the merge ends with it" ends_with "$WORK/publish.log" "   $what_should_be"
+holds "and says it once" [ "$(grep -cF "$what_should_be" "$WORK/publish.log")" -eq 1 ]
+says "the merge names it, and says that it is not asked again there" \
+  "$what_should_be $not_asked_again" "$WORK/publish.log"
+never_says "nothing at the merge tells the loop to ask it" "ask it" "$WORK/publish.log"
+cp "$qa_folder/qa.json" "$WORK/qa.json"
+jq '. + {items: [{id: "TC-001", verdict: "pass"}]}' "$WORK/qa.json" >"$qa_folder/qa.json"
+pr_post "at the pull request levels a record that does not hold is posted nowhere" 1 \
+  "qa.json does not hold: 1 item(s) say pass and counts.pass is 3" qa "$qa_folder"
+
+# A landing that commits says it after the line of its commit.
+published_project origin
+git checkout -q -b feature || fail_setup "feature branch of a landing that commits"
+jq -n --argjson seen "$double_tap_seen" '{task: "T-001", failures: []} + $seen' \
+  >.review/runs/0-qa-T-001/qa.json
+land_change "a landing that commits says what nothing written describes" 0 \
+  "   $what_should_be" on
+holds "after the line of the commit" ends_with "$WORK/land.log" "   $what_should_be"
+says "a landing that commits names it too, and says that it is not asked again there" \
+  "$what_should_be $not_asked_again" "$WORK/land.log"
+never_says "and nothing there tells the loop to ask it" "ask it" "$WORK/land.log"
 
 # ---- what people wrote, and a read that failed -------------------------------
 

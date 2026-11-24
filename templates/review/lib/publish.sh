@@ -171,6 +171,7 @@ finish_on_base() {
     if git worktree list --porcelain | grep -xF "branch refs/heads/$BASE" >/dev/null; then
       echo "merged $TASK_ID: $PR_URL into $BASE, which is checked out in another worktree, "\
 "so this one stays on $BRANCH"
+      qa_asks "$TASK_ID"
       exit 0
     fi
     git switch "$BASE" || \
@@ -186,6 +187,7 @@ finish_on_base() {
     git branch -q -d "$BRANCH" || echo "$BRANCH stays here: git would not delete it"
   fi
   echo "merged $TASK_ID: $PR_URL into $BASE"
+  qa_asks "$TASK_ID"
 }
 
 if landing_opens_pull_request "$LANDING"; then
@@ -463,6 +465,7 @@ NOT_GREEN="$(jq -nr --argjson wanted "$LOOP_WANTED" --argjson seen "$LOOP_CHECKS
 
 if [ "$MODE" = check ]; then
   echo "ready to merge: $PR_URL — with squash; its description ends with the trailers"
+  qa_asks "$TASK_ID"
   exit 0
 fi
 

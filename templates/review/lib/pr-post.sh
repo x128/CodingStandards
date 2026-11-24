@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# pr-post.sh — the loop's posts on the pull request of a task, at LANDING=pr and merge.
+# pr-post.sh — the loop's posts on the pull request of a task, at LANDING=pr and merge;
+# its command qa says at every level what a /qa left, and whose turn it is.
 #
 # Runs FROM THE SUBMODULE and is deliberately NOT overridable, for the reason
 # publish.sh is not. It is the only script that writes to the pull request apart from
@@ -40,8 +41,14 @@
 #   work                 reads only: {work, head, merge_base} — the fingerprint of the
 #                        work now, HEAD and the merge base, for /qa to record in qa.json:
 #                        a /qa of the whole pull request records the merge base as since
-#   qa <qa-dir>          <qa-dir>/report.md as a comment, once; then the statuses and
-#                        the description
+#   qa <qa-dir>          at every level, before anything is asked of the remote: checks
+#                        <qa-dir>/qa.json (common.sh, qa_record_fault) and prints what the
+#                        /qa left and whose turn each thing is (qa_left) — a failing case
+#                        with its words, its test and the loop's next step, what is
+#                        unproven or not checked, and what the app does that nothing
+#                        written describes, the one question for the user. Below the pull
+#                        request levels that is all. At pr and merge: <qa-dir>/report.md
+#                        as a comment, once; then the statuses and the description
 #   statuses             at HEAD: loop/<gate>, loop/e2e-<platform>, loop/review and
 #                        loop/qa, from the newest review run and /qa of the task if they
 #                        checked the work as it is now — by the same checks as the merge
@@ -57,9 +64,11 @@
 # the run, or the newest review run of the task, was made with.
 #
 # Exit codes:
-#   0  posted, or nothing was left to post
+#   0  posted, or nothing was left to post; qa below the pull request levels, once it
+#      has said what /qa left
 #   3  refused, with the reason on stderr
-#   1  usage or environment error, or gh failed
+#   1  usage or environment error, or gh failed; qa: a qa.json that is missing or does
+#      not hold
 #
 # Requires: jq >= 1.6, git, gh
 
@@ -143,6 +152,19 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 # The config is read as data, never sourced, as in land.sh.
 LANDING="$(landing_level "$CONFIG")" || refuse "$LANDING"
+
+# What /qa left is said at every level, and first: it needs neither the remote nor gh.
+if [ "$COMMAND" = qa ]; then
+  [ -f "$ARGUMENT/qa.json" ] || fail "$ARGUMENT has no qa.json — /qa writes it (section 4)"
+  FAULT="$(qa_record_fault "$ARGUMENT/qa.json")"
+  [ -z "$FAULT" ] || fail "$ARGUMENT/qa.json does not hold: $FAULT"
+  qa_left "$(jq -r '.task' "$ARGUMENT/qa.json")" "$ARGUMENT" || \
+    fail "the records of /qa could not be read"
+  if ! landing_opens_pull_request "$LANDING"; then
+    echo "LANDING=$LANDING opens no pull request: the report stays in $ARGUMENT/report.md"
+    exit 0
+  fi
+fi
 landing_opens_pull_request "$LANDING" || \
   refuse "LANDING=$LANDING in $CONFIG opens no pull request — only pr and merge do"
 REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
@@ -398,7 +420,7 @@ post_statuses() {
 # ---------------------------------------------------------------------------
 
 write_body() {
-  local runs qa_records
+  local runs qa_records qa_asks
   runs="$( { if [ -n "$PR_URL" ]; then review_runs_on "$TASK_ID" "$PR_URL"
              else review_runs_of "$TASK_ID"; fi; } | while IFS= read -r run; do
       jq -c --arg run "$(basename "$run")" --arg result "$(run_result "$run")" \
@@ -414,8 +436,10 @@ write_body() {
   qa_records="$(qa_records_of "$TASK_ID")" || \
     fail "a qa.json of $TASK_ID is unreadable or not {task, failures: [{case: TC-nnn}]}, or its "\
 "items do not hold; the line before this one says what"
+  qa_asks="$(qa_questions "$TASK_ID")" || return 1
   squash_trailers "$TASK_FILE" "$PR_URL" >"$SCRATCH/trailers" || return 1
   jq -nr --slurpfile task "$TASK_FILE" --argjson runs "$runs" --argjson qa "$qa_records" \
+         --argjson asks "$qa_asks" --arg asked "$(turn_words user:what-should-be)" \
          --rawfile trailers "$SCRATCH/trailers" '
     def short: if . == "" then "—" else "`\(.[0:7])`" end;
     $task[0] as $task
@@ -443,6 +467,8 @@ write_body() {
             "|---|---|---|---|",
             ($qa[] | "| \(.run | split("/") | last) | \((.head // "") | short) "
                      + "| \(.extent // "—") | \(.failures | length) |") end),
+      (if $asks == [] then empty
+       else "", ($asks[] | "- \($asked): \(.what) (\(.where))" | gsub("\\s+"; " ")) end),
       "",
       ($trailers | rtrimstr("\n"))'
 }
