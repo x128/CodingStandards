@@ -17,7 +17,9 @@
 #
 # Commands:
 #   run <run-dir>        one review of the run at the commit it reviewed, then the
-#                        statuses: in its body the summary — the run of ASK_AFTER_RUNS,
+#                        statuses: in its body the summary — which review of
+#                        ASK_AFTER_RUNS it made, or that it made none, or what passed the
+#                        stop of a run with --past-limit,
 #                        the models, each gate with its result, seconds, summary line and
 #                        the end of its output, the end-to-end tests of each platform, the
 #                        findings by what became of them, those dropped with why, the
@@ -517,14 +519,28 @@ review_summary() {
     "$JQ_FINDING"'
     def findings_of: if type == "object" and (.findings | type) == "array"
                      then [.findings[] | objects] else [] end;
+    # Which review of the count the run made, or what passed its stop. A run made before
+    # review.sh recorded how a run ends counted every run, and says so.
+    def counted($ask):
+      (if .stop == "reviews" or .stop == "runs" then "The limit" else "The stop" end) as $stop
+      | if has("end") | not then
+          (if .past_limit == true then "A run past the limit (--past-limit)."
+           elif .count != null then "Run \(.count) of \($ask) (ASK_AFTER_RUNS)."
+           else "" end)
+        elif .past_limit == true and .user_decided == true
+          then "\($stop) was passed on the user'"'"'s decision."
+        elif .past_limit == true and .because != null
+          then "\($stop) was passed on the loop'"'"'s judgement: \(.because | sub("\\.$"; ""))."
+        elif .past_limit == true
+          then "\($stop) was passed: no finding came back after its fix."
+        elif (.count | type) == "number" then "Review \(.count) of \($ask) (ASK_AFTER_RUNS)."
+        else "No review was made in this run." end;
     ($raw | findings_of) as $raw_findings | ($findings | findings_of) as $kept_findings
     | ($raw | .findings = $raw_findings) as $raw | ($findings | .findings = $kept_findings) as $findings
     | "<!-- loop:review \($run) -->",
     "**The loop'"'"'s review**, run `\($run)` of \($meta.task // "no task") at "
       + "`\(($meta.head // "")[0:7])`: \($result). "
-      + (if $meta.past_limit == true then "A run past the limit (--past-limit)."
-         elif $meta.count != null then "Run \($meta.count) of \($ask) (ASK_AFTER_RUNS)."
-         else "" end),
+      + ($meta | counted($ask)),
     "",
     "Models: \($meta.models // "not recorded").",
     "",
