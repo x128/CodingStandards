@@ -871,6 +871,107 @@ e2e_land "a file with a non-ASCII name inside the scope lands" 0 "src/Отчёт
   .review/T-012.json "$last_run"
 rm "src/Отчёт.kt"
 
+# The record of /qa. Beside its counts it lists each item with its verdict, and apart
+# from them what the app does that nothing written describes. A record whose items do
+# not hold refuses like one that cannot be read, and the line before the refusal says
+# what does not hold. qa_record <task> <name> <json> writes one more record of the task.
+qa_record() {
+  mkdir -p ".review/runs/0-qa-$1-$2"
+  jq -n --arg task "$1" --argjson record "$3" '$record + {task: $task, time: now}' \
+    >".review/runs/0-qa-$1-$2/qa.json"
+}
+record_refuses() {
+  local name="$1" fault="$2" record="$3"
+  qa_record T-020 items "$record"
+  e2e_land "$name" 3 "its items do not hold" .review/T-020.json "$last_run"
+  if grep -qF -- ".review/runs/0-qa-T-020-items/qa.json: $fault" "$WORK/land.log"; then
+    echo "ok    and says what: $fault"
+  else
+    echo "FAIL  the refusal does not say «$fault» — log follows"
+    sed 's/^/      /' "$WORK/land.log"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+# says <name> <line> [<log>] and never_says <name> <line> [<log>]: what the log of the
+# case before holds, and what it must not hold.
+says() {
+  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: no «$2» — log follows"
+    sed 's/^/      /' "${3:-$WORK/post.log}"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+never_says() {
+  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
+    echo "FAIL  $1: «$2» is there — log follows"
+    sed 's/^/      /' "${3:-$WORK/post.log}"
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok    $1"
+  fi
+}
+new_task T-020
+e2e_review "a run of a task whose /qa lists its items goes on" 0 "CLEAN — gates green" \
+  .review/T-020.json
+two_passes='{"id": "TC-001", "verdict": "pass"}, {"id": "the build", "verdict": "pass"}'
+record_refuses "items that do not match the counts refuse" \
+  "2 item(s) say pass and counts.pass is 3" \
+  "{\"counts\": {\"pass\": 3}, \"failures\": [], \"items\": [$two_passes]}"
+record_refuses "an item with a verdict and no reason refuses" \
+  "item TC-001 says unproven and gives no reason" \
+  '{"counts": {"unproven": 1}, "failures": [],
+    "items": [{"id": "TC-001", "verdict": "unproven"}]}'
+record_refuses "a behaviour nothing written describes that names a case refuses" \
+  "a behaviour nothing written describes names a case (TC-001 shows 41): a case is written" \
+  "{\"counts\": {\"pass\": 2}, \"failures\": [], \"items\": [$two_passes],
+    \"behaviour_without_requirement\": [{\"what\": \"TC-001 shows 41\", \"where\": \"Answer\"}]}"
+record_refuses "a behaviour nothing written describes whose place names a case refuses" \
+  "a behaviour nothing written describes names a case (TC-001, the answer): a case is written" \
+  "{\"counts\": {\"pass\": 2}, \"failures\": [], \"items\": [$two_passes],
+    \"behaviour_without_requirement\": [{\"what\": \"the answer is dark on a dark ground\",
+      \"where\": \"TC-001, the answer\"}]}"
+says "the record is told the two ways to hold" \
+  "so what fails in it is a failure: list the case in failures, or leave its id out of what and where" \
+  "$WORK/land.log"
+record_refuses "counts that are no numbers refuse" \
+  '1 item(s) say pass and counts.pass is "1", which is no number' \
+  '{"counts": {"pass": "1"}, "failures": [], "items": [{"id": "TC-001", "verdict": "pass"}]}'
+record_refuses "a verdict that is none of the five refuses" \
+  "items is not a list of {id, verdict}, each verdict one of pass, fail, unproven, not_checked, "\
+"after_merge" \
+  '{"counts": {"pass": 1}, "failures": [], "items": [{"id": "TC-001", "verdict": "fine"}]}'
+record_refuses "items that are no list refuse" "items is not a list of {id, verdict}" \
+  '{"counts": {"pass": 1}, "failures": [], "items": {"TC-001": "pass"}}'
+record_refuses "an item put off until after the merge with no check to make refuses" \
+  "item the build of main is put off until after the merge and does not say how it is checked "\
+"then (check)" \
+  '{"counts": {"after_merge": 1}, "failures": [], "items": [{"id": "the build of main",
+    "verdict": "after_merge", "reason": "the workflow runs only on a push to the base branch"}]}'
+record_refuses "an item put off until after the merge that names a case refuses" \
+  "item TC-001 on the base branch is put off until after the merge and names a case: a case is "\
+"what is seen in the app, and is checked on the pull request" \
+  '{"counts": {"after_merge": 1}, "failures": [], "items": [{"id": "TC-001 on the base branch",
+    "verdict": "after_merge", "reason": "the workflow runs only on a push to the base branch",
+    "check": "the run of the build workflow on main, at the merge commit"}]}'
+record_refuses "items with no counts beside them refuse" \
+  "2 item(s) say pass and counts.pass is 0" "{\"failures\": [], \"items\": [$two_passes]}"
+record_refuses "a behaviour nothing written describes with no place refuses" \
+  "behaviour_without_requirement is not a list of {what, where}" \
+  "{\"counts\": {\"pass\": 2}, \"failures\": [], \"items\": [$two_passes],
+    \"behaviour_without_requirement\": [{\"what\": \"a double tap opens a shelf twice\"}]}"
+qa_record T-020 items "{\"counts\": {\"pass\": 2}, \"failures\": [], \"items\": [$two_passes]}"
+e2e_land "a record that holds lands" 0 "For the user to commit" .review/T-020.json "$last_run"
+qa_record T-020 items "{\"counts\": {\"pass\": 2, \"not_checked\": 1}, \"failures\": [],
+  \"items\": [$two_passes, {\"id\": \"TC-001 on iOS\", \"verdict\": \"not_checked\",
+    \"reason\": \"the simulator did not boot\"}],
+  \"behaviour_without_requirement\": [{\"what\": \"a double tap on a shelf opens it twice\",
+    \"where\": \"Shelves\"}]}"
+e2e_land "what nothing written describes, recorded apart, holds no landing" 0 \
+  "For the user to commit" .review/T-020.json "$last_run"
+rm -rf .review/runs/0-qa-T-020-items
+
 # Last in this repository, since it commits: the harness as a link to a file in
 # the reviewed tree.
 new_task T-013
@@ -2218,6 +2319,23 @@ holds "the status of /qa gives the reason, and not whose turn it is" \
     | .state == "failure" and .description
         == "a /qa failure without an end-to-end test seen red, then green: TC-001"' \
   "$GH_STATE/statuses.json"
+
+# The record of /qa at the pull request levels: one whose items do not hold stops the
+# merge where the description is written, which reads every record of the task.
+published_project origin
+reviewed_pull_request merge
+cp ".review/runs/qa-$qa_runs/qa.json" "$WORK/qa.json"
+jq '. + {items: [{id: "TC-001", verdict: "pass"}, {id: "the build", verdict: "pass"}]}' \
+  "$WORK/qa.json" >".review/runs/qa-$qa_runs/qa.json"
+publish "at merge a /qa record whose items do not match its counts stops the merge" 1 \
+  "its items do not hold" --merge
+holds "and it says which record, and what" grep -qF \
+  ".review/runs/qa-$qa_runs/qa.json: 2 item(s) say pass and counts.pass is 3" "$WORK/publish.log"
+holds "nothing is merged on such a record" not gh_called "pr merge"
+jq '. + {items: [{id: "TC-001", verdict: "pass"}, {id: "TC-002", verdict: "pass"},
+                 {id: "the build", verdict: "pass"}]}' \
+  "$WORK/qa.json" >".review/runs/qa-$qa_runs/qa.json"
+publish "with the items its counts give, it merges" 0 "merged T-001" --merge
 
 # ---- what people wrote, and a read that failed -------------------------------
 

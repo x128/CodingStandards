@@ -82,7 +82,11 @@ and the report says so.
 Each check is run by its own agent, on the model of the role `QA` in `.claude/agents.conf`. It
 gets the list and the standards, never the reasoning of whoever made the change, and returns a
 verdict per item — pass, fail, unproven or not checked — with its evidence: a test report, a log,
-a frame, a measurement, each by path. A pass with no evidence is not a pass.
+a frame, a measurement, each by path. A pass with no evidence is not a pass. What the app does that
+no requirement, exit criterion or case describes is none of these: nothing says what should be, and
+`/qa` does not decide it. The check reports it apart, with what the user does and sees and where —
+unless it is a crash, a hang or lost data, which fail whatever is written — and `/qa` writes no case
+for it until the user has said what should be.
 
 | Check | Fails when |
 |---|---|
@@ -90,7 +94,7 @@ a frame, a measurement, each by path. A pass with no evidence is not a pass.
 | **Tests** — every test command of the project on every platform; each test the change adds is seen failing once with its code broken (TESTING.md, "Coverage Requirements"), in a copy of the tree | a test fails; a behaviour of the change has no test (TESTING.md); a test passes with its code broken |
 | **Criteria** — each exit criterion, shown by a named test or by a check repeated with its artefact | a criterion is not met, or is claimed without evidence; one that cannot be checked is reported as not checked, never as met |
 | **Motion** — the app run on each platform; every transition on the list recorded and read frame by frame (below) | any frame the user would see as a flash, a jump or a wrong state |
-| **States** — each state on the list driven on the device and captured | the app shows what the requirements do not describe for that state, hangs, or loses data |
+| **States** — each state on the list driven on the device and captured | the app does what the requirements, an exit criterion or a case say it must not for that state, hangs, or loses data; what none of them describes is reported apart, as a question |
 | **Numbers** — each number of the list measured with the platform's tools, the same way on both versions | the measurement misses the number |
 | **Neighbours** — the neighbours, with the same checks, on both versions | anything that worked in the version to compare with does not |
 | **Parity** — the same behaviour on each platform | the platforms differ where the requirements do not say they differ |
@@ -149,15 +153,20 @@ or unproven when the evidence settles nothing.
 As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
 user sees, how to reproduce it and the evidence by path, and with each the case of
 `qa/test-cases.md` that reproduces it; then what is unproven and why — it does not count as passed;
-then what passed, with its evidence; then what was not checked and why. Never "everything works":
+then what passed, with its evidence; then what was not checked and why; then what the app does that
+nothing written describes — a question for the user, not a failure. Never "everything works":
 the report says what was checked.
 
 Each run, one where nothing failed too, is kept in a folder of its own, `.review/runs/qa-<time>/`:
 the report as `report.md`, and its record as `qa.json` — `task`; `time`, in seconds since 1970;
 `head`; `work`, the fingerprint of the work checked; `since`, the commit the change was checked
 from; `extent`, `reachable` or `full`, with its `reason`; `counts` of `pass`, `fail`, `unproven` and
-`not_checked`, the items of the list; and `failures`, `[{"case": "TC-nnn"}]`. At the pull request
-levels `CodingStandards/templates/review/lib/pr-post.sh work` prints `work`, `head` and `merge_base`
+`not_checked`, the items of the list; `items`, one `{"id", "verdict", "reason"}` for each — the id
+of its case or the name of the item, an item of a case on one platform starting with the case id;
+the verdict as `counts` names it, and the reason for every verdict but `pass`; `failures`,
+`[{"case": "TC-nnn"}]`; and `behaviour_without_requirement`, `[{"what", "where"}]`, what the app
+does that nothing written describes. At the pull request levels
+`CodingStandards/templates/review/lib/pr-post.sh work` prints `work`, `head` and `merge_base`
 as they are: a `/qa` of the whole pull request records `merge_base` as `since`, and one after a fix
 the `head` of the `qa.json` before it. The report then goes to the pull request:
 `pr-post.sh qa <qa-dir>`, in several comments when it is long. The merge waits while a `/qa` since
