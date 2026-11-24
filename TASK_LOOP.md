@@ -460,9 +460,10 @@ refused for one of them costs no build; a landing that fails at or after its gat
 a commit that fails — may be retried once on the same run, so the answers to its escalations still
 apply, and a second time goes back through `review.sh`, since nothing else counts landings. At the
 pull request levels `land.sh` takes no run and counts its own: past `ASK_AFTER_RUNS` red or
-unfinished gate runs of the task it refuses, unless `--past-limit`. The stops back each other: the
-line at the end of a run says early what repeats, the circle stops the third repeat, and the count
-stops a session that goes on finding.
+unfinished gate runs of the task it refuses and says what was red each time; the same gates red the
+same way three times in a row, each time on other work, are yours, and anything else goes on with
+`--past-limit --because`. The stops back each other: the line at the end of a run says early what
+repeats, the circle stops the third repeat, and the count stops a session that goes on finding.
 
 ### Job 3 — Land, then advance
 

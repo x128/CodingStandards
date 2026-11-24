@@ -788,22 +788,53 @@ run_result() {
   fi
 }
 
+# The gates of a report that failed and block, as jq: red_gates, on the report, gives them
+# as entries {key, value}; gates_same, on those entries, is what two reports share when the
+# same gates failed with the same output but for its digits — a time, a count. A review
+# run (JQ_RUN) and a landing (red_gates_same) are compared by it.
+JQ_GATES='def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
+def red_gates:
+  [objects | to_entries[]
+   | select((.value | type) == "object" and .value.status == "fail" and .value.blocking != false)];
+def gates_same: ["gates", [.[] | [.key, (.value.output // "" | no_digits)]]];
+'
+
+# The digest of what failed in a gate report, or nothing when no blocking gate failed or the
+# report cannot be read: red_gates_same <gates.json>. It is the `same` of a review run with
+# those gates red (task_runs_json).
+red_gates_same() {
+  local text
+  text="$(jq -r "$JQ_GATES"'red_gates | select(length > 0) | gates_same | tojson' "$1" \
+    2>/dev/null)" || return 0
+  [ -z "$text" ] || printf '%s\n' "$text" | sha256_stdin
+}
+
+# What was red in a gate report, in words: `<gate>, <gate> red`, `the gates did not run` when
+# there is no report to read, or `no gate red`: red_gates_words <gates.json>.
+red_gates_words() {
+  local names
+  names="$(jq -rs "$JQ_GATES"'if length == 1 and (.[0] | type) == "object"
+                              then .[0] | red_gates | map(.key) | join(", ")
+                              else error("no report") end' "$1" 2>/dev/null)" || {
+    printf 'the gates did not run'
+    return 0
+  }
+  if [ -n "$names" ]; then printf '%s red' "$names"; else printf 'no gate red'; fi
+}
+
 # One run of a task as task_runs_json gives it, read from its meta.json and the files beside
 # it; $run, $approved, $escalated, $gates, $e2e, $findings and $quote_lines are the folder
 # and the text of each file, empty when it is not there. `same` is here the text that says
 # what failed; its digest takes its place.
 JQ_RUN='
 def parsed: if . == "" then null else (try fromjson catch null) end;
-def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 ($approved | parsed) as $approved | ($escalated | parsed) as $escalated
 | ($gates | parsed) as $gates
 | ($e2e | parsed | if type == "object" then . else {} end) as $e2e
 | ($findings | parsed) as $findings
 | ($quote_lines | parsed | if type == "object" then . else {} end) as $quote_lines
 | (($approved | type) == "array") as $reviewed
-| [$gates | objects | to_entries[]
-   | select((.value | type) == "object" and .value.status == "fail" and .value.blocking != false)]
-    as $red_gates
+| ($gates | red_gates) as $red_gates
 | (.end
    // (if $reviewed then
          (if (($escalated | arrays | length) // 0) > 0 then "escalations"
@@ -830,8 +861,7 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
                                 | gsub("^\\s+|\\s+$"; "") | select(. != ""))] | first // ""),
                       quote_lines: ($quote_lines[$id | tostring] // null)})],
    end: $ending, failed: $failed,
-   same: (if $failed == "gates"
-            then [$failed, [$red_gates[] | [.key, (.value.output // "" | no_digits)]]]
+   same: (if $failed == "gates" then ($red_gates | gates_same)
           elif $failed == "e2e" or $failed == "harness"
             then [$failed, ([$e2e.reasons[]? | no_digits] | sort)]
           elif $failed == "unusable" then [$failed]
@@ -876,7 +906,8 @@ task_run_json() {
   entry="$(jq -c --arg run "$run" --rawfile approved "$approved" \
     --rawfile escalated "$escalated" --rawfile gates "$gates" --rawfile e2e "$e2e" \
     --rawfile findings "$findings" --rawfile quote_lines "$quote_lines" \
-    "$JQ_RUN" "$run/meta.json")" && [ -n "$entry" ] || return 1
+    "$JQ_GATES$JQ_RUN" "$run/meta.json")" \
+    && [ -n "$entry" ] || return 1
   # `same` is the last key of the entry, so a run that failed nothing ends with its null.
   case "$entry" in
     *'"same":null}') ;;
