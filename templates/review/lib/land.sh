@@ -25,8 +25,8 @@
 #
 # Usage, from the project root:
 #   land.sh --task-file <task.json> --run <run-dir> [--message "..."] [--dry-run]
-#   land.sh --task-file <task.json> [--message "..."] [--dry-run] [--past-limit]
-#                                                           at LANDING=pr and merge
+#   land.sh --task-file <task.json> [--message "..."] [--dry-run]
+#           [--past-limit [--because <why>] [--user-decided]]   at LANDING=pr and merge
 #
 # Exit codes:
 #   0  committed and published as far as LANDING says (or printed the commit, in
@@ -50,6 +50,9 @@ RUN_DIR=""
 MESSAGE=""
 DRY_RUN=0
 PAST_LIMIT=false
+BECAUSE=""
+BECAUSE_GIVEN=false
+USER_DECIDED=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -58,9 +61,22 @@ while [ $# -gt 0 ]; do
     --message)    require_value "--message" $#; MESSAGE="$2"; shift 2 ;;
     --dry-run)    DRY_RUN=1; shift ;;
     --past-limit) PAST_LIMIT=true; shift ;;
+    --because)    require_value "--because" $#; BECAUSE_GIVEN=true; BECAUSE="$2"; shift 2 ;;
+    --user-decided) USER_DECIDED=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+
+# What passes the limit of landings goes with --past-limit alone, as for review.sh: the
+# loop's own reason, or that the user decided to go on. --user-decided takes no words:
+# nothing keeps what a person said. The reason is read without the blanks around it, so
+# one made of blanks is none.
+BECAUSE="${BECAUSE#"${BECAUSE%%[![:space:]]*}"}"
+BECAUSE="${BECAUSE%"${BECAUSE##*[![:space:]]}"}"
+if [ "$PAST_LIMIT" = false ]; then
+  [ "$BECAUSE_GIVEN" = false ] || { echo "--because goes with --past-limit" >&2; exit 1; }
+  [ "$USER_DECIDED" = false ] || { echo "--user-decided goes with --past-limit" >&2; exit 1; }
+fi
 
 [ -n "$TASK_FILE" ] || { echo "--task-file is required" >&2; exit 1; }
 [ -f "$TASK_FILE" ] || { echo "no such task file: $TASK_FILE" >&2; exit 1; }
@@ -355,10 +371,19 @@ fi
 # made or printed.
 #
 # At pr and merge there is no run: the landings of the task are counted instead, each
-# in a folder of its own, land-<time>-<pid>, which is no review run. Past
-# ASK_AFTER_RUNS that did not commit, since the count started, the user decides:
-# --past-limit lands once more and starts the count again, and is accepted only at
-# the limit.
+# in a folder of its own, land-<time>-<pid>, which is no review run. Each records the
+# work it was to commit and, after red gates, what failed (`same`, as a review run
+# has it: red_gates_same, common.sh). Past ASK_AFTER_RUNS that did not commit, since
+# the count started, land.sh refuses and says what was red in each. When the newest
+# three landings of the count, with none that committed between them, failed the
+# same way — the same gates red with the same output but for its numbers — each of
+# other work than the one before, the fixes do not close it, and that is the user's:
+# --past-limit --user-decided lands once more when they decided to go on, and takes
+# no reason beside it. Anything else is the loop's — the same work again, other
+# gates each time, gates that did not run, a landing that committed between:
+# --past-limit takes its reason, --because <why>. A landing with --past-limit starts
+# the count again, and the flag is accepted only at the limit. What passed it is
+# kept in the landing's record.
 if landing_opens_pull_request "$LANDING"; then
   ASK_AFTER_RUNS="$(read_conf "$CONFIG" ASK_AFTER_RUNS 5)"
   case "$ASK_AFTER_RUNS" in
@@ -368,38 +393,98 @@ if landing_opens_pull_request "$LANDING"; then
   esac
   LANDINGS="$(for record in "$REVIEW_DIR"/runs/land-*/landing.json; do
       [ -f "$record" ] || continue
-      jq -c --arg id "$TASK_ID" 'select(.task == $id)' "$record" 2>/dev/null
-    done | jq -sc .)"
+      jq -c --arg id "$TASK_ID" --arg run "${record%/landing.json}" \
+        'select(.task == $id) | . + {run: $run}' "$record" 2>/dev/null
+    done | jq -sc 'sort_by(.time // 0)')"
   EPOCH="$(printf '%s' "$LANDINGS" | jq 'map(.epoch // 0) | max // 0')"
-  NOT_LANDED="$(printf '%s' "$LANDINGS" | jq --argjson epoch "$EPOCH" '
-    map(select((.epoch // 0) == $epoch and .past_limit != true
-               and .result != "committed" and .result != "printed")) | length')"
-  if [ "$PAST_LIMIT" = true ]; then
-    [ "$NOT_LANDED" -ge "$ASK_AFTER_RUNS" ] || {
-      echo "--past-limit is only for a task at its limit: $TASK_ID has had $NOT_LANDED of "\
-"$ASK_AFTER_RUNS landings that did not commit — run without it" >&2
-      exit 1
-    }
+  # The landings of the count, oldest first, and those of them that did not commit.
+  COUNTED_RUNS="$(printf '%s' "$LANDINGS" | jq -c --argjson epoch "$EPOCH" '
+    map(select((.epoch // 0) == $epoch and .past_limit != true))')"
+  NOT_LANDED_RUNS="$(printf '%s' "$COUNTED_RUNS" | jq -c '
+    map(select(.result != "committed" and .result != "printed"))')"
+  NOT_LANDED="$(printf '%s' "$NOT_LANDED_RUNS" | jq 'length')"
+  PAST_LIMIT_KIND=""
+  if [ "$NOT_LANDED" -ge "$ASK_AFTER_RUNS" ]; then
+    # Whose the stop is: the user's for a circle of the work, the loop's otherwise. The
+    # newest three landings are read whatever came of them: one that committed between
+    # two red ones shows that the gates do go green, and that is no circle.
+    if printf '%s' "$COUNTED_RUNS" | jq -e '
+         .[-3:] | length == 3 and (.[2].same // null) != null
+         and .[0].same == .[2].same and .[1].same == .[2].same
+         and (.[0].work // null) != null and (.[1].work // null) != null
+         and (.[2].work // null) != null
+         and .[0].work != .[1].work and .[1].work != .[2].work' >/dev/null; then
+      STOP_WHOSE=user
+    else
+      STOP_WHOSE=loop
+    fi
+    COUNT_SAYS="$NOT_LANDED landings of $TASK_ID failed at or after their gates since the "\
+"count started (ASK_AFTER_RUNS=$ASK_AFTER_RUNS)"
+    if [ "$PAST_LIMIT" = false ] && [ "$STOP_WHOSE" = user ]; then
+      refuse 3 "$COUNT_SAYS, the last 3 the same way after changes of the work: "\
+"$(red_gates_words "$(printf '%s' "$NOT_LANDED_RUNS" | jq -r 'last.run')/gates.json")" \
+        user:not-converging "the same gates stayed red through 2 fixes — whether to go on "\
+"trying, to stop the task here, or to change what is asked of it; land.sh --past-limit "\
+"--user-decided then lands once more"
+    elif [ "$PAST_LIMIT" = false ]; then
+      WAS_RED="$(printf '%s' "$NOT_LANDED_RUNS" | jq -r '.[].run' \
+        | while IFS= read -r landed; do
+            printf '%s; ' "$(red_gates_words "$landed/gates.json")"
+          done)"
+      refuse 3 "$COUNT_SAYS: ${WAS_RED%; }" \
+        loop "run $REVIEW_DIR/gates.sh alone until it is green, then land with --past-limit "\
+"--because \"<what was mended>\""
+    elif [ "$STOP_WHOSE" = user ]; then
+      [ "$USER_DECIDED" = true ] || {
+        echo "this stop takes --user-decided: the work does not converge, and that is no "\
+"decision of the loop — run without --past-limit to read it; --past-limit --user-decided "\
+"lands once more" >&2
+        exit 1
+      }
+      [ -z "$BECAUSE" ] || {
+        echo "this stop takes --user-decided alone: --because is the loop's reason at a stop "\
+"of its own, and nothing keeps words where the user decided — land again without it" >&2
+        exit 1
+      }
+    else
+      [ -n "$BECAUSE" ] || [ "$USER_DECIDED" = true ] || {
+        echo "--past-limit at this stop needs --because \"<what was mended>\" — run without "\
+"--past-limit to read the stop" >&2
+        exit 1
+      }
+    fi
     EPOCH=$((EPOCH + 1))
-  elif [ "$NOT_LANDED" -ge "$ASK_AFTER_RUNS" ]; then
-    refuse 3 "$NOT_LANDED landings of $TASK_ID failed at or after their gates since the count "\
-"started (ASK_AFTER_RUNS=$ASK_AFTER_RUNS) — ask the user; land.sh --past-limit lands once more "\
-"on their answer"
+    PAST_LIMIT_KIND="$STOP_WHOSE"
+  elif [ "$PAST_LIMIT" = true ]; then
+    echo "--past-limit is only for a task at its limit: $TASK_ID has had $NOT_LANDED of "\
+"$ASK_AFTER_RUNS landings that did not commit — run without it" >&2
+    exit 1
   fi
   LAND_DIR="$REVIEW_DIR/runs/land-$(date +%Y%m%dT%H%M%S)-$$"
   mkdir -p "$LAND_DIR" || exit 1
+  # landing_ends <result> [<same>]: the record of this landing. `work` is the fingerprint
+  # of what it was to commit; `same`, after red gates, what failed (red_gates_same), null
+  # otherwise. What a landing with --past-limit passed: `past_limit_kind` says whose the
+  # stop was, user or loop, `because` is the loop's reason, and `user_decided` is true
+  # when the user decided to go on. All three are null on a plain landing.
   landing_ends() {
     jq -n --arg task "$TASK_ID" --argjson epoch "$EPOCH" --argjson past_limit "$PAST_LIMIT" \
-      --arg result "$1" '{task: $task, time: now, epoch: $epoch, past_limit: $past_limit,
-                          result: $result}' >"$LAND_DIR/landing.json"
+      --arg result "$1" --arg work "$CURRENT_FINGERPRINT" --arg same "${2:-}" \
+      --arg kind "$PAST_LIMIT_KIND" --arg because "$BECAUSE" \
+      --argjson user_decided "$USER_DECIDED" \
+      '{task: $task, time: now, epoch: $epoch, past_limit: $past_limit, result: $result,
+        work: $work, same: (if $same == "" then null else $same end),
+        past_limit_kind: (if $kind == "" then null else $kind end),
+        because: (if $because == "" then null else $because end),
+        user_decided: (if $user_decided then true else null end)}' >"$LAND_DIR/landing.json"
   }
   GATES_FILE="$LAND_DIR/gates.json"
 else
   LANDING_REDS="$(cat "$RUN_DIR/landing-reds" 2>/dev/null)"
   case "$LANDING_REDS" in ''|*[!0-9]*) LANDING_REDS=0 ;; esac
   [ "$LANDING_REDS" -lt 2 ] || \
-    refuse 3 "the landing of this run failed at or after its gates twice — "\
-"ask the user, then run review.sh again; another landing of this run would repeat uncounted"
+    refuse 3 "the landing of this run failed at or after its gates twice" \
+      loop "run review.sh again: another landing of this run would repeat uncounted"
   landing_ends() {
     case "$1" in
       unfinished) printf '%s\n' "$((LANDING_REDS + 1))" >"$RUN_DIR/landing-reds" ;;
@@ -424,7 +509,7 @@ if [ "$GATES_EXIT" -ge 126 ] || \
 fi
 
 if [ "$GATES_EXIT" -ne 0 ]; then
-  landing_ends red
+  landing_ends red "$(red_gates_same "$GATES_FILE")"
   FAILED_GATES="$(jq -r 'to_entries[] | select(.value.status == "fail") | .key' \
     "$GATES_FILE" | tr '\n' ' ')"
   refuse 3 "gates are red at landing time: ${FAILED_GATES:-unknown}"

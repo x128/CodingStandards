@@ -274,7 +274,9 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    branch, the scope, the checks now — commits on `task/<id>`, and `publish.sh` pushes and opens the
    pull request, or updates it. It runs after step 4; in a fix round, when files changed; and after
    step 10, for the records alone. Past `ASK_AFTER_RUNS` red or unfinished checks of the task it
-   refuses, and `--past-limit` goes on as in step 5. Then the merge contract, M1–M9:
+   refuses and says what was red each time: the same gates red the same way three times in a row,
+   each time on other work, are the user's, and anything else goes on with
+   `--past-limit --because "<what was mended>"`, as in step 5. Then the merge contract, M1–M9:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json --merge

@@ -336,6 +336,17 @@ check "landing the same run may be retried once after red gates" 3 \
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
 check "red gates at landing twice send the work back to review.sh" 3 \
   "failed at or after its gates twice" $? "$WORK/land.log"
+"$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1
+check "a landing that failed twice goes back to review.sh: the loop goes on" 3 \
+  "   The loop goes on: run review.sh again: another landing of this run would repeat uncounted" \
+  $? "$WORK/land.log"
+if grep -qF "the user" "$WORK/land.log"; then
+  echo "FAIL  a landing that failed twice names the user — log follows"
+  sed 's/^/      /' "$WORK/land.log"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok    and names no user"
+fi
 printf '{"id": "T-050", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
 '"exit_criteria": []}' >.review/T-050.json
 REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
@@ -2040,7 +2051,7 @@ qa_record T-074 w3 "$(failing TC-001 w3)"
 runs_before="$(ls .review/runs | wc -l)"
 round "a case that failed in three /qa, each on other work, stops it" 6 \
   "NOT CONVERGING — the fixes of T-074 do not close a case of /qa; nothing ran." T-074 new -
-says "it says in which /qa the case failed" \
+says "the stop says in which /qa the case failed" \
   "   TC-001 failed in 3 /qa of this task, each on other work: 0-qa-T-074-w1, "\
 "0-qa-T-074-w2, 0-qa-T-074-w3" \
   "$WORK/run.log"
@@ -2541,6 +2552,22 @@ pr_land() {
   local name="$1" expected_exit="$2" expected_line="$3"; shift 3
   "$LIB_DIR/land.sh" --task-file .review/task.json "$@" >"$WORK/land.log" 2>&1
   check "$name" "$expected_exit" "$expected_line" $? "$WORK/land.log"
+}
+
+# What the newest landing of the project recorded: landing_records <name> <jq filter>.
+landing_records() {
+  local record
+  record="$(for record in .review/runs/land-*/landing.json; do
+      [ -f "$record" ] || continue
+      jq -c --arg record "$record" '{time: (.time // 0), record: $record}' "$record"
+    done | jq -sr 'sort_by(.time) | last | .record')"
+  if jq -e "$2" "$record" >/dev/null 2>&1; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: «$2» does not hold in $record — it follows"
+    sed 's/^/      /' "$record"
+    FAILURES=$((FAILURES + 1))
+  fi
 }
 
 # review.sh on the pull request, with the reviewer's and the maintainer's answers given,
@@ -3481,13 +3508,140 @@ pr_work
 pr_land "red gates refuse a landing at pr" 3 "gates are red at landing time" --run "$WORK"
 holds "a --run given at pr is said to be unused" printed "--run is not used"
 pr_land "a second time too" 3 "gates are red at landing time"
-pr_land "past ASK_AFTER_RUNS landings that did not commit, the user decides" 3 \
-  "2 landings of T-001 failed at or after their gates since the count started"
-pr_land "--past-limit lands once more" 3 "gates are red at landing time" --past-limit
+pr_land "past ASK_AFTER_RUNS landings that did not commit, land.sh says what was red" 3 \
+  "2 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=2): test red; test red"
+says "and the loop's next step" \
+  "   The loop goes on: run .review/gates.sh alone until it is green, then land with "\
+"--past-limit --because" \
+  "$WORK/land.log"
+never_says "two red landings of the same work are no question" "the user" "$WORK/land.log"
+pr_land "--past-limit without its reason is refused there too" 1 \
+  '--past-limit at this stop needs --because "<what was mended>"' --past-limit
+pr_land "a reason of blanks is no reason at a landing either" 1 \
+  '--past-limit at this stop needs --because "<what was mended>"' --past-limit --because "  "
+pr_land "--past-limit lands once more" 3 "gates are red at landing time" \
+  --past-limit --because "the gate is mended"
+landing_records "the landing records what passed the limit" \
+  '.past_limit == true and .past_limit_kind == "loop" and .because == "the gate is mended"
+   and .user_decided == null and .result == "red"'
 cp "$WORK/gates.green" .review/gates.sh
 pr_land "after it the count starts again" 0 "landed T-001 on task/T-001"
 pr_work
 pr_land "--past-limit below the limit is refused" 1 "only for a task at its limit" --past-limit
+pr_land "--because without --past-limit is a usage error at a landing too" 1 \
+  "--because goes with --past-limit" --because "the gate is mended"
+pr_land "an empty --because without --past-limit is one at a landing too" 1 \
+  "--because goes with --past-limit" --because ""
+pr_land "and so is --user-decided at a landing" 1 "--user-decided goes with --past-limit" \
+  --user-decided
+
+# land.sh reads its landings as review.sh reads its runs. At the limit, the newest three
+# that failed the same way — the same gates red with the same output but for its
+# numbers — each after a change of the work, do not converge, and that is the user's.
+# Anything else is the loop's: the same work again, or other gates each time.
+published_project origin
+set_level pr ASK_AFTER_RUNS=3
+red_at_landing() {
+  printf '#!/usr/bin/env bash\necho %s >"$1"\nexit 1\n' \
+    "'{\"test\":{\"status\":\"fail\",\"blocking\":true,\"command\":\"false\",\"output\":\"$1\"}}'" \
+    >.review/gates.sh
+}
+# A landing a case needs before it, which its gates must refuse.
+refused_landing() {
+  local actual_exit
+  "$LIB_DIR/land.sh" --task-file .review/task.json "$@" >"$WORK/land.log" 2>&1
+  actual_exit=$?
+  [ "$actual_exit" -eq 3 ] && grep -qF "condition 3: " "$WORK/land.log" \
+    && ! grep -qF "since the count started" "$WORK/land.log" && return 0
+  echo "FAIL  a landing on the way ($*): expected a refusal for its gates, "\
+"got exit $actual_exit — log follows"
+  sed 's/^/      /' "$WORK/land.log"
+  FAILURES=$((FAILURES + 1))
+}
+for seconds in 6 7 9; do
+  red_at_landing "the pickup test fails in ${seconds}s"
+  pr_work
+  refused_landing
+done
+landing_records "a landing records its work and what was red" \
+  '(.work | type) == "string" and (.same | type) == "string" and .result == "red"
+   and .past_limit_kind == null and .because == null and .user_decided == null'
+pr_work
+pr_land "three landings red the same way after changes are the user's" 3 \
+  "3 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=3), the last 3 the same way after changes of the work: test red"
+says "it says that the work does not converge" \
+  "   For the user, the work does not converge: the same gates stayed red through 2 fixes" \
+  "$WORK/land.log"
+says "what they decide" \
+  "whether to go on trying, to stop the task here, or to change what is asked of it" \
+  "$WORK/land.log"
+says "and how the landing goes on once they decided" \
+  "land.sh --past-limit --user-decided then lands once more" "$WORK/land.log"
+pr_land "there --past-limit takes --user-decided" 1 "this stop takes --user-decided" \
+  --past-limit --because "the gate is mended"
+pr_land "--past-limit alone does not pass it either" 1 "this stop takes --user-decided" \
+  --past-limit
+pr_land "--user-decided takes no words at a landing either" 1 "unknown argument: go on" \
+  --past-limit --user-decided "go on"
+pr_land "beside the user's decision a landing takes no reason either" 1 \
+  "this stop takes --user-decided alone" --past-limit --user-decided --because "they said go on"
+pr_land "once the user decided to go on the landing runs" 3 "gates are red at landing time" \
+  --past-limit --user-decided
+landing_records "and the landing records that they decided, and no words" \
+  '.user_decided == true and .past_limit_kind == "user" and .because == null
+   and .past_limit == true'
+for attempt in first second third; do
+  refused_landing
+done
+pr_land "three landings red the same way on the same work are a retry, not a question" 3 \
+  "3 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=3): test red; test red; test red"
+says "the loop mends the gates" "   The loop goes on: run .review/gates.sh alone" "$WORK/land.log"
+never_says "a retry is no question at a landing" "the user" "$WORK/land.log"
+refused_landing --past-limit --because "the cache is cleared"
+for output in "a is undefined" "b is undefined" "c is undefined"; do
+  red_at_landing "$output"
+  pr_work
+  refused_landing
+done
+pr_work
+pr_land "landings red with another output each time, after changes, are the loop's" 3 \
+  "(ASK_AFTER_RUNS=3): test red; test red; test red"
+never_says "what differs each time is no question" "the user" "$WORK/land.log"
+refused_landing --past-limit --because "each was a defect of its own"
+printf '#!/usr/bin/env bash\nexit 143\n' >.review/gates.sh
+for attempt in first second third; do refused_landing; done
+pr_land "gates that did not run are said as that" 3 \
+  "(ASK_AFTER_RUNS=3): the gates did not run; the gates did not run; the gates did not run"
+says "and are the loop's" "   The loop goes on: run .review/gates.sh alone" "$WORK/land.log"
+# A landing recorded before land.sh kept its work and what was red is read as it is.
+for record in .review/runs/land-*/landing.json; do
+  jq 'del(.work, .same, .past_limit_kind, .because, .user_decided)' "$record" >"$record.old" \
+    && mv "$record.old" "$record"
+done
+pr_land "landings recorded before their work was kept are read from what they left" 3 \
+  "(ASK_AFTER_RUNS=3): the gates did not run; the gates did not run; the gates did not run"
+
+# A gate that is red now and then, with landings that commit between, shows that the
+# gates do go green: the newest three landings are read whatever came of them, and three
+# that did not commit with others between them are no circle of the work.
+published_project origin
+set_level pr ASK_AFTER_RUNS=3
+for attempt in first second third; do
+  red_at_landing "the pickup test fails"
+  pr_work
+  refused_landing
+  cp "$WORK/gates.green" .review/gates.sh
+  [ "$attempt" = third ] \
+    || pr_land "after the $attempt red landing the same work lands" 0 "landed T-001 on task/T-001"
+done
+pr_land "a gate red now and then, with landings that commit between, is no circle" 3 \
+  "3 landings of T-001 failed at or after their gates since the count started "\
+"(ASK_AFTER_RUNS=3): test red; test red; test red"
+says "that limit is the loop's" "   The loop goes on: run .review/gates.sh alone" "$WORK/land.log"
+never_says "a gate that goes green between is no question" "the user" "$WORK/land.log"
 
 # On the pull request the summary of a run counts reviews, and says what passed a stop.
 published_project origin
