@@ -1,8 +1,9 @@
 # Test cases
 
 Every case of the product, grouped by feature. Each says what the user does and sees, and how it
-is covered: `manual` — `/qa` walks it by hand — or `e2e: <test>` — an end-to-end test runs it
-after every task. A full regression takes every case.
+is covered: `manual` — `/qa` walks it by hand, with the reason where no end-to-end test can see the
+case, `manual: <why>` — or `e2e: <test>` — an end-to-end test runs it after every task. A full
+regression takes every case.
 
 ## Library
 

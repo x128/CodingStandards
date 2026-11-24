@@ -109,6 +109,9 @@ FINGERPRINT="$(tree_fingerprint)"
 # whole tree is compared after it, so a harness that rewrites the cases is seen.
 WHOLE_TREE="$(tree_fingerprint --whole)"
 MARKS="$(case_marks)"
+# The words of each case as they are when the run begins, as a digest: a test seen failing
+# is seen failing against these words, and land.sh compares them with the words at landing.
+CASE_DIGESTS="$(case_digests)" || exit 1
 PLATFORMS="$(platforms)"
 # Recorded before the run: a harness that rewrites itself while it runs would
 # otherwise leave another one behind as the one that ran.
@@ -260,7 +263,8 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
       --argjson start "$START" --argjson qa "$QA_KNOWN" --argjson cases "$CASE_COUNT" \
       --argjson platforms "$(printf '%s\n' "$PLATFORMS" | as_json_array)" \
       --argjson results "$RESULTS" --argjson named "$NAMED" --argjson required "$REQUIRED" \
-      --argjson marks "$MARKED" --argjson preset "$PRESET_REASONS" "$JQ_HIT"'
+      --argjson marks "$MARKED" --argjson words "$CASE_DIGESTS" \
+      --argjson preset "$PRESET_REASONS" "$JQ_HIT"'
   def class: base | if test("\\.") then sub("\\.[^.]*$"; "") else null end;
   def rows: .passed + .failed + .skipped;
   def ran: .passed + .failed;
@@ -309,7 +313,7 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
      | once) as $red
   | {time: now, task: (if $task == "" then null else $task end),
      fingerprint: $fingerprint, harness: $harness, platforms: $platforms, qa_failures: $qa,
-     marks: $marks,
+     marks: $marks, cases: $words,
      status: (if ($no_harness | length) > 0 then "no-harness"
               elif ($red | length) > 0 then "red" else "pass" end),
      reasons: (if ($no_harness | length) > 0 then $no_harness else $red end),

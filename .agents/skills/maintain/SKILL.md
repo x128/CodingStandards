@@ -185,25 +185,26 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    user should see, so a failing case is a defect to fix, never a question. A failure the fix itself
    brought is fixed the same way, at once, in this task. Each failure goes back with its case; the
    end-to-end test of that case is written and seen failing before the fix, the case is marked
-   `e2e: <test>` with it, and the fix makes it pass; the next `/qa` takes from `qa/test-cases.md`
-   only the cases the fix can reach. A case that failed in three `/qa` of the task, each on other
-   work, is the user's: `pr-post.sh qa` says so, with what does not converge. What `/qa` saw that no
-   requirement, exit criterion or case
-   describes is no failure: `/qa` records it apart, and it is a question for the user — what should
-   be — written into the task that waits on it (step 10) and asked once; this task does not wait for
-   the answer unless one of its own criteria does. An answer `by: human` in
-   `escalations-answered.json` records a decision the user made themselves; the loop
-   never asks for one to get past a failing case. A defect `/qa` finds that the change did not bring
-   is fixed now, or its end-to-end test stays skipped as `"<task>: <case>"` until that task lands. A
-   defect the user finds later that `/qa` passed goes to `/qa` as a defect of that skill too. If
-   `/qa` is not among the skills of the session, link it (.agents/skills/README.md, "Setup") and
-   tell the user; the step is never skipped silently. At the pull request levels the merge waits on
-   what `/qa` left unproven or not checked. An item not checked because a tool or device failed is
-   the loop's: restore it — boot or erase the simulator — and run `/qa` of the whole pull request
-   again. What is still open after that goes to the user, who decides: another `/qa`, or their
-   acceptance in `open-answered.json` beside its `qa.json`, written as
-   `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`. A `/qa` after a fix
-   does not clear what an earlier one left open.
+   `e2e: <test>` with it, and the fix makes it pass; where no end-to-end test can see it, `/qa` says
+   so in the case, `— manual: <why>`, and the next `/qa` after the fix proves it; the next `/qa`
+   takes from `qa/test-cases.md` only the cases the fix can reach. A case that failed in three `/qa`
+   of the task, each on other work, is the user's: `pr-post.sh qa` says so, with what does not
+   converge. What `/qa` saw that no
+   requirement, exit criterion or case describes is no failure: `/qa` records it apart, and it is a
+   question for the user — what should be — written into the task that waits on it (step 10) and
+   asked once; this task does not wait for the answer unless one of its own criteria does. An answer
+   `by: human` in `escalations-answered.json` records a decision the user made themselves; the loop
+   never asks for one to get past a failing case. A defect `/qa` finds that the
+   change did not bring is fixed now, or its end-to-end test stays skipped as `"<task>: <case>"`
+   until that task lands. A defect the user finds later that `/qa` passed goes to `/qa` as a defect
+   of that skill too. If `/qa` is not among the skills of the session, link it
+   (.agents/skills/README.md, "Setup") and tell the user; the step is never skipped silently. At the
+   pull request levels the merge waits on what `/qa` left unproven or not checked. An item not
+   checked because a tool or device failed is the loop's: restore it — boot or erase the simulator —
+   and run `/qa` of the whole pull request again. What is still open after that goes to the user,
+   who decides: another `/qa`, or their acceptance in `open-answered.json` beside its `qa.json`,
+   written as `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`. A `/qa`
+   after a fix does not clear what an earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a check you did
    not do; what `/qa` left unproven is not verified.

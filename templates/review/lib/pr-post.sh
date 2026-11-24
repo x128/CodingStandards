@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # pr-post.sh — the loop's posts on the pull request of a task, at LANDING=pr and merge;
-# its command qa says at every level what a /qa left, and whose turn it is.
+# its command qa says at every level what a /qa left, and whose turn it is, and its
+# command work which work is there to check.
 #
 # Runs FROM THE SUBMODULE and is deliberately NOT overridable, for the reason
 # publish.sh is not. It is the only script that writes to the pull request apart from
@@ -38,11 +39,15 @@
 #   comments             reads only: what people wrote that is not settled, whole, with
 #                        its id, author and place — the line of a file, a review, or the
 #                        pull request; reply answers it in its thread
-#   work                 reads only: {work, head, merge_base} — the fingerprint of the
-#                        work now, HEAD and the merge base, for /qa to record in qa.json:
-#                        a /qa of the whole pull request records the merge base as since
+#   work                 reads only, at every level: {work, head} — the fingerprint of
+#                        the work now and HEAD, for /qa to record in qa.json; below the
+#                        pull request levels that is all, and nothing is asked of the
+#                        remote. At pr and merge: merge_base too, the merge base, which a
+#                        /qa of the whole pull request records as since
 #   qa <qa-dir>          at every level, before anything is asked of the remote: checks
-#                        <qa-dir>/qa.json (common.sh, qa_record_fault) and prints what the
+#                        <qa-dir>/qa.json (common.sh, qa_record_fault), keeps beside it,
+#                        once, a digest of the words of each case it failed (cases.json:
+#                        the landing compares the words with it) and prints what the
 #                        /qa left and whose turn each thing is (qa_left) — a failing case
 #                        with its words, its test and the loop's next step, what is
 #                        unproven or not checked, and what the app does that nothing
@@ -65,7 +70,7 @@
 #
 # Exit codes:
 #   0  posted, or nothing was left to post; qa below the pull request levels, once it
-#      has said what /qa left
+#      has said what /qa left; work, once it has printed it
 #   3  refused, with the reason on stderr
 #   1  usage or environment error, or gh failed; qa: a qa.json that is missing or does
 #      not hold
@@ -158,12 +163,20 @@ if [ "$COMMAND" = qa ]; then
   [ -f "$ARGUMENT/qa.json" ] || fail "$ARGUMENT has no qa.json — /qa writes it (section 4)"
   FAULT="$(qa_record_fault "$ARGUMENT/qa.json")"
   [ -z "$FAULT" ] || fail "$ARGUMENT/qa.json does not hold: $FAULT"
+  qa_keeps_words "$ARGUMENT" || \
+    fail "the words of the cases /qa failed could not be kept in $ARGUMENT/cases.json"
   qa_left "$(jq -r '.task' "$ARGUMENT/qa.json")" "$ARGUMENT" || \
     fail "the records of /qa could not be read"
   if ! landing_opens_pull_request "$LANDING"; then
     echo "LANDING=$LANDING opens no pull request: the report stays in $ARGUMENT/report.md"
     exit 0
   fi
+fi
+# So is the work there to check: a record of /qa says which work it checked at every level.
+if [ "$COMMAND" = work ] && ! landing_opens_pull_request "$LANDING"; then
+  jq -n --arg work "$(tree_fingerprint)" --arg head "$(git rev-parse -q --verify HEAD)" \
+    '{work: $work, head: $head}'
+  exit 0
 fi
 landing_opens_pull_request "$LANDING" || \
   refuse "LANDING=$LANDING in $CONFIG opens no pull request — only pr and merge do"
@@ -392,8 +405,8 @@ post_statuses() {
 
   # loop/qa: the /qa part of M5. Pending until /qa checked this work and, once, the whole
   # pull request, and while what it left unproven or unchecked waits for the user; failing
-  # while a failure it found is neither seen red then green nor answered, or a test is
-  # still skipped for the task.
+  # while a failure it found is not proven as condition 7 asks (qa_failures_proven), or a
+  # test is still skipped for the task.
   reason="$(why_not qa_checked_this_work "$TASK_ID" "$fingerprint" "$merge_base")"
   [ -n "$reason" ] || reason="$(why_not qa_left_nothing_open "$TASK_ID" "$merge_base")"
   [ -n "$reason" ] || reason="$(why_not qa_reports_posted "$TASK_ID" "$merge_base" "$PR_URL")"
