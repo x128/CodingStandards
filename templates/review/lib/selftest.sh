@@ -1795,6 +1795,17 @@ round "once the user decided to go on it runs once more" 3 "accepted (>= major):
 run_records "and the run records that they decided, and no words" \
   '.user_decided == true and .past_limit_kind == "user" and .stop == "finding"
    and .because == null and ([.. | strings] | all(test("rounding") | not))'
+# The user's decision to go on holds until the next review. A run past the stop that ended
+# before its review made none: nothing is new, and the same question is not asked again.
+for attempt in first second third; do on_the_way 3 T-082 new 10; done
+on_the_way 6 T-082 new 10
+red_gates "could not compile"
+on_the_way 2 T-082 same 10 --past-limit --user-decided
+green_gates
+round "a run past the stop of a finding that made no review does not use up the user's decision" \
+  3 "accepted (>= major): 1" T-082 same 10
+round "the review made on that decision, which accepts the finding again, brings the stop back" \
+  6 "was accepted in 4 reviews in a row" T-082 new 10
 # What the finding says is read where the newest review of the row wrote it, also when a
 # run after that review made none: runs made before review.sh read them may stand so.
 on_the_way 3 T-083 new 10
@@ -1878,6 +1889,17 @@ round "the loop's reason passes it" 3 "accepted (>= major): 1" \
 run_records "and the run records it" \
   '.past_limit_kind == "loop" and .stop == "reviews" and .user_decided == null
    and .because == "each was a defect of its own"'
+# Where the loop cannot tell whether the work moves, the line makes it a question, and the
+# user's decision to go on passes that stop too.
+on_the_way 3 T-084 new 3
+on_the_way 3 T-084 new 20
+on_the_way 3 T-084 new 35
+on_the_way 6 T-084 new 50
+round "the user's decision to go on passes a stop of the loop's too" 3 "accepted (>= major): 1" \
+  T-084 same 50 --past-limit --user-decided
+run_records "and the run records whose stop it was, and that they decided" \
+  '.past_limit_kind == "loop" and .stop == "reviews" and .user_decided == true
+   and .because == null'
 limit_is 2
 on_the_way 3 T-068 new 10
 on_the_way 3 T-068 new 10
@@ -1922,6 +1944,35 @@ says "and the loop's to find the cause of" "   The loop goes on: a retry does no
 never_says "a retry is no question" "the user" "$WORK/run.log"
 round "the loop's reason passes that stop" 2 "GATES RED" \
   T-070 same - --past-limit --because "the simulator is booted again"
+# End-to-end tests that ran and failed are a check of the code that stayed red, whatever
+# made them fail: the script cannot tell a device that went away under them from the code.
+# A harness that ran no test checked nothing: that is the loop's to restore.
+green_gates
+no_device='<testsuite hostname="app"><testcase classname="AnswerE2E" name="shows42">'\
+'<failure message="no device"/></testcase><testcase classname="AnswerE2E" name="starts"/>'\
+'</testsuite>'
+for attempt in first second third; do
+  E2E_XML="$no_device" E2E_EXIT=1 on_the_way 2 T-085 new -
+done
+round "end-to-end tests that failed the same way through changes of the work stop the fourth run" \
+  6 "NOT CONVERGING — T-085 ended the same way in 3 runs in a row, each after a change" \
+  T-085 new -
+says "it names the tests that stayed red" \
+  "   end-to-end tests red: app: .review/e2e.sh exited 1; app: failed: AnswerE2E.shows42" \
+  "$WORK/run.log"
+says "tests that ran and failed are the user's, whatever made them fail" \
+  "   For the user, the work does not converge: the same check stayed red through 2 fixes" \
+  "$WORK/run.log"
+for attempt in first second third; do
+  E2E_ONLY=none E2E_EXIT=1 on_the_way 1 T-086 new -
+done
+round "a harness that ran no test three times is no circle of the work, though it changed" 6 \
+  "STOPPED — T-086 ended the same way in 3 runs in a row; nothing ran." T-086 new -
+says "it says that no test ran" \
+  "   no working end-to-end harness: app: the e2e run ran no test (exit 1)" "$WORK/run.log"
+says "and that is the loop's to restore" "   The loop goes on: a retry does not mend it" \
+  "$WORK/run.log"
+never_says "a device that never ran a test is no question" "the user" "$WORK/run.log"
 for seconds in 6 7 9; do
   red_gates "BUILD FAILED in ${seconds}s"
   on_the_way 2 T-071 new -

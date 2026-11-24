@@ -844,12 +844,13 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 #   {run, time, epoch, past_limit, user_decided, stop, work, reviewed, accepted, end, failed,
 #    same}
 # `stop` names the stop a run with --past-limit passed, and `user_decided` says that the
-# user decided to go on there. `work` is the fingerprint of the tree the run looked at. `reviewed`: the run made a review
-# — its approved.json is there and is a list, which review.sh writes only when the triage
-# ended. `accepted`: what the review accepted, each {id, file, line, category, quote,
-# quote_lines}, the quote being the first line of the finding's quote that is not blank,
-# trimmed, and quote_lines on how many lines the file held it when the review was made
-# (quote-lines.json; null for a run that does not say). `end`: how
+# user decided to go on there. `work` is the fingerprint of the tree the run looked at.
+# `reviewed`: the run made a review — its approved.json is there and is a list, which
+# review.sh writes only when the triage ended. `accepted`: what the review accepted, each
+# {id, file, line, category, quote, quote_lines}, the quote being the first line of the
+# finding's quote that is not blank, trimmed, and quote_lines on how many lines the file
+# held it when the review was made (quote-lines.json; null for a run that does not say).
+# `end`: how
 # the run ended, as review.sh records it (record_end); for a run that does not say — one
 # made before review.sh recorded it, or one that was killed — it is read from what the run
 # left: clean, findings or escalations when it is reviewed, gates-red when a blocking gate
@@ -936,7 +937,10 @@ JQ_WORKS_FAILED='def works_failed($records; $case):
 # time, work, failures: [case]} (qa_cases_of). limit: ASK_AFTER_RUNS.
 #
 # The stops, the first that holds: `finding` — a finding of the newest review was accepted
-# at the same place in three reviews in a row, each of other work than the one before;
+# at the same place in three reviews in a row, each of other work than the one before,
+# until a run newer than that review passed this stop on the user's decision: the decision
+# holds until the next review, so a run past the stop that ended before its review does
+# not use it up;
 # `case` — a case the newest /qa failed has failed on three works (works_failed), until a
 # run newer than that /qa passed this stop on the user's decision: the decision holds
 # until the next /qa, and one taken at another stop is none on the case; `same-end` —
@@ -987,6 +991,9 @@ def same_place($a; $b):
    | (index(false) // length) + 1) as $changed_row
 | (($newest_first[0].failed // "") as $failed
    | $changed_row >= 3 and ($failed == "gates" or $failed == "e2e")) as $same_end_of_the_work
+| (($reviews[-1].time // 0) as $newest
+   | any($runs[]; .user_decided == true and .stop == "finding" and (.time // 0) > $newest))
+    as $finding_answered
 | (($qa[-1].time // 0) as $newest
    | any($runs[]; .user_decided == true and .stop == "case" and (.time // 0) > $newest))
     as $qa_answered
@@ -996,7 +1003,8 @@ def same_place($a; $b):
 | ([$reviews[] | select((.epoch // 0) == $epoch and .past_limit != true)] | length) as $counted
 | [$reviews[] | .accepted | length] as $series
 | (($series | length) >= 2 and $series[-1] > 0 and $series[-1] >= $series[-2]) as $not_fewer
-| (if any($came_back[]; .row >= 3) then {stop: "finding", whose: "user"}
+| (if ($finding_answered | not) and any($came_back[]; .row >= 3)
+     then {stop: "finding", whose: "user"}
    elif ($qa_answered | not) and any($qa_back[]; .times >= 3) then {stop: "case", whose: "user"}
    elif $same_end_row >= 3
      then {stop: "same-end", whose: (if $same_end_of_the_work then "user" else "loop" end)}
@@ -1214,8 +1222,8 @@ qa_left_items() {
 # stderr. A failing case says what is to be seen, so it is the loop's to fix, however
 # often /qa was red; the same case failing on three works — after each of two fixes — does
 # not converge, and that is the user's: review.sh stops the task there, and runs once more
-# when they decided to go on. An unproven item and one not checked are the loop's. What the app does that nothing written describes is the one question, and it
-# holds nothing.
+# when they decided to go on. An unproven item and one not checked are the loop's. What
+# the app does that nothing written describes is the one question, and it holds nothing.
 qa_left() {
   local task_id="$1" qa_dir="$2" record="$2/qa.json" times entry case_id count runs line
   local words tests why next said=false
