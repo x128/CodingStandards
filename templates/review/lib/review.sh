@@ -266,7 +266,11 @@ echo "── models: $MODELS ($AGENTS_CONF)"
 # request open at HEAD. Each refusal says whose turn it is. Its URL goes into no prompt
 # and into meta.json alone: the pull request holds what neither the reviewer nor the
 # executor may see. --dry-run reviews the uncommitted work, as at push.
-pr_refuse() { echo "REVIEW REFUSED — $1" >&2; exit 1; }
+pr_refuse() {
+  echo "REVIEW REFUSED — $1" >&2
+  [ $# -lt 3 ] || turn "$2" "$3"
+  exit 1
+}
 LANDING="$(landing_level "$REVIEW_DIR/land.conf")" || pr_refuse "$LANDING"
 PR_URL=""
 MERGE_BASE=""

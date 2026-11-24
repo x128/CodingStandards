@@ -430,7 +430,8 @@ round n: execute → gates → review → triage → accepted findings? → fix,
 exit 5 or 1, the same refusal of `land.sh`, or `land.sh` exit 4 or `publish.sh` exit 5 for the same
 reason. Another attempt does not mend what broke outside the code — a simulator that will not boot,
 a review that cannot quote a deleted file. Never a third try alone. Checks still running are not a
-failure, and have their own count ([Publishing](#publishing)).
+failure, and have their own count ([Publishing](#publishing)). A failing case of `/qa` is no such
+failure either: the loop fixes it as often as it fails (`/maintain`, step 8).
 
 **`review.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`, 5 by default).
 It counts every run that got as far as the gates, whatever ended it: rounds, red gates, unusable
