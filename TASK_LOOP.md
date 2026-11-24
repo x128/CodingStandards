@@ -428,17 +428,18 @@ round n: execute → gates → review → triage → accepted findings? → fix,
 - **Escalate** — an escalate verdict fired.
 
 **Three times in a row is a circle, and `review.sh` stops**: a finding accepted at the same place in
-three reviews in a row, each after a change of the work; or three runs in a row that ended the same
-way — the same gates red with the same output, the same end-to-end failures. It runs nothing and
-exits 6. Where the work changed each time and a check of the code stayed red, the fixes do not close
-it, and that is yours: the output says what does not converge, and the next run takes your decision
-to go on (`--past-limit --user-decided`), and no words of yours. Where nothing changed between the
-runs, or the failure is outside the code — a simulator that will not boot, a review that cannot
-quote a deleted file — a retry does not mend it, and the maintainer finds the cause before it runs
-again, with its reason (`--past-limit --because`). A cause only you can remove is told to you once,
-with what was tried. Checks still running are not a failure, and have their own count
-([Publishing](#publishing)). A failing case of `/qa` is no question either: the loop fixes it as
-often as it fails (`/maintain`, step 8).
+three reviews in a row, each after a change of the work; a case that failed in three `/qa` of the
+task, each on other work; or three runs in a row that ended the same way — the same gates red with
+the same output, the same end-to-end failures. It runs nothing and exits 6. Where the work changed
+each time and a check of the code stayed red, the fixes do not close it, and that is yours: the
+output says what does not converge, and the next run takes your decision to go on
+(`--past-limit --user-decided`), and no words of yours. Where nothing changed between the runs, or
+the failure is outside the code — a simulator that will not boot, a review that cannot quote a
+deleted file — a retry does not mend it, and the maintainer finds the cause before it runs again,
+with its reason (`--past-limit --because`). A cause only you can remove is told to you once, with
+what was tried. Checks still running are not a failure, and have their own count
+([Publishing](#publishing)). A failing case of `/qa` is no question either until `review.sh` stops
+for it: the loop fixes it as often as it fails (`/maintain`, step 8).
 
 **`review.sh` stops after `ASK_AFTER_RUNS` reviews of one task** (`.review/land.conf`, 5 by
 default). It counts the runs that made a review — rounds, and the reviews again after `/qa`, an

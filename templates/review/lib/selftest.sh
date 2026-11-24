@@ -1074,6 +1074,8 @@ says "it says what the user decides" \
   "whether to go on trying, to stop the task here, or to change what the case expects"
 says "it lists the three /qa" \
   "it failed in 3 /qa of this task, each on other work: 0-qa-T-024-w1, 0-qa-T-024-w2, 0-qa-T-024-w3"
+says "and how the review runs once they decided to go on" \
+  "; when they decide to go on, review.sh runs once more with --past-limit --user-decided"
 never_says "nothing sends the loop on with that case" "The loop goes on"
 for name in first second third; do
   qa_record T-025 "$name" '{"failures": [{"case": "TC-002"}], "work": "w1"}'
@@ -1973,6 +1975,120 @@ round "an empty --because without --past-limit is one too" 1 \
   "--because goes with --past-limit" T-060 same - --because ""
 round "and so is --user-decided" 1 "--user-decided goes with --past-limit" \
   T-060 same - --user-decided
+
+# A case of /qa in a circle. review.sh reads the /qa records of the task too, and counts as
+# pr-post.sh qa does: a case the newest /qa failed that has failed on three works, each
+# after a fix, stops the task, and that is the user's. Once they decided to go on the
+# reviews run until the next /qa: one that fails the case again brings the stop back, one
+# that does not ends it.
+failing() { printf '{"failures": [{"case": "%s"}], "work": "%s"}' "$1" "$2"; }
+qa_record T-074 w1 "$(failing TC-001 w1)"
+qa_record T-074 w2 "$(failing TC-001 w2)"
+round "a case that failed in two /qa after a fix does not stop the task" 0 "CLEAN" T-074 new -
+qa_record T-074 w3 "$(failing TC-001 w3)"
+runs_before="$(ls .review/runs | wc -l)"
+round "a case that failed in three /qa, each on other work, stops it" 6 \
+  "NOT CONVERGING — the fixes of T-074 do not close a case of /qa; nothing ran." T-074 new -
+says "it says in which /qa the case failed" \
+  "   TC-001 failed in 3 /qa of this task, each on other work: 0-qa-T-074-w1, "\
+"0-qa-T-074-w2, 0-qa-T-074-w3" \
+  "$WORK/run.log"
+says "and where what the case expects is written" \
+  "   what it expects: qa/test-cases.md:5; what /qa saw each time: the report.md of each" \
+  "$WORK/run.log"
+says "a case in a circle is the user's" \
+  "   For the user, the work does not converge: TC-001 failed again after each of 2 fixes" \
+  "$WORK/run.log"
+says "it says what they decide" \
+  "whether to go on trying, to stop the task here, or to change what the case expects" \
+  "$WORK/run.log"
+says "and the way on once they decided" "--past-limit --user-decided then runs once more" \
+  "$WORK/run.log"
+if [ "$(ls .review/runs | wc -l)" -eq "$runs_before" ]; then
+  echo "ok    the stop of a case leaves no run behind"
+else
+  echo "FAIL  the stop of a case left a run directory behind"
+  FAILURES=$((FAILURES + 1))
+fi
+round "--past-limit alone does not pass the stop of a case" 1 "this stop takes --user-decided" \
+  T-074 same - --past-limit
+round "nor does the loop's own reason" 1 "this stop takes --user-decided" \
+  T-074 same - --past-limit --because "the next fix closes it"
+round "once the user decided to go on the review runs" 0 "CLEAN" \
+  T-074 same - --past-limit --user-decided
+run_records "and the run records which stop they passed" \
+  '.stop == "case" and .user_decided == true and .past_limit_kind == "user"'
+round "and the reviews run again until the next /qa" 0 "CLEAN" T-074 new -
+qa_record T-074 w4 "$(failing TC-001 w4)"
+round "a later /qa that fails the case again stops the task again" 6 \
+  "   TC-001 failed in 4 /qa of this task, each on other work: " T-074 new -
+qa_record T-074 w5 '{"failures": [], "work": "w5"}'
+round "a later /qa that passes it lifts the stop" 0 "CLEAN" T-074 new -
+
+qa_record T-075 a "$(failing TC-001 w1)"
+qa_record T-075 b "$(failing TC-002 w2)"
+qa_record T-075 c "$(failing TC-001 w3)"
+qa_record T-075 d "$(failing TC-002 w4)"
+round "two cases that failed in turn, twice each, do not stop the task" 0 "CLEAN" T-075 new -
+qa_record T-075 e "$(failing TC-001 w5)"
+round "two cases that fail in turn are read too" 6 \
+  "   TC-001 failed in 3 /qa of this task, each on other work: 0-qa-T-075-a, 0-qa-T-075-c, "\
+"0-qa-T-075-e" \
+  T-075 new -
+
+# No fix lies between two /qa of the same work, and a record that does not say which work
+# it checked is not known to be of other work: neither makes a circle.
+for name in first second third; do qa_record T-076 "$name" "$(failing TC-001 w1)"; done
+round "a case that failed in three /qa of unchanged work is no circle" 0 "CLEAN" T-076 new -
+for name in first second third; do
+  qa_record T-077 "$name" '{"failures": [{"case": "TC-001"}]}'
+done
+round "three /qa that do not say which work they checked stop no review" 0 "CLEAN" T-077 new -
+
+# The decision to go on is taken at one stop. A finding in a circle is read first; the
+# user's decision on it is none on the case, which the next run reads.
+on_the_way 3 T-078 new 10
+on_the_way 3 T-078 new 10
+on_the_way 3 T-078 new 10
+for work in w1 w2 w3; do qa_record T-078 "$work" "$(failing TC-002 "$work")"; done
+round "a finding in a circle is read before a case in a circle" 6 \
+  "NOT CONVERGING — the fixes of T-078 do not close a finding of the review" T-078 same -
+on_the_way 0 T-078 same - --past-limit --user-decided
+round "the decision to go on at another stop does not pass the stop of a case" 6 \
+  "NOT CONVERGING — the fixes of T-078 do not close a case of /qa" T-078 same -
+
+# A /qa record that does not hold, or cannot be read, is never read as no failure.
+qa_record T-079 w1 "$(failing TC-001 w1)"
+qa_record T-079 items \
+  "{\"counts\": {\"pass\": 3}, \"failures\": [], \"items\": [$two_passes]}"
+runs_before="$(ls .review/runs | wc -l)"
+round "a /qa record that does not hold stops the run and says so" 1 \
+  "its items do not hold; the line before this one says what" T-079 new -
+says "the line before says what does not hold" \
+  ".review/runs/0-qa-T-079-items/qa.json: 2 item(s) say pass and counts.pass is 3" "$WORK/run.log"
+says "and that nothing ran" "nothing ran" "$WORK/run.log"
+if [ "$(ls .review/runs | wc -l)" -eq "$runs_before" ]; then
+  echo "ok    a /qa record that does not hold leaves no run behind"
+else
+  echo "FAIL  a /qa record that does not hold left a run directory behind"
+  FAILURES=$((FAILURES + 1))
+fi
+printf '{' >.review/runs/0-qa-T-079-items/qa.json
+round "a /qa record that is no JSON stops the run too" 1 \
+  "the /qa records of T-079 could not be read" T-079 new -
+says "the line before names the record and says what to do with it" \
+  "   .review/runs/0-qa-T-079-items/qa.json is not readable — the /qa records of a task are "\
+"read from these files: repair it or remove that folder" "$WORK/run.log"
+printf '{' >.review/runs/0-qa-T-079-items/qa.json.other
+mkdir -p .review/runs/0-qa-other-task
+mv .review/runs/0-qa-T-079-items/qa.json.other .review/runs/0-qa-other-task/qa.json
+rm .review/runs/0-qa-T-079-items/qa.json
+round "a record that cannot be read may be another task's: the line says which file it is" 1 \
+  "   .review/runs/0-qa-other-task/qa.json is not readable — the /qa records of a task are " \
+  T-079 new -
+rm -r .review/runs/0-qa-other-task
+rm -r .review/runs/0-qa-T-079-items
+round "with the record gone the review runs" 0 "CLEAN" T-079 new -
 rm src/pickup.kt src/fix.kt
 cp "$WORK/land.conf.before-rounds" .review/land.conf
 

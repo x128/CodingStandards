@@ -33,8 +33,8 @@
 #   4  escalations — answered before landing (maintain, step 7)
 #   5  review unusable — every finding failed quote verification; re-run
 #   6  nothing ran: the task is at its limit of reviews, or the script read a
-#      circle in its runs — its last line says whose turn it is (--past-limit
-#      runs once more)
+#      circle in its runs or in its /qa records — its last line says whose turn
+#      it is (--past-limit runs once more)
 #   1  pipeline error, including any malformed agent output (fails closed), or
 #      no working end-to-end harness; at LANDING=pr and merge also work that is not
 #      committed, a pull request that is not at HEAD, or a run that could not be
@@ -144,12 +144,16 @@ fi
 # re-run after red gates or an unusable review, a review again after /qa or a
 # landing refusal. Nothing else counts them, and none of those paths has a limit
 # of its own, so a session nobody watches could repeat one of them for as long as
-# the account pays. So the script reads the runs of the task before it makes a
-# new one (task_runs_json and JQ_READING, common.sh) and stops, with exit 6 and
-# nothing run, in four cases:
+# the account pays. So the script reads the runs of the task and its /qa records
+# before it makes a new run (task_runs_json, qa_records_of and JQ_READING,
+# common.sh) and stops, with exit 6 and nothing run, in five cases:
 #   a finding in a circle  a finding of the newest review was accepted at the same
 #                          place in three reviews in a row, each of other work than
 #                          the one before
+#   a case in a circle     a case the newest /qa failed has failed on three works of
+#                          the task, counted as pr-post.sh qa counts them; once the
+#                          user decided to go on, the stop is lifted until the next
+#                          /qa
 #   the same end           three runs in a row ended the same way: the same gates
 #                          red with the same output, the same end-to-end tests red,
 #                          the same missing harness, an unusable review
@@ -158,8 +162,8 @@ fi
 #   the limit of runs      ASK_AFTER_RUNS runs in a row with no review, whatever
 #                          ended them
 # Each stop prints what was read and ends with one line that says whose turn it is
-# (turn). A circle of the work — the finding, or gates or end-to-end tests that
-# stayed red while the work changed each time — is the user's: --past-limit
+# (turn). A circle of the work — the finding, the case, or gates or end-to-end
+# tests that stayed red while the work changed each time — is the user's: --past-limit
 # --user-decided runs once more when they decided to go on, and takes no reason
 # beside it. Every other stop is
 # the loop's, since a count alone is never a question. Where the script reads that
@@ -206,7 +210,8 @@ what_failed() {
 
 # The stop in force, as $READING has it: what was read, on stdout, then whose turn it is.
 say_stop() {
-  local newest failed row came_back accepted what
+  local newest failed row came_back accepted what case_id times qa_runs line
+  local cases="" fixes=0 more=""
   IFS=$'\t' read -r newest failed row came_back accepted < <(printf '%s' "$READING" | jq -r '
     [.newest.run // "-", .newest.failed // "-",
      (if .stop == "finding" then ([.came_back[].row] | max) else .same_end_changed end),
@@ -255,6 +260,32 @@ say_stop() {
 "— whether to go on trying, to stop the task here, or to rule that it is no problem (/policy); "\
 "--past-limit --user-decided then runs once more"
       ;;
+    case)
+      echo "NOT CONVERGING — the fixes of $TASK_ID do not close a case of /qa; nothing ran."
+      while IFS=$'\t' read -r case_id times qa_runs; do
+        [ -n "$case_id" ] || continue
+        echo "   $case_id failed in $times /qa of this task, each on other work: $qa_runs"
+        line="$(case_line "$case_id")"
+        if [ -n "$line" ]; then
+          echo "   what it expects: qa/test-cases.md:$line; what /qa saw each time: the "\
+"report.md of each"
+        else
+          echo "   qa/test-cases.md has no $case_id; what /qa saw each time: the report.md "\
+"of each"
+        fi
+        if [ -z "$cases" ]; then
+          fixes=$((times - 1))
+        else
+          [ "$((times - 1))" -eq "$fixes" ] || more=" or more"
+          [ "$((times - 1))" -ge "$fixes" ] || fixes=$((times - 1))
+        fi
+        cases="${cases:+$cases, }$case_id"
+      done < <(printf '%s' "$READING" | jq -r '.qa_back[] | select(.times >= 3)
+        | [.case, .times, (.runs | map(split("/") | last) | join(", "))] | @tsv')
+      turn user:not-converging "$cases failed again after each of $fixes fixes$more — "\
+"whether to go on trying, to stop the task here, or to change what the case expects; "\
+"--past-limit --user-decided then runs once more"
+      ;;
     same-end)
       what="$(what_failed "$newest" "$failed")"
       if [ "$STOP_WHOSE" = user ]; then
@@ -301,7 +332,15 @@ if [ -n "$TASK_ID" ]; then
     echo "the runs of $TASK_ID could not be read; nothing ran" >&2
     exit 1
   }
-  READING="$(task_reading "$RUNS" '[]' "$ASK_AFTER_RUNS")" && [ -n "$READING" ] || {
+  # A /qa record that cannot be read, or one of the task that does not hold, is never read
+  # as no failure: qa_records_of says which and what, and nothing runs.
+  QA="$(qa_records_of "$TASK_ID" | qa_cases_of)" && [ -n "$QA" ] || {
+    echo "the /qa records of $TASK_ID could not be read: a qa.json is unreadable or not "\
+"{task, failures: [{case: TC-nnn}]}, or its items do not hold; the line before this one says "\
+"what; nothing ran" >&2
+    exit 1
+  }
+  READING="$(task_reading "$RUNS" "$QA" "$ASK_AFTER_RUNS")" && [ -n "$READING" ] || {
     echo "the runs of $TASK_ID could not be read; nothing ran" >&2
     exit 1
   }
@@ -833,7 +872,7 @@ say_what_repeats() {
   [ -n "$TASK_ID" ] || return 0
   this="$(task_run_json "$RUN_DIR" 2>/dev/null)" || return 0
   runs="$(printf '[%s, [%s]]' "$RUNS" "$this" | jq -c 'add' 2>/dev/null)" || return 0
-  reading="$(task_reading "$runs" '[]' "$ASK_AFTER_RUNS" 2>/dev/null)" || return 0
+  reading="$(task_reading "$runs" "$QA" "$ASK_AFTER_RUNS" 2>/dev/null)" || return 0
   case "$END" in
     findings | escalations)
       printf '%s' "$reading" | jq -r '

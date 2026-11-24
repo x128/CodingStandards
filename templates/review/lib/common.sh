@@ -819,7 +819,8 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
    elif $ending == "unusable" then "unusable"
    else null end) as $failed
 | {run: $run, time: (.time // 0), epoch: (.epoch // 0), past_limit: (.past_limit == true),
-   user_decided: (.user_decided == true), work: .tree_fingerprint, reviewed: $reviewed,
+   user_decided: (.user_decided == true), stop: (.stop // null), work: .tree_fingerprint,
+   reviewed: $reviewed,
    accepted: [$approved | arrays | .[] | objects
               | .finding_id as $id
               | {id: $id}
@@ -840,8 +841,10 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 # The runs of a task as one JSON array, oldest first by the time each records: for each
 # folder under .review/runs whose meta.json names the task — a folder of a landing (land-*)
 # or of /qa (qa-*) is no review run —
-#   {run, time, epoch, past_limit, user_decided, work, reviewed, accepted, end, failed, same}
-# `work` is the fingerprint of the tree the run looked at. `reviewed`: the run made a review
+#   {run, time, epoch, past_limit, user_decided, stop, work, reviewed, accepted, end, failed,
+#    same}
+# `stop` names the stop a run with --past-limit passed, and `user_decided` says that the
+# user decided to go on there. `work` is the fingerprint of the tree the run looked at. `reviewed`: the run made a review
 # — its approved.json is there and is a list, which review.sh writes only when the triage
 # ended. `accepted`: what the review accepted, each {id, file, line, category, quote,
 # quote_lines}, the quote being the first line of the finding's quote that is not blank,
@@ -913,14 +916,32 @@ task_runs_json() {
   printf '%s' "$entries" | jq -sc 'sort_by(.time)'
 }
 
+# The works on which /qa failed a case, oldest first, each once, as {work, run}: jq's
+# works_failed(<records>; <case>), the records oldest first, each {run, work, failures:
+# [case]} (qa_cases_of). A /qa of work that did not change is the same /qa again, and no
+# fix lies between the two. A record that does not say its `work` is not known to be of
+# other work: beside records that say theirs it counts nothing, and with none of those the
+# newest such record counts once. The print after /qa (qa_times) and the stop of review.sh
+# (JQ_READING) count with it, so the two never differ.
+JQ_WORKS_FAILED='def works_failed($records; $case):
+  [$records[] | select(any(.failures[]; . == $case))] as $failed
+  | reduce ($failed[] | select((.work // "") != "")) as $record ([];
+      if any(.[]; .work == $record.work) then .
+      else . + [{work: $record.work, run: $record.run}] end)
+  | if length == 0 then [$failed | last | select(. != null) | {work: null, run}] else . end;
+'
+
 # What repeats in the runs of a task, the stop in force and whose it is. Input: {runs, qa,
 # limit}. runs: task_runs_json. qa: the /qa records of the task, oldest first, each {run,
-# time, work, failures: [case]}. limit: ASK_AFTER_RUNS.
+# time, work, failures: [case]} (qa_cases_of). limit: ASK_AFTER_RUNS.
 #
 # The stops, the first that holds: `finding` — a finding of the newest review was accepted
 # at the same place in three reviews in a row, each of other work than the one before;
-# `case` — a case the newest /qa failed has failed on three works; `same-end` — three runs
-# in a row ended the same way (`same`); `reviews` — `limit` reviews since the count started;
+# `case` — a case the newest /qa failed has failed on three works (works_failed), until a
+# run newer than that /qa passed this stop on the user's decision: the decision holds
+# until the next /qa, and one taken at another stop is none on the case; `same-end` —
+# three runs in a row ended the same way (`same`); `reviews` — `limit` reviews since the
+# count started;
 # `runs` — `limit` runs in a row with no review. `whose`: `user` for a circle of the work —
 # the finding, the case, or the same gates or end-to-end tests red through the newest three
 # runs, each of other work than the one before; `loop` where the script cannot read that
@@ -967,10 +988,10 @@ def same_place($a; $b):
 | (($newest_first[0].failed // "") as $failed
    | $changed_row >= 3 and ($failed == "gates" or $failed == "e2e")) as $same_end_of_the_work
 | (($qa[-1].time // 0) as $newest
-   | any($runs[]; .user_decided == true and (.time // 0) > $newest)) as $qa_answered
+   | any($runs[]; .user_decided == true and .stop == "case" and (.time // 0) > $newest))
+    as $qa_answered
 | ([$qa[-1].failures[]?] | unique | map(. as $case
-     | [$qa[] | select(.failures | index($case)) | {work: (.work // .run), run}]
-     | {case: $case, times: (map(.work) | unique | length), runs: map(.run)})
+     | works_failed($qa; $case) | {case: $case, times: length, runs: map(.run)})
    | map(select(.times >= 2))) as $qa_back
 | ([$reviews[] | select((.epoch // 0) == $epoch and .past_limit != true)] | length) as $counted
 | [$reviews[] | .accepted | length] as $series
@@ -996,7 +1017,8 @@ def same_place($a; $b):
 # go to jq on its input, never as an argument: a task with many runs is longer than one
 # argument may be.
 task_reading() {
-  printf '{"runs": %s, "qa": %s, "limit": %s}' "$1" "$2" "$3" | jq -c "$JQ_READING"
+  printf '{"runs": %s, "qa": %s, "limit": %s}' "$1" "$2" "$3" \
+    | jq -c "$JQ_WORKS_FAILED$JQ_READING"
 }
 
 # The tasks other than <task-id> whose commits are between <base-ref> and HEAD, one line,
@@ -1126,12 +1148,17 @@ qa_record_fault() {
 # The qa.json records of a task as one JSON array, oldest first by the time each records,
 # each with its folder as `run`. A record that cannot be read, or one of the task that has a
 # fault (qa_record_fault), fails the whole call, with the record and its fault on stderr: it
-# must never read as "no failures".
+# must never read as "no failures". A record that is no JSON object names no task, so it
+# fails the call for every task: the line names the file, which may be another task's.
 qa_records_of() {
   local record records fault
   records="$(for record in .review/runs/*/qa.json; do
       [ -f "$record" ] || continue
-      jq -c --arg run "${record%/qa.json}" '. + {run: $run}' "$record" || exit 1
+      jq -c --arg run "${record%/qa.json}" '. + {run: $run}' "$record" || {
+        echo "   $record is not readable — the /qa records of a task are read from these "\
+"files: repair it or remove that folder" >&2
+        exit 1
+      }
     done | jq -sc --arg id "$1" 'map(select(.task == $id)) | sort_by(.time // 0)')" || return 1
   while IFS= read -r record; do
     [ -n "$record" ] || continue
@@ -1141,12 +1168,16 @@ qa_records_of() {
   printf '%s\n' "$records"
 }
 
+# The /qa records of a task as the reading of its runs takes them (JQ_READING): the output
+# of qa_records_of on stdin, each record cut to {run, time, work, failures: [case]}.
+qa_cases_of() {
+  jq -c 'map({run, time: (.time // 0), work: (.work // null), failures: [.failures[].case]})'
+}
+
 # On how many works /qa of a task failed each case that a record lists in failures — the
 # newest record of the task, or the one given — and in which records: a JSON array of
-# {case, times, runs}, runs being the folders, oldest first, one for each work. A /qa of
-# work that did not change is the same /qa again, and no fix lies between the two. A record
-# that does not say its `work` is not known to be of other work: beside records that say
-# theirs it counts nothing, and with none of those the newest such record counts once.
+# {case, times, runs}, runs being the folders, oldest first, one for each work
+# (works_failed).
 qa_times() {
   local records cases
   records="$(qa_records_of "$1")" || return 1
@@ -1155,15 +1186,11 @@ qa_times() {
   else
     cases="$(printf '%s' "$records" | jq -c '[(last // {}).failures[]?.case]')" || return 1
   fi
-  printf '%s' "$records" | jq -c --argjson cases "$cases" '
+  records="$(printf '%s' "$records" | qa_cases_of)" || return 1
+  printf '%s' "$records" | jq -c --argjson cases "$cases" "$JQ_WORKS_FAILED"'
     . as $records
     | reduce $cases[] as $case ([]; if index($case) != null then . else . + [$case] end)
-    | map(. as $case
-          | [$records[] | select(any(.failures[]; .case == $case))] as $failed
-          | reduce ($failed[] | select((.work // "") != "")) as $record ([];
-              if any(.[]; .work == $record.work) then .
-              else . + [{work: $record.work, run: $record.run}] end)
-          | if length == 0 then [$failed | last | select(. != null)] else . end
+    | map(. as $case | works_failed($records; $case)
           | {case: $case, times: length, runs: map(.run | split("/") | last)})'
 }
 
@@ -1186,8 +1213,8 @@ qa_left_items() {
 # every /qa, at every level. Each thing is on stdout and ends with its line of `turn`, on
 # stderr. A failing case says what is to be seen, so it is the loop's to fix, however
 # often /qa was red; the same case failing on three works — after each of two fixes — does
-# not converge, and that is the user's. An unproven item and one not checked are the
-# loop's. What the app does that nothing written describes is the one question, and it
+# not converge, and that is the user's: review.sh stops the task there, and runs once more
+# when they decided to go on. An unproven item and one not checked are the loop's. What the app does that nothing written describes is the one question, and it
 # holds nothing.
 qa_left() {
   local task_id="$1" qa_dir="$2" record="$2/qa.json" times entry case_id count runs line
@@ -1232,7 +1259,8 @@ qa_left() {
     if [ "$count" -ge 3 ]; then
       turn user:not-converging "$case_id failed again after each of $((count - 1)) fixes — "\
 "whether to go on trying, to stop the task here, or to change what the case expects; say "\
-"what /qa saw each time and what each fix changed"
+"what /qa saw each time and what each fix changed; when they decide to go on, review.sh runs "\
+"once more with --past-limit --user-decided"
     elif [ "$count" -eq 2 ]; then
       turn loop "$next; it failed after a fix before: find why that fix did not hold first"
     else

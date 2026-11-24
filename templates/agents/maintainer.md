@@ -45,7 +45,8 @@ third time in a row it stops with exit 6, and so it does at `ASK_AFTER_RUNS` rev
 Its last line says whose turn it is: `The loop goes on` names the next step, and `--past-limit` runs
 once more, with `--because "<why>"` where the line asks for it; `For the user` is asked once, and
 when they decide to go on, `--past-limit --user-decided` runs once more: it takes no words. A
-failing case of `/qa` is no question: the loop fixes it as often as it fails (`/maintain`, step 8).
+failing case of `/qa` is no question until `review.sh` stops for it: the loop fixes it as often as
+it fails (`/maintain`, step 8).
 
 ## 3. Land, then advance
 
