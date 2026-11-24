@@ -52,10 +52,13 @@
 #                        the landing compares the words with it) and prints what the
 #                        /qa left and whose turn each thing is (qa_left) — a failing case
 #                        with its words, its test and the loop's next step, what is
-#                        unproven or not checked, and what the app does that nothing
-#                        written describes, the one question for the user. Below the pull
-#                        request levels that is all. At pr and merge: <qa-dir>/report.md
-#                        as a comment, once; then the statuses and the description
+#                        unproven or not checked, what is put off until after the
+#                        merge — an item not checked, which at pr and merge is the
+#                        user's to accept or not — and what the app does that nothing
+#                        written describes, the one question that holds nothing. Below
+#                        the pull request levels that is all. At pr and merge:
+#                        <qa-dir>/report.md as a comment, once; then the statuses and
+#                        the description
 #   statuses             at HEAD: loop/<gate>, loop/e2e-<platform>, loop/review and
 #                        loop/qa, from the newest review run and /qa of the task if they
 #                        checked the work as it is now — by the same checks as the merge
@@ -167,7 +170,7 @@ if [ "$COMMAND" = qa ]; then
   [ -z "$FAULT" ] || fail "$ARGUMENT/qa.json does not hold: $FAULT"
   qa_keeps_words "$ARGUMENT" || \
     fail "the words of the cases /qa failed could not be kept in $ARGUMENT/cases.json"
-  qa_left "$(jq -r '.task' "$ARGUMENT/qa.json")" "$ARGUMENT" || \
+  qa_left "$(jq -r '.task' "$ARGUMENT/qa.json")" "$ARGUMENT" "$LANDING" || \
     fail "the records of /qa could not be read"
   if ! landing_opens_pull_request "$LANDING"; then
     echo "LANDING=$LANDING opens no pull request: the report stays in $ARGUMENT/report.md"
@@ -394,9 +397,9 @@ post_statuses() {
       state=failure; text="$reason"
     else
       state=success
-      text="$(qa_records_of "$TASK_ID" | jq -r 'last
+      text="$(qa_records_of "$TASK_ID" | jq -r "$JQ_NOT_CHECKED"'last
         | "\(.extent): \(.counts.pass) passed, \(.failures | length) failure(s) proven or "
-          + "answered, \(.counts.unproven) unproven, \(.counts.not_checked) not checked"')"
+          + "answered, \(.counts.unproven) unproven, \(not_checked) not checked"')"
     fi
   fi
   post_status "$HEAD_COMMIT" loop/qa "$state" "$text" || return 1

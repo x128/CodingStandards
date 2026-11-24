@@ -1293,6 +1293,16 @@ qa_times() {
           | {case: $case, times: length, runs: map(.run | split("/") | last)})'
 }
 
+# What a /qa record did not check, wherever a count decides or is shown — the merge (M5,
+# qa_left_nothing_open) and the status of /qa: the items it counts as not checked, and
+# those it put off until after the merge (counts.after_merge). No script checks anything
+# after a merge yet, so until one does an item put off is an item not checked. A count of
+# them that is no number counts as one: it never reads as none.
+JQ_NOT_CHECKED='def put_off:
+  ((.counts | objects | .after_merge) // 0) | if type == "number" then . else 1 end;
+def not_checked: (.counts.not_checked // 0) + put_off;
+'
+
 # One line of what /qa left: the items of a record with one verdict, as `   <n> <words>:
 # <id> (<reason>); …`, the ids and reasons when the record lists its items. Nothing, and
 # exit 1, when there is no such item.
@@ -1313,10 +1323,14 @@ qa_left_items() {
 # stderr. A failing case says what is to be seen, so it is the loop's to fix, however
 # often /qa was red; the same case failing on three works — after each of two fixes — does
 # not converge, and that is the user's: review.sh stops the task there, and runs once more
-# when they decided to go on. An unproven item and one not checked are the loop's. What
-# the app does that nothing written describes is the one question, and it holds nothing.
+# when they decided to go on. An unproven item and one not checked are the loop's. An item
+# put off until after the merge is an item not checked (JQ_NOT_CHECKED): at the pull
+# request levels — <level> is the LANDING of the project — it holds the merge and is the
+# user's to accept or not, and below them nothing waits on it. What the app does that
+# nothing written describes is the one question that holds nothing.
 qa_left() {
-  local task_id="$1" qa_dir="$2" record="$2/qa.json" times entry case_id count runs line
+  local task_id="$1" qa_dir="$2" level="$3" record="$2/qa.json" times entry case_id count runs
+  local line
   local words tests why next said=false
   times="$(qa_times "$task_id" "$record")" || return 1
   echo "── what /qa left in $(basename "$qa_dir"), and whose it is:"
@@ -1388,7 +1402,20 @@ qa_left() {
     said=true
     turn loop "restore what failed — a tool, a device — and run /qa again"
   fi
-  ! qa_left_items "$record" after_merge "put off until after the merge" || said=true
+  if qa_left_items "$record" after_merge "put off until after the merge"; then
+    said=true
+    echo "      no script checks an item after the merge yet: at the pull request levels it "\
+"holds the merge like an item not checked"
+    if landing_opens_pull_request "$level"; then
+      turn user:beyond-agreed "to merge with it not checked, or not — unless a /qa of the "\
+"whole pull request can check it before the merge; their acceptance goes into "\
+"$qa_dir/open-answered.json, "\
+"{\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}"
+    else
+      turn loop "nothing waits on it at LANDING=$level, which makes no merge: the report of "\
+"/qa says that it is not checked, and why"
+    fi
+  fi
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
     said=true
@@ -1751,23 +1778,28 @@ qa_checked_this_work() {
 # left, in <its folder>/open-answered.json: {"by": "human", "answer": "accepted-as-is",
 # "words": "<what they said>"}. A /qa after a fix checks only what the fix can reach, so
 # what an earlier one left open goes away only with a later /qa of the whole pull request or
-# with the user's acceptance. A merge nobody looks at never stands on a check nobody made.
+# with the user's acceptance. A merge nobody looks at never stands on a check nobody made:
+# an item put off until after the merge is not checked either (JQ_NOT_CHECKED), and the
+# refusal says how many of those not checked are such.
 qa_left_nothing_open() {
-  local task_id="$1" merge_base="$2" records open
+  local task_id="$1" merge_base="$2" records open run counts put_off_note
   records="$(qa_records_of "$task_id")" || \
     refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
 "do not hold; the line before this one says what"
-  open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" '
+  open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" "$JQ_NOT_CHECKED"'
     ([to_entries[] | select(.value.since == $since and (.value.counts | type) == "object")
       | .key] | last // 0) as $from
-    | .[$from:][] | select(((.counts.unproven // 0) + (.counts.not_checked // 0)) > 0)
-    | "\(.run)\t\(.counts.unproven // 0) unproven and \(.counts.not_checked // 0) not checked"')"
-  while IFS=$'\t' read -r run counts; do
+    | .[$from:][] | select(((.counts.unproven // 0) + not_checked) > 0)
+    | "\(.run)\t\(.counts.unproven // 0) unproven and \(not_checked) not checked\t"
+      + (if put_off > 0
+         then " (\(put_off) of them put off until after the merge, which no script checks yet)"
+         else "" end)')"
+  while IFS=$'\t' read -r run counts put_off_note; do
     [ -n "$run" ] || continue
     jq -e '.by == "human" and .answer == "accepted-as-is" and ((.words // "") != "")' \
       "$run/open-answered.json" >/dev/null 2>&1 || \
-      refuse 7 "/qa left $counts in $(basename "$run") — restore what failed and run /qa of "\
-"the whole pull request again, or the user accepts it: $run/open-answered.json, "\
+      refuse 7 "/qa left $counts in $(basename "$run")$put_off_note — restore what failed and "\
+"run /qa of the whole pull request again, or the user accepts it: $run/open-answered.json, "\
 "{\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}"
   done <<<"$open"
 }

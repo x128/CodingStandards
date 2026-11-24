@@ -1218,6 +1218,14 @@ qa_says "an item put off until after the merge is listed with its reason" 0 \
   "   1 put off until after the merge: the build of main (the workflow runs only on a push to the base branch)" \
   .review/runs/0-qa-T-029-later
 never_says "an item put off is not a thing that passed" "nothing: every item passed"
+# No script checks anything after a merge yet, so the line says what holds until one does:
+# such an item is an item not checked. Below the pull request levels nothing waits on it.
+says "the line of an item put off says that it holds the merge like an item not checked" \
+  "      no script checks an item after the merge yet: at the pull request levels it holds the merge like an item not checked"
+says "below the pull request levels nothing waits on an item put off" \
+  "   The loop goes on: nothing waits on it at LANDING=off, which makes no merge: the report of /qa says that it is not checked, and why"
+never_says "and the user is not asked where the loop makes no merge" "For the user"
+never_says "nothing says that a merge goes on with an item put off" "not hold"
 
 new_task T-030
 qa_record T-030 asks "{\"failures\": [], $double_tap}"
@@ -3633,6 +3641,73 @@ jq -n '{by: "human", answer: "accepted-as-is", words: "The emulator is broken: f
 pr_post "the statuses again" 0 "statuses posted" statuses
 holds "the user's answer turns /qa green" status_is loop/qa success
 publish "and the task merges" 0 "merged T-001" --merge
+
+# An item /qa put off until after the merge. No script checks anything after a merge yet,
+# so until one does such an item is an item not checked wherever a count decides: the merge
+# waits on it, by its items or by its count alone, until a /qa of the whole pull request
+# leaves none or the user accepts what the /qa left, as for an item not checked; pr-post.sh
+# qa says so right after the /qa, and the status counts it as not checked.
+put_off='{"counts": {"pass": 1, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": 1},
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "the build of main", "verdict": "after_merge",
+             "reason": "the workflow runs only on a push to the base branch",
+             "check": "the run of the build workflow on main, at the merge commit"}]}'
+published_project origin
+set_level merge
+pr_work
+pr_land "a landing whose /qa puts an item off until after the merge" 0 \
+  "pull request: https://example.test/pull/1"
+pr_review "the review of that landing" 0 "CLEAN — gates green"
+qa_checked '[]' "" 0 "$put_off"
+put_off_qa="qa-$qa_runs"
+says "at the pull request levels pr-post.sh qa lists an item put off until after the merge" \
+  "   1 put off until after the merge: the build of main (the workflow runs only on a push to the base branch)" \
+  "$WORK/qa.log"
+says "its line says there too that it holds the merge like an item not checked" \
+  "      no script checks an item after the merge yet: at the pull request levels it holds the merge like an item not checked" \
+  "$WORK/qa.log"
+says "and it is the user's to accept or not" \
+  "   For the user, beyond what was agreed: to merge with it not checked, or not — unless a /qa of the whole pull request can check it before the merge; their acceptance goes into " \
+  "$WORK/qa.log"
+says "with the file their acceptance goes into, beside the record" \
+  ".review/runs/$put_off_qa/open-answered.json, {\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}" \
+  "$WORK/qa.log"
+never_says "nothing says there that the merge goes on with it" "not hold" "$WORK/qa.log"
+holds "the status of /qa waits on an item put off" status_is loop/qa pending
+m5_put_off="M5: /qa left 0 unproven and 1 not checked in $put_off_qa (1 of them put off until "\
+"after the merge, which no script checks yet) — restore what failed"
+publish "--check refuses for an item put off until after the merge" 3 "$m5_put_off" --check
+publish "an item put off until after the merge holds the merge like an item not checked" 3 \
+  "$m5_put_off" --merge
+holds "nothing is merged with an item put off" not gh_called "pr merge"
+qa_recorded '[]' "" 0 \
+  '{"counts": {"pass": 3, "fail": 0, "unproven": 0, "not_checked": 1, "after_merge": 2}}'
+publish "a /qa with counts alone holds the merge by its count of items put off" 3 \
+  "M5: /qa left 0 unproven and 3 not checked in qa-$qa_runs (2 of them put off until after the merge" \
+  --check
+qa_recorded '[]' "" 0 \
+  '{"counts": {"pass": 3, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": "one"}}'
+publish "a count of items put off that is no number holds the merge too" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs (1 of them put off until after the merge" \
+  --check
+qa_checked
+publish "a later /qa of the whole pull request that put nothing off clears it" 0 \
+  "ready to merge: https://example.test/pull/1" --check
+qa_checked '[]' "$(git rev-parse HEAD)" 0 "$put_off"
+put_off_qa="qa-$qa_runs"
+publish "a /qa after a fix that puts an item off holds the merge too" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in $put_off_qa (1 of them put off until after the merge" \
+  --merge
+holds "and nothing is merged then either" not gh_called "pr merge"
+jq -n '{by: "human", answer: "accepted-as-is", words: "The build of main is checked by hand."}' \
+  >".review/runs/$put_off_qa/open-answered.json"
+pr_post "the statuses after the user accepted an item put off" 0 "statuses posted" statuses
+holds "the user's acceptance of an item put off turns /qa green" status_is loop/qa success
+holds "and the status counts the item put off as not checked" \
+  jq_true --arg sha "$(git rev-parse HEAD)" \
+  '[.[] | select(.sha == $sha and .context == "loop/qa")] | last | .description
+   | endswith("0 unproven, 1 not checked")' "$GH_STATE/statuses.json"
+publish "with the user's acceptance beside the record the task merges" 0 "merged T-001" --merge
 
 published_project origin
 printf 'fun util() = 1\n' >src/util.kt
