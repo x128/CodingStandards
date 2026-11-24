@@ -679,19 +679,77 @@ people_comments_open() {
     | sort_by(.at)'
 }
 
+# The first fault of a /qa record, or nothing when it holds. Beside what a record always
+# had — its task and failures: [{case: TC-nnn}] — it may list its items, one {id, verdict,
+# reason, check} for each: the verdict as counts names it, a reason for every verdict but
+# pass, and for after_merge the check that will be made then. And, apart from the items,
+# behaviour_without_requirement: [{what, where}], what the app does that no requirement,
+# exit criterion or case describes — a question, so it may name no case: what fails in a
+# case is a failure. A record with neither field reads as it always did.
+qa_record_fault() {
+  local fault unreadable="it is not one JSON object with a task and failures: [{case: TC-nnn}]"
+  fault="$(jq -rs --arg unreadable "$unreadable" '
+    def text: type == "string" and . != "";
+    def fault:
+      . as $record
+      | ["pass", "fail", "unproven", "not_checked", "after_merge"] as $verdicts
+      | first(
+          (select(type != "object" or (.task | text | not) or (.failures | type) != "array"
+                  or (all(.failures[]; (.case? // "") | text and test("^TC-[0-9]+$")) | not))
+           | $unreadable),
+          (select(has("items"))
+           | select((.items | type) != "array"
+                    or (all(.items[]; type == "object" and (.id | text) and (.verdict | text)
+                                      and (.verdict as $verdict | $verdicts | index($verdict)))
+                        | not))
+           | "items is not a list of {id, verdict}, each verdict one of "
+             + ($verdicts | join(", "))),
+          (.items[]? | select(.verdict != "pass" and (.reason | text | not))
+           | "item \(.id) says \(.verdict) and gives no reason"),
+          (.items[]? | select(.verdict == "after_merge" and (.check | text | not))
+           | "item \(.id) is put off until after the merge and does not say how it is "
+             + "checked then (check)"),
+          (.items[]? | select(.verdict == "after_merge" and (.id | test("TC-[0-9]+")))
+           | "item \(.id) is put off until after the merge and names a case: a case is what "
+             + "is seen in the app, and is checked on the pull request"),
+          (select(has("items")) | $verdicts[] as $verdict
+           | ([$record.items[] | select(.verdict == $verdict)] | length) as $listed
+           | (($record.counts | objects | .[$verdict]) // 0) as $counted
+           | select($listed != $counted)
+           | "\($listed) item(s) say \($verdict) and counts.\($verdict) is "
+             + ($counted | if type == "number" then tostring
+                           else "\(tojson), which is no number" end)),
+          (select(has("behaviour_without_requirement"))
+           | select((.behaviour_without_requirement | type) != "array"
+                    or (all(.behaviour_without_requirement[];
+                            type == "object" and (.what | text) and (.where | text)) | not))
+           | "behaviour_without_requirement is not a list of {what, where}"),
+          (.behaviour_without_requirement[]? | (.what, .where) | select(test("TC-[0-9]+"))
+           | "a behaviour nothing written describes names a case (\(.)): a case is written, "
+             + "so what fails in it is a failure: list the case in failures, or leave its id "
+             + "out of what and where"),
+          null);
+    if length == 1 then .[0] | fault // empty else $unreadable end' "$1" 2>/dev/null)" \
+    || fault="$unreadable"
+  [ -z "$fault" ] || printf '%s\n' "$fault"
+}
+
 # The qa.json records of a task as one JSON array, oldest first by the time each records,
-# each with its folder as `run`. A record that cannot be read, or that is not {task, failures:
-# [{case: TC-nnn}]}, fails the whole call: it must never read as "no failures".
+# each with its folder as `run`. A record that cannot be read, or one of the task that has a
+# fault (qa_record_fault), fails the whole call, with the record and its fault on stderr: it
+# must never read as "no failures".
 qa_records_of() {
-  local record
-  for record in .review/runs/*/qa.json; do
-    [ -f "$record" ] || continue
-    jq -c --arg run "${record%/qa.json}" '. + {run: $run}' "$record" || exit 1
-  done | jq -sc --arg id "$1" '
-    map(select(.task == $id)) | sort_by(.time // 0)
-    | if all(.[]; (.failures | type) == "array"
-                  and all(.failures[]; (.case? // "") | test("^TC-[0-9]+$")))
-      then . else error("malformed") end'
+  local record records fault
+  records="$(for record in .review/runs/*/qa.json; do
+      [ -f "$record" ] || continue
+      jq -c --arg run "${record%/qa.json}" '. + {run: $run}' "$record" || exit 1
+    done | jq -sc --arg id "$1" 'map(select(.task == $id)) | sort_by(.time // 0)')" || return 1
+  while IFS= read -r record; do
+    [ -n "$record" ] || continue
+    fault="$(qa_record_fault "$record/qa.json")"
+    [ -z "$fault" ] || { echo "   $record/qa.json: $fault" >&2; return 1; }
+  done < <(printf '%s' "$records" | jq -r '.[].run')
+  printf '%s\n' "$records"
 }
 
 # ---------------------------------------------------------------------------
@@ -827,8 +885,8 @@ qa_failures_proven() {
   local run="$1" task_id="$2" records record tags task still runs failures now answered unproven
   local case_id tests
   records="$(qa_records_of "$task_id")" || \
-    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]} — "\
-"refusing to read it as no failures"
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
+"do not hold — refusing to read it as no failures; the line before this one says what"
   [ "$(printf '%s' "$records" | jq 'length')" -gt 0 ] || \
     refuse 7 "no /qa record (qa.json) for $task_id — /qa has not checked this task"
 
@@ -900,8 +958,8 @@ qa_failures_proven() {
 qa_checked_this_work() {
   local task_id="$1" fingerprint="$2" merge_base="$3" records
   records="$(qa_records_of "$task_id")" || \
-    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]} — "\
-"refusing to read it as no failures"
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
+"do not hold — refusing to read it as no failures; the line before this one says what"
   printf '%s' "$records" | jq -e --arg work "$fingerprint" 'last.work == $work' >/dev/null || \
     refuse 7 "/qa has not checked this work of $task_id: its newest qa.json is of other work, "\
 "or there is none"
@@ -932,7 +990,8 @@ qa_checked_this_work() {
 qa_left_nothing_open() {
   local task_id="$1" merge_base="$2" records open
   records="$(qa_records_of "$task_id")" || \
-    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}"
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
+"do not hold; the line before this one says what"
   open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" '
     ([to_entries[] | select(.value.since == $since and (.value.counts | type) == "object")
       | .key] | last // 0) as $from
@@ -953,7 +1012,8 @@ qa_left_nothing_open() {
 qa_reports_posted() {
   local task_id="$1" merge_base="$2" pr_url="$3" records run
   records="$(qa_records_of "$task_id")" || \
-    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}"
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
+"do not hold; the line before this one says what"
   for run in $(printf '%s' "$records" | jq -r --arg since "$merge_base" \
                  '[last, (map(select(.since == $since)) | last)] | map(.run) | unique | .[]'); do
     jq -e --arg url "$pr_url" '.pr_url == $url' "$run/pr-comment.json" >/dev/null 2>&1 || \

@@ -412,7 +412,8 @@ write_body() {
         "$run/meta.json"
     done | jq -sc .)" || return 1
   qa_records="$(qa_records_of "$TASK_ID")" || \
-    fail "a qa.json of $TASK_ID is unreadable or not {task, failures: [{case: TC-nnn}]}"
+    fail "a qa.json of $TASK_ID is unreadable or not {task, failures: [{case: TC-nnn}]}, or its "\
+"items do not hold; the line before this one says what"
   squash_trailers "$TASK_FILE" "$PR_URL" >"$SCRATCH/trailers" || return 1
   jq -nr --slurpfile task "$TASK_FILE" --argjson runs "$runs" --argjson qa "$qa_records" \
          --rawfile trailers "$SCRATCH/trailers" '
