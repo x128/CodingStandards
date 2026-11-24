@@ -342,17 +342,31 @@ for attempt in first second third; do
 done
 cp "$WORK/gates.green" .review/gates.sh
 
-printf '#!/usr/bin/env bash\nsleep 30\n' >.review/gates.sh
+# The landing is killed once its gates run, and the gates say so with a file as they
+# start. How long land.sh takes to reach them differs from machine to machine, so the
+# case waits for that file and not for a second: a minute at most, and no longer than the
+# landing lives. It does not wait for the count, which is what it asks about.
+printf '#!/usr/bin/env bash\n: >"%s"\nsleep 30\n' "$WORK/gates.started" >.review/gates.sh
 "$LIB_DIR/land.sh" --task-file .review/T-004.json --run "$run_of_t004" >"$WORK/land.log" 2>&1 &
 landing=$!
-sleep 1
+waited=0
+until [ -e "$WORK/gates.started" ] || [ "$waited" -ge 60 ] \
+      || ! kill -0 "$landing" 2>/dev/null; do
+  sleep 1
+  waited=$((waited + 1))
+done
 pkill -P "$landing"
 kill "$landing" 2>/dev/null
 wait "$landing" 2>/dev/null
-if [ "$(cat "$run_of_t004/landing-reds")" = 1 ]; then
+if [ -e "$WORK/gates.started" ] && [ "$(cat "$run_of_t004/landing-reds")" = 1 ]; then
   echo "ok    a landing killed while the gates run is counted"
-else
+elif [ -e "$WORK/gates.started" ]; then
   echo "FAIL  a landing killed while the gates run is not counted"
+  FAILURES=$((FAILURES + 1))
+else
+  echo "FAIL  a landing killed while the gates run is not counted: its gates had not "\
+"started after $waited s — log follows"
+  sed 's/^/      /' "$WORK/land.log"
   FAILURES=$((FAILURES + 1))
 fi
 printf '0\n' >"$run_of_t004/landing-reds"
