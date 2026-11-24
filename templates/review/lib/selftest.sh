@@ -1134,6 +1134,26 @@ qa_record T-029 platform '{"counts": {"pass": 1, "fail": 1}, "failures": [{"case
             {"id": "TC-001 on iOS", "verdict": "fail", "reason": "it shows 41"}]}'
 qa_says "a failing item of a case the failures list holds" 0 \
   "   TC-001 failed. What should be is written" .review/runs/0-qa-T-029-platform
+# An item is of a case when its id is the case id, or goes on after it with a character that
+# is no letter, digit or dash: a blank, a colon, a bracket. An id that goes on with a digit
+# or a dash names another case.
+qa_record T-029 colon '{"counts": {"pass": 1, "fail": 1}, "failures": [{"case": "TC-002"}],
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "TC-002: the start", "verdict": "fail", "reason": "it opens with an error"}]}'
+qa_says "a failing item whose id is its case and a colon is of that case" 0 \
+  "   TC-002 failed. What should be is written" .review/runs/0-qa-T-029-colon
+qa_record T-029 longer '{"counts": {"fail": 2}, "failures": [{"case": "TC-002"}],
+  "items": [{"id": "TC-002 (the start)", "verdict": "fail", "reason": "it opens with an error"},
+            {"id": "TC-0021 on iOS", "verdict": "fail", "reason": "it shows no list"}]}'
+qa_says "an id that goes on with a digit is of another case" 1 \
+  "qa.json does not hold: item TC-0021 on iOS says fail and failures does not list its case" \
+  .review/runs/0-qa-T-029-longer
+qa_record T-029 longer '{"counts": {"fail": 1}, "failures": [{"case": "TC-002"}],
+  "items": [{"id": "TC-002-b", "verdict": "fail", "reason": "it opens with an error"}]}'
+qa_says "and so is an id that goes on with a dash" 1 \
+  "qa.json does not hold: item TC-002-b says fail and failures does not list its case" \
+  .review/runs/0-qa-T-029-longer
+rm -rf .review/runs/0-qa-T-029-longer
 qa_record T-029 count '{"counts": {"pass": 1, "fail": 2}, "failures": []}'
 qa_says "failures counted with no case at all are said too" 0 \
   "   2 failed with no case among the failures" .review/runs/0-qa-T-029-count
@@ -1180,6 +1200,420 @@ e2e_land "the landing of a task with no such question ends as before" 0 \
   "For the user to commit" .review/T-030.json "$last_run"
 never_says "and asks nothing" "For the user, what" "$WORK/land.log"
 
+# What a fix may not bend. A failing case is proven by its test seen red, then green, and
+# between the two neither its words nor its mark may give way: a run records a digest of
+# the words of each case, and the marks it was checked against. A case that no end-to-end
+# test can see, which /qa marks `manual: <why>`, is proven by a later /qa that passes it
+# on other work; a pass of /qa never stands in for a case that has a test.
+new_task T-031 '[{"case": "TC-001"}]'
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a case that is then reworded fails first" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-031.json
+red_run="$last_run"
+words_digest() { ( . "$LIB_DIR/common.sh"; printf '%s' "$1" | sha256_stdin ); }
+if jq -e --arg answer "$(words_digest '**TC-001 Answer.** Open the app: it shows 42.')" \
+     --arg start "$(words_digest '**TC-002 Start.** Start the app: it opens with no error.')" \
+     '.cases == {"TC-001": $answer, "TC-002": $start}' "$red_run/e2e.json" >/dev/null 2>&1; then
+  echo "ok    a run records a digest of the words of each case"
+else
+  echo "FAIL  a run records no digest of the words of each case — its e2e.json follows"
+  sed 's/^/      /' "$red_run/e2e.json"
+  FAILURES=$((FAILURES + 1))
+fi
+sed 's/it shows 42\./it shows a number./' "$WORK/test-cases.md" >qa/test-cases.md
+e2e_review "with the case reworded its test passes" 0 "CLEAN — gates green" .review/T-031.json
+e2e_land "a case reworded between the red run and the landing proves nothing" 3 \
+  "whose words changed since /qa failed it: TC-001 (as recorded in $(basename "$red_run"))" \
+  .review/T-031.json "$last_run"
+says "the loop is told that the words of a failing case stay" \
+  "   The loop goes on: fix it" "$WORK/land.log"
+says "and that its mark stays" "a mark stays on a failing case, and so do its words" \
+  "$WORK/land.log"
+cp "$red_run/e2e.json" "$WORK/e2e.red.json"
+jq 'del(.cases)' "$WORK/e2e.red.json" >"$red_run/e2e.json"
+e2e_land "a red run made before the words were recorded is not compared" 0 \
+  "For the user to commit" .review/T-031.json "$last_run"
+cp "$WORK/e2e.red.json" "$red_run/e2e.json"
+cp "$WORK/test-cases.md" qa/test-cases.md
+e2e_land "with the words as they were when its test failed, the task lands" 0 \
+  "For the user to commit" .review/T-031.json "$last_run"
+
+
+# The words are those the first red run was made against: a case reworded between two red
+# runs is compared with the first.
+new_task T-041 '[{"case": "TC-001"}]'
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a case that is reworded before a second red run fails first" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-041.json
+first_red_run="$last_run"
+sed 's/it shows 42\./it shows a number./' "$WORK/test-cases.md" >qa/test-cases.md
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "reworded, its test fails once more" 2 "app: failed: AnswerE2E.shows42" \
+  .review/T-041.json
+e2e_review "and then passes" 0 "CLEAN — gates green" .review/T-041.json
+e2e_land "a case reworded between two red runs proves nothing" 3 \
+  "whose words changed since /qa failed it: TC-001 (as recorded in $(basename "$first_red_run"))" \
+  .review/T-041.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+e2e_land "with the words of the first red run, the task lands" 0 "For the user to commit" \
+  .review/T-041.json "$last_run"
+
+# The words are those /qa failed the case with: pr-post.sh qa, run right after /qa, keeps a
+# digest of the words of each failing case beside the record, once. So a case reworded
+# before its test was ever seen failing proves nothing either; what /qa itself wrote anew
+# when it failed the case is what counts.
+new_task T-042
+e2e_review "a run of a task made before /qa fails a case goes on" 0 "CLEAN — gates green" \
+  .review/T-042.json
+qa_record T-042 failed '{"failures": [{"case": "TC-001"}], "work": "w1"}'
+qa_says "pr-post.sh qa on a failing case says whose it is" 0 "   The loop goes on: fix TC-001" \
+  .review/runs/0-qa-T-042-failed
+if jq -e --arg answer "$(words_digest '**TC-001 Answer.** Open the app: it shows 42.')" \
+     '. == {"TC-001": $answer}' .review/runs/0-qa-T-042-failed/cases.json >/dev/null 2>&1; then
+  echo "ok    and keeps a digest of the words of the failing case beside the record"
+else
+  echo "FAIL  pr-post.sh qa kept no digest of the words of the failing case — the folder follows"
+  ls .review/runs/0-qa-T-042-failed | sed 's/^/      /'
+  FAILURES=$((FAILURES + 1))
+fi
+sed 's/it shows 42\./it shows a number./' "$WORK/test-cases.md" >qa/test-cases.md
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a case reworded before its first red run fails" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-042.json
+e2e_review "and passes after the fix" 0 "CLEAN — gates green" .review/T-042.json
+words_changed="whose words changed since /qa failed it: TC-001 (as recorded in 0-qa-T-042-failed)"
+e2e_land "a case reworded after /qa failed it and before its test was seen failing proves nothing" \
+  3 "$words_changed" .review/T-042.json "$last_run"
+"$LIB_DIR/pr-post.sh" qa .review/runs/0-qa-T-042-failed >"$WORK/post.log" 2>&1
+e2e_land "pr-post.sh qa run again keeps the words as they were" 3 "$words_changed" \
+  .review/T-042.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+e2e_land "with the words /qa failed the case with, the task lands" 0 "For the user to commit" \
+  .review/T-042.json "$last_run"
+# A later /qa that writes the case anew and fails it again says what is to be seen now.
+sed 's/it shows 42\./it shows 42 at once./' "$WORK/test-cases.md" >qa/test-cases.md
+qa_record T-042 again '{"failures": [{"case": "TC-001"}], "work": "w2"}'
+qa_says "a later /qa that sharpens the case and fails it again says whose it is" 0 \
+  "   The loop goes on: fix TC-001" .review/runs/0-qa-T-042-again
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of the sharpened case fails" 2 "app: failed: AnswerE2E.shows42" \
+  .review/T-042.json
+e2e_review "and the sharpened case passes after its fix" 0 "CLEAN — gates green" \
+  .review/T-042.json
+e2e_land "the words of the newest /qa that failed the case are the ones that count" 0 \
+  "For the user to commit" .review/T-042.json "$last_run"
+sed 's/it shows 42\./it shows 42 or so./' "$WORK/test-cases.md" >qa/test-cases.md
+e2e_review "with the sharpened case reworded a run goes on" 0 "CLEAN — gates green" \
+  .review/T-042.json
+e2e_land "reworded after that /qa, it proves nothing" 3 \
+  "whose words changed since /qa failed it: TC-001 (as recorded in 0-qa-T-042-again)" \
+  .review/T-042.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+qa_record T-042 clean '{"failures": [], "work": "w3"}'
+"$LIB_DIR/pr-post.sh" qa .review/runs/0-qa-T-042-clean >"$WORK/post.log" 2>&1
+if [ ! -e .review/runs/0-qa-T-042-clean/cases.json ]; then
+  echo "ok    a /qa that failed no case keeps no words"
+else
+  echo "FAIL  pr-post.sh qa wrote cases.json for a /qa that failed no case"
+  FAILURES=$((FAILURES + 1))
+fi
+new_task T-032 '[{"case": "TC-001"}]'
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a case whose mark then grows fails first" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-032.json
+sed 's/`AnswerE2E.shows42`/`AnswerE2E.shows42`, `AnswerE2E.shows43`/' "$WORK/test-cases.md" \
+  >qa/test-cases.md
+E2E_XML="$(xml shows42 starts shows43)" \
+  e2e_review "with a second test in its mark the tests pass" 0 "CLEAN — gates green" \
+  .review/T-032.json
+e2e_land "a mark that grows between the red run and the landing changes nothing" 0 \
+  "For the user to commit" .review/T-032.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+
+new_task T-033 '[{"case": "TC-001"}]'
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "the test of a case that then gets a note fails first" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-033.json
+cat >qa/test-cases.md <<'CASES'
+# Test cases
+
+## Answer
+
+* **TC-001 Answer.** Open the app:
+  it shows 42.   --   e2e: `AnswerE2E.shows42`
+  - Got past `/qa` once: the check read one frame, not the frames before it.
+- **TC-002 Start.** Start the app: it opens with no error. — e2e:
+  `AnswerE2E.starts`
+CASES
+e2e_review "with a note under the case, wrapped another way, its test passes" 0 \
+  "CLEAN — gates green" .review/T-033.json
+e2e_land "a note under the case, and the case wrapped another way, change nothing" 0 \
+  "For the user to commit" .review/T-033.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+
+new_task T-034
+qa_record T-034 failed '{"failures": [{"case": "TC-001"}], "work": "w1"}'
+e2e_review "a run of a task with a failing case records its mark" 0 "CLEAN — gates green" \
+  .review/T-034.json
+sed 's/ — e2e: `AnswerE2E.shows42`/ — manual: no test sees it/' "$WORK/test-cases.md" \
+  >qa/test-cases.md
+qa_record T-034 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-001", "verdict": "pass"}]}'
+e2e_review "with the mark taken off the case, a run still goes on" 0 "CLEAN — gates green" \
+  .review/T-034.json
+e2e_land "a mark taken off a failing case refuses" 3 \
+  "a /qa failure lost its end-to-end test after /qa failed it: TC-001" \
+  .review/T-034.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
+
+cat >>qa/test-cases.md <<'CASES'
+- **TC-003 Launch.** Start the app: the launch screen shows its name. — manual: the launch
+  screen is the system's
+  - Got past `/qa` once: nobody looked at the launch screen.
+- **TC-004 Icon.** Look at the home screen: the icon of the app is there. — manual
+  - Got past `/qa` once: the icon was the default one.
+CASES
+new_task T-035
+qa_record T-035 failed '{"failures": [{"case": "TC-003"}], "work": "w1"}'
+e2e_review "a run of a task that failed a case /qa marks manual goes on" 0 \
+  "CLEAN — gates green" .review/T-035.json
+manual_unproven="of a case /qa marks manual, not passed by a later /qa on other work: TC-003"
+e2e_land "a failing case /qa marks manual is not proven by itself" 3 "$manual_unproven" \
+  .review/T-035.json "$last_run"
+says "the loop is told what proves such a case" \
+  "a case no end-to-end test can see, which /qa marks — manual: <why>, is proven by the next /qa that passes it after the fix" \
+  "$WORK/land.log"
+launch_passed='"counts": {"pass": 1}, "failures": [],
+  "items": [{"id": "TC-003 on the phone", "verdict": "pass"}]'
+qa_record T-035 passed "{$launch_passed, \"work\": \"w1\"}"
+e2e_land "a pass on the same work proves nothing" 3 "$manual_unproven" \
+  .review/T-035.json "$last_run"
+qa_record T-035 passed "{$launch_passed}"
+e2e_land "a pass on work that is not known proves nothing" 3 "$manual_unproven" \
+  .review/T-035.json "$last_run"
+qa_record T-035 passed "{$launch_passed, \"work\": \"w2\"}"
+e2e_land "the next /qa that passes it on other work proves it" 0 "For the user to commit" \
+  .review/T-035.json "$last_run"
+qa_record T-035 open '{"counts": {"pass": 1, "not_checked": 1}, "failures": [], "work": "w3",
+  "items": [{"id": "TC-003 on the phone", "verdict": "pass"},
+            {"id": "TC-003 on the tablet", "verdict": "not_checked",
+             "reason": "the emulator did not boot"}]}'
+e2e_land "a later /qa that could not check all of it proves nothing" 3 "$manual_unproven" \
+  .review/T-035.json "$last_run"
+says "the refusal names the item that is not passed" \
+  "work: TC-003 (item TC-003 on the tablet says not_checked in 0-qa-T-035-open)" "$WORK/land.log"
+rm -rf .review/runs/0-qa-T-035-open
+qa_record T-035 again '{"failures": [{"case": "TC-003"}], "work": "w3"}'
+e2e_land "a still later /qa that fails it again proves nothing" 3 "$manual_unproven" \
+  .review/T-035.json "$last_run"
+qa_record T-035 both '{"failures": [{"case": "TC-001"}, {"case": "TC-003"}], "work": "w4"}'
+e2e_land "one refusal lists each kind of failure that is not proven" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-001; $manual_unproven" \
+  .review/T-035.json "$last_run"
+
+new_task T-036
+qa_record T-036 failed '{"failures": [{"case": "TC-001"}], "work": "w1"}'
+e2e_review "a run of a task that failed a case with a test goes on" 0 "CLEAN — gates green" \
+  .review/T-036.json
+qa_record T-036 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-001", "verdict": "pass"}]}'
+e2e_land "a /qa pass does not stand in for a test" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-001" \
+  .review/T-036.json "$last_run"
+
+new_task T-037
+qa_record T-037 failed '{"failures": [{"case": "TC-004"}], "work": "w1"}'
+e2e_review "a run of a task that failed a case with neither a test nor a reason goes on" 0 \
+  "CLEAN — gates green" .review/T-037.json
+qa_record T-037 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-004", "verdict": "pass"}]}'
+e2e_land "a case with neither a test nor a reason is not proven by a /qa pass" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-004" \
+  .review/T-037.json "$last_run"
+
+# A case that failed on one platform is proven only by a /qa that passes it there: each item
+# of the case that failed passes in the later one. An item that passed then is not asked
+# again, and the refusal names the item that is not there or not passed.
+new_task T-043
+qa_record T-043 failed '{"counts": {"pass": 1, "fail": 1}, "failures": [{"case": "TC-003"}],
+  "work": "w1",
+  "items": [{"id": "TC-003 on Android", "verdict": "fail", "reason": "the launch screen is blank"},
+            {"id": "TC-003 on iOS", "verdict": "pass"}]}'
+e2e_review "a run of a task whose manual case failed on one platform goes on" 0 \
+  "CLEAN — gates green" .review/T-043.json
+qa_record T-043 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003 on iOS", "verdict": "pass"}]}'
+e2e_land "a pass on another platform does not prove the failure on this one" 3 \
+  "$manual_unproven" .review/T-043.json "$last_run"
+says "the refusal names the item that failed and is not there" \
+  "work: TC-003 (item TC-003 on Android failed in 0-qa-T-043-failed and is not among the items of 0-qa-T-043-passed)" \
+  "$WORK/land.log"
+qa_record T-043 passed '{"counts": {"pass": 1, "unproven": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003 on Android", "verdict": "unproven",
+             "reason": "the recording starts after the launch screen"},
+            {"id": "TC-003 on iOS", "verdict": "pass"}]}'
+e2e_land "a later /qa that left the item that failed unproven proves nothing" 3 \
+  "$manual_unproven (item TC-003 on Android says unproven in 0-qa-T-043-passed)" \
+  .review/T-043.json "$last_run"
+qa_record T-043 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003 on Android", "verdict": "pass"}]}'
+e2e_land "a /qa that passes the item that failed proves it: what passed then is not asked again" 0 \
+  "For the user to commit" .review/T-043.json "$last_run"
+qa_record T-043 passed '{"counts": {"pass": 2}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003 on Android", "verdict": "pass"},
+            {"id": "TC-003 on iOS", "verdict": "pass"}]}'
+e2e_land "and so does a /qa that passes each item the failing one listed" 0 \
+  "For the user to commit" .review/T-043.json "$last_run"
+# A failing /qa that listed the case whole is answered by the items of the later one.
+new_task T-044
+qa_record T-044 failed '{"counts": {"fail": 1}, "failures": [{"case": "TC-003"}], "work": "w1",
+  "items": [{"id": "TC-003", "verdict": "fail", "reason": "the launch screen is blank"}]}'
+e2e_review "a run of a task whose manual case failed as a whole goes on" 0 \
+  "CLEAN — gates green" .review/T-044.json
+qa_record T-044 passed '{"counts": {"pass": 2}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003 on Android", "verdict": "pass"},
+            {"id": "TC-003 on iOS", "verdict": "pass"}]}'
+e2e_land "a case that failed as a whole is proven by a /qa that passes it on each platform" 0 \
+  "For the user to commit" .review/T-044.json "$last_run"
+# The landing reads an item as of a case the way the record is checked: the case id, then a
+# character that is no letter, digit or dash.
+new_task T-047
+qa_record T-047 failed '{"failures": [{"case": "TC-003"}], "work": "w1"}'
+e2e_review "a run of a task whose manual case failed and is passed under an id with a colon goes on" 0 \
+  "CLEAN — gates green" .review/T-047.json
+qa_record T-047 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-0031: the launch screen", "verdict": "pass"}]}'
+e2e_land "a pass of an item whose id goes on with a digit is no pass of the case" 3 \
+  "$manual_unproven" .review/T-047.json "$last_run"
+qa_record T-047 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003: the launch screen", "verdict": "pass"}]}'
+e2e_land "a later /qa that passes the item under its id with a colon proves the case" 0 \
+  "For the user to commit" .review/T-047.json "$last_run"
+# pr-post.sh qa says the same of such cases, right after /qa.
+qa_record T-038 launch '{"failures": [{"case": "TC-003"}]}'
+qa_says "a failing case /qa marks manual is told what proves it" 0 \
+  "      /qa marks it manual: the launch screen is the system's" .review/runs/0-qa-T-038-launch
+says "its fix needs no end-to-end test" \
+  "   The loop goes on: fix TC-003 — it is no question: no end-to-end test can see it, so the next /qa that passes it on the changed work proves it (condition 7)"
+never_says "and nothing tells the loop to write one" "write its end-to-end test"
+never_says "a note under the case is no part of its reason" "Got past"
+says "a record that does not say which work /qa checked is told so, where a later /qa must prove the fix" \
+  "; this record does not say which work /qa checked (work): have /qa add it — pr-post.sh work prints it — or no later /qa proves the fix"
+qa_record T-038 known '{"failures": [{"case": "TC-003"}], "work": "w1"}'
+qa_says "a record that says its work is told what proves the case" 0 \
+  "next /qa that passes it on the changed work proves it (condition 7)" \
+  .review/runs/0-qa-T-038-known
+never_says "and nothing more is asked of it" "does not say which work"
+rm -rf .review/runs/0-qa-T-038-known
+qa_says "a failing case marked manual with no reason is told to get a test, or its reason" 0 \
+  "      no end-to-end test is marked for it" .review/runs/0-qa-T-037-failed
+says "its words are quoted without the note under it" \
+  '      "**TC-004 Icon.** Look at the home screen: the icon of the app is there."'
+says "the reason is /qa's to write" \
+  "where no end-to-end test can see it, /qa says so in the case (— manual: <why>), and the next /qa after the fix proves it"
+cp "$WORK/test-cases.md" qa/test-cases.md
+
+# Below the pull request levels too a record of /qa says which work it checked: pr-post.sh
+# work prints the fingerprint of the work and HEAD at every level, and asks no remote
+# there. So a fixed failure of a case /qa marks manual is proven by the next /qa at every
+# level, and a record that leaves its work out is told what it lacks.
+cat >>qa/test-cases.md <<'CASES'
+- **TC-003 Launch.** Start the app: the launch screen shows its name. — manual: the launch
+  screen is the system's
+CASES
+"$LIB_DIR/pr-post.sh" work >"$WORK/work.log" 2>&1
+check "below the pull request levels pr-post.sh work prints the work as it is" 0 '"work": "' $? \
+  "$WORK/work.log"
+if jq -e --arg head "$(git rev-parse HEAD)" \
+     '.head == $head and (.work | test("^[0-9a-f]{64}$")) and (has("merge_base") | not)' \
+     "$WORK/work.log" >/dev/null 2>&1; then
+  echo "ok    with HEAD, and with no merge base: there is no pull request to check whole"
+else
+  echo "FAIL  pr-post.sh work does not print {work, head} alone — log follows"
+  sed 's/^/      /' "$WORK/work.log"
+  FAILURES=$((FAILURES + 1))
+fi
+new_task T-039
+qa_record T-039 failed \
+  "{\"failures\": [{\"case\": \"TC-003\"}], \"work\": \"$(jq -r '.work' "$WORK/work.log")\"}"
+e2e_review "a run of a task whose manual case failed below the pull request levels goes on" 0 \
+  "CLEAN — gates green" .review/T-039.json
+printf 'fun answer() = 42 // the launch screen shows the name\n' >src/answer.kt
+e2e_review "a run after its fix goes on" 0 "CLEAN — gates green" .review/T-039.json
+cp "$WORK/work.log" "$WORK/work.before.log"
+"$LIB_DIR/pr-post.sh" work >"$WORK/work.log" 2>&1
+if [ "$(jq -r '.work' "$WORK/work.log" 2>/dev/null)" = "$(jq -r '.tree_fingerprint' "$last_run/meta.json")" ] \
+   && [ "$(jq -r '.work' "$WORK/work.log")" != "$(jq -r '.work' "$WORK/work.before.log")" ]; then
+  echo "ok    after the fix it prints other work, the work the review of the fix recorded"
+else
+  echo "FAIL  pr-post.sh work does not print the work the review recorded — log follows"
+  sed 's/^/      /' "$WORK/work.log"
+  FAILURES=$((FAILURES + 1))
+fi
+launch_passed_here='"counts": {"pass": 1}, "failures": [],
+  "items": [{"id": "TC-003", "verdict": "pass"}]'
+qa_record T-039 passed "{$launch_passed_here}"
+e2e_land "a /qa that passes it and does not say which work it checked proves nothing" 3 \
+  "of a case /qa marks manual, not passed by a later /qa on other work: TC-003" \
+  .review/T-039.json "$last_run"
+says "the loop is told that each /qa records the work it checked" \
+  "is proven by the next /qa that passes it after the fix, each /qa recording the work it checked (pr-post.sh work prints it)" \
+  "$WORK/land.log"
+qa_record T-039 passed "{$launch_passed_here, \"work\": \"$(jq -r '.work' "$WORK/work.log")\"}"
+e2e_land "below the pull request levels a manual case fixed and passed by the next /qa lands" 0 \
+  "For the user to commit" .review/T-039.json "$last_run"
+printf 'fun answer() = 42\n' >src/answer.kt
+cp "$WORK/test-cases.md" qa/test-cases.md
+# The words of a case are its text without the mark alone — the ids after `e2e:`, as
+# case_marks reads them, or `manual` with its reason after a dash: what stands after an
+# end-to-end mark is words too, and a word that ends in -manual: is no mark.
+cat >qa/test-cases.md <<'CASES'
+# Test cases
+
+- **TC-001 Answer.** Open the app — e2e: `AnswerE2E.shows42` — it shows 42.
+- **TC-002 Start.** Start the app — e2e: AnswerE2E.starts; AnswerE2E.shows43 and it opens
+  with no error.
+- **TC-003 Help.** Open the user-manual: it shows the index.
+- **TC-004 Launch.** Start the app: the launch screen shows its name. — manual: the launch
+  screen is the system's
+CASES
+( . "$LIB_DIR/common.sh"; case_words; echo "the cases that say why no test sees them:"
+  case_manual; printf 'the tests: '; case_tests | tr '\n' ' '; echo ) >"$WORK/words.log" 2>&1
+says "the words after an end-to-end mark are words of the case" \
+  "TC-001	**TC-001 Answer.** Open the app — it shows 42." "$WORK/words.log"
+says "a mark of bare ids ends where its ids end" \
+  "TC-002	**TC-002 Start.** Start the app and it opens with no error." "$WORK/words.log"
+says "a word that ends in -manual: stays in the words" \
+  "TC-003	**TC-003 Help.** Open the user-manual: it shows the index." "$WORK/words.log"
+says "manual with its reason is no word of the case" \
+  "TC-004	**TC-004 Launch.** Start the app: the launch screen shows its name." "$WORK/words.log"
+says "the reason of a manual case is read" "TC-004	the launch screen is the system's" \
+  "$WORK/words.log"
+never_says "a word that ends in -manual: is no reason" "TC-003	it shows the index." \
+  "$WORK/words.log"
+says "the tests of the marks are read as before" \
+  "the tests: AnswerE2E.shows42 AnswerE2E.starts AnswerE2E.shows43 " "$WORK/words.log"
+new_task T-045 '[{"case": "TC-001"}]'
+E2E_XML="$(xml shows42=failed starts shows43)" \
+  e2e_review "the test of a case with words after its mark fails first" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-045.json
+sed -i.bak 's/ — it shows 42\./ — it shows a number./' qa/test-cases.md && rm qa/test-cases.md.bak
+E2E_XML="$(xml shows42 starts shows43)" \
+  e2e_review "with the words after the mark changed its test passes" 0 "CLEAN — gates green" \
+  .review/T-045.json
+e2e_land "words changed after the mark of a failing case prove nothing" 3 \
+  "whose words changed since /qa failed it: TC-001" .review/T-045.json "$last_run"
+new_task T-046
+qa_record T-046 failed '{"failures": [{"case": "TC-003"}], "work": "w1"}'
+E2E_XML="$(xml shows42 starts shows43)" \
+  e2e_review "a run of a task that failed a case with -manual: in a word goes on" 0 \
+  "CLEAN — gates green" .review/T-046.json
+qa_record T-046 passed '{"counts": {"pass": 1}, "failures": [], "work": "w2",
+  "items": [{"id": "TC-003", "verdict": "pass"}]}'
+e2e_land "a case with -manual: in a word is no manual case: a /qa pass does not prove it" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-003" \
+  .review/T-046.json "$last_run"
+cp "$WORK/test-cases.md" qa/test-cases.md
 # Last in this repository, since it commits: the harness as a link to a file in
 # the reviewed tree.
 new_task T-013
@@ -2291,6 +2725,12 @@ holds "a gate's status gives its summary line" jq_true 'any(.[]; .context == "lo
 holds "/qa is pending" status_is loop/qa pending
 publish "--check with no /qa of this work refuses" 3 "M5: /qa has not checked this work of T-001" \
   --check
+pr_post "at the pull request levels pr-post.sh work prints the merge base too" 0 \
+  '"merge_base": "' work
+holds "with the work as it is and HEAD" jq_true --arg head "$(git rev-parse HEAD)" \
+  --arg work "$(. "$LIB_DIR/common.sh" && tree_fingerprint)" \
+  --arg base "$(jq -r '.merge_base' "$run/meta.json")" \
+  '.head == $head and .work == $work and .merge_base == $base' "$WORK/post.log"
 qa_checked
 holds "the report of /qa is a comment" posted "<!-- loop:qa qa-$qa_runs -->"
 holds "/qa turns green" status_is loop/qa success

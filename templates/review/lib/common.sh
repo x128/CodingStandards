@@ -467,33 +467,46 @@ platforms() {
 # bare (a bare id has a dot: `Class.method`), separated by commas, semicolons or
 # "and". A trailing `()` is dropped, and so is the space a line wrapped inside
 # an id leaves next to a dot.
+#
+# AWK_MARK reads the ids, for case_marks and for case_words, which takes the mark out of
+# the words: take_id() takes the next id off the start of `rest`, the text after `e2e:`,
+# into `id`, and says whether there was one; more_ids() takes the separator that announces
+# another. `quoted` is empty before the first id of a mark.
+AWK_MARK='
+    function take_id(   stop) {
+      sub(/^[ \t]+/, "", rest)
+      if (substr(rest, 1, 1) == "`" && quoted != "no") {
+        stop = index(substr(rest, 2), "`")
+        if (stop == 0) return 0
+        id = substr(rest, 2, stop - 1)
+        rest = substr(rest, stop + 2)
+        quoted = "yes"
+      } else if (quoted != "yes" &&
+                 match(rest, /^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z0-9_$]+)+(\(\))?/)) {
+        id = substr(rest, 1, RLENGTH)
+        rest = substr(rest, RLENGTH + 1)
+        quoted = "no"
+      } else return 0
+      return 1
+    }
+    function more_ids() {
+      return sub(/^[ \t]*(,[ \t]*(and[ \t]+)?|;[ \t]*|and[ \t]+)/, "", rest)
+    }
+'
 case_marks() {
   [ -f qa/test-cases.md ] || return 0
-  awk '
-    function flush(   text, rest, at, stop, id, quoted, marked) {
+  awk "$AWK_MARK"'
+    function flush(   text, at, marked) {
       if (current == "") return
       text = block
       while ((at = index(text, "e2e:")) > 0) {
         rest = substr(text, at + 4)
         quoted = ""
-        for (;;) {
-          sub(/^[ \t]+/, "", rest)
-          if (substr(rest, 1, 1) == "`" && quoted != "no") {
-            stop = index(substr(rest, 2), "`")
-            if (stop == 0) break
-            id = substr(rest, 2, stop - 1)
-            rest = substr(rest, stop + 2)
-            quoted = "yes"
-          } else if (quoted != "yes" &&
-                     match(rest, /^[A-Za-z_][A-Za-z0-9_$]*(\.[A-Za-z0-9_$]+)+(\(\))?/)) {
-            id = substr(rest, 1, RLENGTH)
-            rest = substr(rest, RLENGTH + 1)
-            quoted = "no"
-          } else break
+        while (take_id()) {
           gsub(/[ \t]+/, " ", id); gsub(/ ?\. ?/, ".", id)
           sub(/^ /, "", id); sub(/ $/, "", id); sub(/\(\)$/, "", id)
           if (id != "") { print current "\t" id; marked = 1 }
-          if (!sub(/^[ \t]*(,[ \t]*(and[ \t]+)?|;[ \t]*|and[ \t]+)/, "", rest)) break
+          if (!more_ids()) break
         }
         text = rest
       }
@@ -513,22 +526,104 @@ case_marks() {
 
 # The words of the cases of qa/test-cases.md, one `TC-nnn` TAB `<words>` per line: the
 # lines of the case up to the first list item after it — a note, a line of its history —
-# without its list marker and without its mark (`e2e:` and what follows it, or `manual`
-# with what follows it), runs of blanks as one blank. They stay as they are when a mark is
-# added or grows, when the case is wrapped another way and when a note is added under it;
-# they change when what the user does and sees is written anew.
+# without its list marker and without its mark, runs of blanks as one blank. The mark is
+# `e2e:` with the ids after it, as case_marks reads them, and the dash before it, or, after
+# a blank and a dash, `manual` with its reason: what else stands after an end-to-end mark
+# is words of the case, and so is a word that ends in `-manual:`. The words stay as they
+# are when a mark is added or grows, when the case is wrapped another way, when a note is
+# added under it and when `manual` gets its reason; they change when what the user does
+# and sees is written anew.
 case_words() {
+  [ -f qa/test-cases.md ] || return 0
+  awk "$AWK_MARK"'
+    function flush(   text, at, words, after) {
+      if (current == "") return
+      text = block
+      gsub(/[ \t]+/, " ", text); sub(/ $/, "", text)
+      sub(/^ ?([-*+]|[0-9]+[.)]) /, "", text)
+      words = ""
+      while ((at = index(text, "e2e:")) > 0) {
+        words = words substr(text, 1, at - 1)
+        sub(/ ?(—|--|-)? ?$/, "", words)
+        rest = substr(text, at + 4)
+        quoted = ""
+        after = rest
+        # A separator with no id after it is no part of the mark.
+        while (take_id()) { after = rest; if (!more_ids()) break }
+        text = after
+      }
+      text = words text
+      sub(/ (—|--|-) ?manual( ?:.*)?$/, "", text)
+      while (sub(/( |-|—)+$/, "", text)) ;
+      print current "\t" text
+      current = ""
+    }
+    /^#/ { flush(); next }
+    /^[ \t]*([-*+]|[0-9]+[.)])[ \t]+(\*\*)?TC-[0-9]+/ {
+      flush()
+      match($0, /TC-[0-9]+/)
+      current = substr($0, RSTART, RLENGTH)
+      block = ""
+      open = 1
+    }
+    current != "" && open && block != "" && /^[ \t]*([-*+]|[0-9]+[.)])[ \t]/ { open = 0 }
+    current != "" && open { block = block " " $0 }
+    END { flush() }' qa/test-cases.md
+}
+
+# A digest of the words of each case, as one JSON object {"TC-nnn": <sha256>}. A run of the
+# end-to-end tests records it before it runs; land.sh compares the words of a case /qa
+# failed, as they are now, with the words its test was seen failing against. The words go
+# into one file for each case and are hashed in one pass: a project has hundreds of cases.
+case_digests() {
+  local scratch status
+  scratch="$(mktemp -d)" || return 1
+  case_words | awk -F'\t' -v dir="$scratch" \
+    '$1 != "" { file = dir "/" $1; printf "%s", $2 >file; close(file) }'
+  ( cd "$scratch" || exit 1
+    set -- TC-*
+    [ -f "$1" ] || exit 0
+    if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$@"; else sha256sum "$@"; fi
+  ) | jq -Rnc '[inputs | capture("^(?<digest>[0-9a-f]{64})[ *]+(?<case>TC-[0-9]+)$")
+                | {(.case): .digest}] | add // {}'
+  status=$?
+  rm -rf "$scratch"
+  return "$status"
+}
+
+# The words of the cases a /qa failed, as they are when it failed them: a digest of each,
+# {"TC-nnn": <sha256>}, beside its record as cases.json. pr-post.sh qa writes it right after
+# /qa and never again; land.sh compares the words at landing with it, so a case reworded
+# after /qa failed it — before its test was ever seen failing, too — proves nothing. A /qa
+# that failed no case of the file keeps nothing.
+qa_keeps_words() {
+  local qa_dir="$1" digests kept
+  [ ! -e "$qa_dir/cases.json" ] || return 0
+  digests="$(case_digests)" || return 1
+  kept="$(jq -c --argjson digests "$digests" \
+    '[.failures[].case | select($digests[.] != null) | {(.): $digests[.]}] | add // {}' \
+    "$qa_dir/qa.json")" || return 1
+  [ "$kept" = "{}" ] || printf '%s\n' "$kept" >"$qa_dir/cases.json"
+}
+
+# The cases that say why no end-to-end test can see them, one `TC-nnn` TAB `<why>` per
+# line: a case whose text, up to the first list item after it, ends with a blank, a dash,
+# `manual:` and words after it. A bare `manual` gives no line, and neither does a word
+# that ends in `-manual:`.
+case_manual() {
   [ -f qa/test-cases.md ] || return 0
   awk '
     function flush(   text) {
       if (current == "") return
       text = block
       gsub(/[ \t]+/, " ", text); sub(/ $/, "", text)
-      sub(/^ ?([-*+]|[0-9]+[.)]) /, "", text)
       sub(/ ?(—|--|-)? ?e2e:.*$/, "", text)
-      sub(/ ?(—|--|-) ?manual( ?:.*)?$/, "", text)
-      while (sub(/( |-|—)+$/, "", text)) ;
-      print current "\t" text
+      if (match(text, / (—|--|-) ?manual ?:.*$/)) {
+        text = substr(text, RSTART)
+        sub(/^ (—|--|-) ?manual ?: ?/, "", text)
+        while (sub(/( |-|—)+$/, "", text)) ;
+        if (text != "") print current "\t" text
+      }
       current = ""
     }
     /^#/ { flush(); next }
@@ -725,14 +820,22 @@ people_comments_open() {
 # The first fault of a /qa record, or nothing when it holds. Beside what a record always
 # had — its task and failures: [{case: TC-nnn}] — it may list its items, one {id, verdict,
 # reason, check} for each: the verdict as counts names it, a reason for every verdict but
-# pass, for after_merge the check that will be made then, and for fail an id that is a
-# case of failures or starts with one: no failure is recorded under no case. And, apart
+# pass, for after_merge the check that will be made then, and for fail an id that is of a
+# case of failures (of_case): no failure is recorded under no case. And, apart
 # from the items, behaviour_without_requirement: [{what, where}], what the app does that
 # no requirement, exit criterion or case describes — a question, so it may name no case:
 # what fails in a case is a failure. A record with neither field reads as it always did.
+#
+# An item is of a case when its id is the case id, or starts with the case id and a
+# character that is no letter, digit or dash: `TC-002 on iOS`, `TC-002: the start`,
+# `TC-002 (tablet)`. `TC-0021` and `TC-002-b` are of other cases. The record's fault and
+# condition 7 read it the same way: `<id> | of_case(<case id>)`.
+JQ_OF_CASE='def of_case($case):
+  . == $case or (startswith($case) and (.[($case | length):] | test("^[^A-Za-z0-9-]")));
+'
 qa_record_fault() {
   local fault unreadable="it is not one JSON object with a task and failures: [{case: TC-nnn}]"
-  fault="$(jq -rs --arg unreadable "$unreadable" '
+  fault="$(jq -rs --arg unreadable "$unreadable" "$JQ_OF_CASE"'
     def text: type == "string" and . != "";
     def fault:
       . as $record
@@ -764,8 +867,7 @@ qa_record_fault() {
              + ($counted | if type == "number" then tostring
                            else "\(tojson), which is no number" end)),
           (.items[]? | select(.verdict == "fail") | .id as $id
-           | select(any($record.failures[].case;
-                        . as $case | $id | . == $case or startswith($case + " ")) | not)
+           | select(any($record.failures[].case; . as $case | $id | of_case($case)) | not)
            | "item \($id) says fail and failures does not list its case: /qa writes the case "
              + "of every failure and lists it in failures"),
           (select(has("behaviour_without_requirement"))
@@ -851,7 +953,7 @@ qa_left_items() {
 # holds nothing.
 qa_left() {
   local task_id="$1" qa_dir="$2" record="$2/qa.json" times entry case_id count runs line
-  local words tests next said=false
+  local words tests why next said=false
   times="$(qa_times "$task_id" "$record")" || return 1
   echo "── what /qa left in $(basename "$qa_dir"), and whose it is:"
   while IFS=$'\t' read -r case_id count runs; do
@@ -871,10 +973,20 @@ qa_left() {
         echo "      its end-to-end test: $tests"
         next="fix $case_id — it is no question: see its test fail in a run of review.sh made "\
 "now, then fix, then see it pass (condition 7)"
+      elif why="$(case_manual | awk -F'\t' -v wanted="$case_id" '$1 == wanted { print $2; exit }')"
+           [ -n "$why" ]; then
+        echo "      /qa marks it manual: $why"
+        next="fix $case_id — it is no question: no end-to-end test can see it, so the next /qa "\
+"that passes it on the changed work proves it (condition 7)"
+        [ -n "$(jq -r '.work // ""' "$record")" ] || \
+          next="$next; this record does not say which work /qa checked (work): have /qa add "\
+"it — pr-post.sh work prints it — or no later /qa proves the fix"
       else
         echo "      no end-to-end test is marked for it"
         next="fix $case_id — it is no question: write its end-to-end test and mark the case "\
-"(e2e: \`<test>\`), see it fail in a run of review.sh made now, then fix, then see it pass"
+"(e2e: \`<test>\`), see it fail in a run of review.sh made now, then fix, then see it pass; "\
+"where no end-to-end test can see it, /qa says so in the case (— manual: <why>), and the next "\
+"/qa after the fix proves it"
       fi
     fi
     [ "$count" -lt 2 ] || \
@@ -1084,14 +1196,31 @@ criteria_verified() {
 
 # 7, /qa. /qa checked the task, and each failure it recorded — in a qa.json, or in the
 #    qa_failures an e2e.json of this task took from one, which outlasts a qa.json rewritten or
-#    removed — has a test its case is marked with that failed in a run of this task made after
-#    /qa recorded it: passing in this run, or skipped in it under a tag of the case for the
-#    task it belongs to. Or the user answered it. The loop never asks for that answer. No
-#    test stays skipped for the task. Every record is read: an unreadable one refuses, never
-#    reads as "no failures".
+#    removed — is proven. For each failing case the first of these that holds decides:
+#    - the user answered it: proven. The loop never asks for that answer.
+#    - it has no marked test now and a run of the task recorded one for it: the mark was
+#      taken off a failing case, and nothing proves it.
+#    - it has a marked test: that test failed in a run of this task made after /qa recorded
+#      the failure, and passes in this run, or is skipped in it under a tag of the case for
+#      the task it belongs to — and the words of the case are those the newest /qa that
+#      failed it failed it with (cases.json beside its record, kept by pr-post.sh qa), or,
+#      where none was kept, those the oldest such red run recorded (cases in its e2e.json;
+#      a run made before they were recorded is not compared): a case reworded since /qa
+#      failed it proves nothing. A pass of /qa never stands in for a case that has a test.
+#    - it has no test and says why none can see it (case_manual): the newest /qa record of
+#      the task with items of the case passed them all — and among them each item of the
+#      case that failed in the failing record (`TC-nnn on <platform>`): a pass on another
+#      platform proves nothing, and an item that passed then is not asked again —, is
+#      newer than the newest record that lists the case in failures, and is of other work
+#      than that one, both works known: pr-post.sh work prints the work at every level.
+#      The refusal names each item that is not passed, or failed and is not there.
+#    - anything else is not proven.
+#    No test stays skipped for the task. Every record is read: an unreadable one refuses,
+#    never reads as "no failures".
 qa_failures_proven() {
-  local run="$1" task_id="$2" records record tags task still runs failures now answered unproven
-  local case_id tests
+  local run="$1" task_id="$2" records record tags task still runs failures now answered
+  local case_id tests manual digests kept verdict reason
+  local unproven="" unpassed="" lost="" reworded=""
   records="$(qa_records_of "$task_id")" || \
     refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
 "do not hold — refusing to read it as no failures; the line before this one says what"
@@ -1112,9 +1241,10 @@ qa_failures_proven() {
 
   runs="$(for record in .review/runs/*/e2e.json; do
       [ -f "$record" ] || continue
-      jq -c . "$record" || exit 1
+      jq -c --arg run "${record%/e2e.json}" '. + {run: $run}' "$record" || exit 1
     done | jq -sc --arg id "$task_id" '[.[] | select(.task == $id)
-      | {qa: (.qa_failures // []), failed: [.results[]?.failed[]?]}]')" || \
+      | {run, time: (.time // 0), qa: (.qa_failures // []), failed: [.results[]?.failed[]?],
+         marks: (.marks // []), cases: (.cases // {})}]')" || \
     refuse 7 "an e2e.json is unreadable — refusing to read it as no failures"
   failures="$(jq -nc --argjson records "$records" --argjson runs "$runs" \
     '[$records[].failures[].case] + [$runs[].qa[]] | unique')" || \
@@ -1135,29 +1265,91 @@ qa_failures_proven() {
       | .finding_id]' "$run/escalations-answered.json")" || \
       refuse 7 "$run/escalations-answered.json is unreadable — refusing to assume an answer"
   fi
+  manual="$(case_manual | cut -f1 | jq -R . | jq -sc .)" || \
+    refuse 7 "could not read the cases of qa/test-cases.md"
+  digests="$(case_digests)" || refuse 7 "could not read the cases of qa/test-cases.md"
+  # The words each failing case had when /qa failed it, the newest such /qa last.
+  kept="$(printf '%s' "$records" | jq -r '.[].run' | while IFS= read -r record; do
+      [ -f "$record/cases.json" ] || continue
+      jq -c --slurpfile kept "$record/cases.json" --arg run "$(basename "$record")" \
+        '[.failures[].case as $case | $kept[0][$case] | strings
+          | {($case): {digest: ., run: $run}}] | add // {}' "$record/qa.json" || exit 1
+    done | jq -sc 'add // {}')" || \
+    refuse 7 "a cases.json beside a qa.json of $task_id is unreadable — pr-post.sh qa writes it"
 
-  unproven=""
   for case_id in $(printf '%s' "$failures" | jq -r '.[]'); do
     tests="$(case_tests "$case_id" | while IFS= read -r test_id; do
         tagged=false
         skip_tag_on "$tags" "$case_id" "$test_id" && tagged=true
         jq -nc --arg test "$test_id" --argjson tagged "$tagged" '{test: $test, tagged: $tagged}'
       done | jq -sc .)"
-    jq -en --argjson tests "$tests" --argjson runs "$runs" --argjson now "$now" \
-          --argjson answered "$answered" --arg case "$case_id" "$JQ_HIT"'
+    # proven, lost, unpassed or `unpassed <the items>`, `words <run>`, or anything else:
+    # not proven. A query that dies proves nothing.
+    verdict="$(jq -rn --argjson tests "$tests" --argjson runs "$runs" --argjson now "$now" \
+          --argjson answered "$answered" --argjson records "$records" \
+          --argjson manual "$manual" --argjson digests "$digests" --argjson kept "$kept" \
+          --arg case "$case_id" \
+          "$JQ_HIT$JQ_OF_CASE"'
       def among($rows): . as $id | any($rows[]; hit($id));
-      ($answered | index($case)) != null
-        or any($tests[]; . as $mark
-               | any($runs[]; . as $run
-                     | ($run.qa | index($case)) != null and ($mark.test | among($run.failed)))
-                 and (($mark.test | among($now.passed))
-                      or ($mark.tagged and ($mark.test | among($now.skipped)))))' \
-      >/dev/null || unproven="$unproven $case_id"
+      if ($answered | index($case)) != null then "proven"
+      elif ($tests | length) == 0 and any($runs[]; any(.marks[]; .case == $case)) then "lost"
+      elif ($tests | length) > 0 then
+        [$tests[] | select(. as $mark | ($mark.test | among($now.passed))
+                           or ($mark.tagged and ($mark.test | among($now.skipped))))] as $green
+        | ([$runs[] | select((.qa | index($case)) != null)
+            | select(. as $run | any($green[]; .test | among($run.failed)))]
+           | sort_by(.time)) as $reds
+        | ($kept[$case]
+           // ([$reds[] | select(.cases[$case] != null)] | first
+               | if . == null then null
+                 else {digest: .cases[$case], run: (.run | split("/") | last)} end)) as $said
+        | if ($reds | length) == 0 then "unproven"
+          elif $said != null and $digests[$case] != null and $said.digest != $digests[$case]
+            then "words \($said.run)"
+          else "proven" end
+      elif ($manual | index($case)) != null then
+        ([$records[] | select(any(.failures[]; .case == $case))] | last) as $failed
+        | ([$records[] | select(any(.items[]?; .id | of_case($case)))] | last) as $checked
+        | if $failed != null and $checked != null
+             and ($checked.time // 0) > ($failed.time // 0)
+             and ($failed.work // "") != "" and ($checked.work // "") != ""
+             and $checked.work != $failed.work
+          then
+            ($checked.run | split("/") | last) as $later
+            | [($checked.items[] | select(.id | of_case($case)) | select(.verdict != "pass")
+                | "item \(.id) says \(.verdict) in \($later)"),
+               ($failed.items[]? | select(.verdict == "fail") | .id
+                | select(of_case($case) and . != $case)
+                | select(. as $id | any($checked.items[]; .id == $id) | not)
+                | "item \(.) failed in \($failed.run | split("/") | last) and is not among "
+                  + "the items of \($later)")] as $missing
+            | if $missing == [] then "proven" else "unpassed \($missing | join(", "))" end
+          else "unpassed" end
+      else "unproven" end' 2>/dev/null)"
+    case "$verdict" in
+      proven) ;;
+      lost) lost="$lost $case_id" ;;
+      unpassed) unpassed="$unpassed${unpassed:+,} $case_id" ;;
+      "unpassed "*) unpassed="$unpassed${unpassed:+,} $case_id (${verdict#unpassed })" ;;
+      "words "*) reworded="$reworded${reworded:+,} $case_id (as recorded in ${verdict#words })" ;;
+      *) unproven="$unproven $case_id" ;;
+    esac
   done
-  [ -z "$unproven" ] || \
-    refuse 7 "a /qa failure without an end-to-end test seen red, then green:$unproven" loop \
+  reason=""
+  [ -z "$unproven" ] || reason="without an end-to-end test seen red, then green:$unproven"
+  [ -z "$unpassed" ] || reason="${reason:+$reason; }of a case /qa marks manual, not passed by "\
+"a later /qa on other work:$unpassed"
+  [ -z "$lost" ] || \
+    reason="${reason:+$reason; }lost its end-to-end test after /qa failed it:$lost"
+  [ -z "$reworded" ] || \
+    reason="${reason:+$reason; }whose words changed since /qa failed it:$reworded"
+  [ -z "$reason" ] || \
+    refuse 7 "a /qa failure $reason" loop \
 "fix it — the case says what is to be seen, so this is no question: mark the case with its "\
-"test (e2e: \`<test>\`), see it fail in a run of $task_id made after /qa recorded it, then pass"
+"test (e2e: \`<test>\`), see it fail in a run of $task_id made after /qa recorded it, then pass; "\
+"a case no end-to-end test can see, which /qa marks — manual: <why>, is proven by the next /qa "\
+"that passes it after the fix, each /qa recording the work it checked (pr-post.sh work prints "\
+"it); a mark stays on a failing case, and so do its words"
 }
 
 # 7, /qa at the pull request levels. The newest qa.json of the task, by the time inside it,

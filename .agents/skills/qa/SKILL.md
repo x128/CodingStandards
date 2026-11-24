@@ -31,7 +31,9 @@ A check whose tool or device is missing is reported as not checked, never as pas
 
 `/qa` keeps the project's test cases in `qa/test-cases.md` (format:
 `templates/qa/test-cases.example.md`): each says what the user does and sees, and how it is
-covered — by `/qa` by hand, or by a named end-to-end test. A unit or integration test does not
+covered — by `/qa` by hand, or by a named end-to-end test. A case that no end-to-end test can see
+says why, `manual: <why>`: `/qa` writes that reason, never the one who fixes, and a failure of such
+a case that is fixed is proven by the next `/qa` that passes it. A unit or integration test does not
 take a case off `/qa`; an end-to-end test does. A project without the file starts it with the list
 of this run.
 
@@ -162,19 +164,21 @@ the report as `report.md`, and its record as `qa.json` — `task`; `time`, in se
 `head`; `work`, the fingerprint of the work checked; `since`, the commit the change was checked
 from; `extent`, `reachable` or `full`, with its `reason`; `counts` of `pass`, `fail`, `unproven` and
 `not_checked`, the items of the list; `items`, one `{"id", "verdict", "reason"}` for each — the id
-of its case or the name of the item, an item of a case on one platform starting with the case id;
+of its case or the name of the item, an item of a case on one platform starting with the case id and
+then a blank, a colon or another character that is no letter, digit or dash (`TC-012 on iOS`);
 the verdict as `counts` names it, and the reason for every verdict but `pass`; `failures`,
 `[{"case": "TC-nnn"}]`; and `behaviour_without_requirement`, `[{"what", "where"}]`, what the app
-does that nothing written describes. At the pull request levels
-`CodingStandards/templates/review/lib/pr-post.sh work` prints `work`, `head` and `merge_base`
-as they are: a `/qa` of the whole pull request records `merge_base` as `since`, and one after a fix
-the `head` of the `qa.json` before it. Then, at every level,
-`CodingStandards/templates/review/lib/pr-post.sh qa <qa-dir>`: it checks the record, prints what
-each thing `/qa` left needs next and whose it is, and at the pull request levels posts the report,
-in several comments when it is long. The merge waits while a `/qa` since the newest one of the whole
-pull request left anything unproven or not checked: an unproven item goes back to whoever does the
-work, an item not checked because a tool or device failed is restored by the loop (`/maintain`, step
-8), and what is still open after that is the user's to accept or not; the status lists the counts.
+does that nothing written describes. At every level
+`CodingStandards/templates/review/lib/pr-post.sh work` prints `work` and `head` as they are, and at
+the pull request levels `merge_base` too: there a `/qa` of the whole pull request records
+`merge_base` as `since`, and one after a fix the `head` of the `qa.json` before it. Then, at every
+level, `CodingStandards/templates/review/lib/pr-post.sh qa <qa-dir>`: it checks the record, prints
+what each thing `/qa` left needs next and whose it is, and at the pull request levels posts the
+report, in several comments when it is long. The merge waits while a `/qa` since the newest one of
+the whole pull request left anything unproven or not checked: an unproven item goes back to whoever
+does the work, an item not checked because a tool or device failed is restored by the loop
+(`/maintain`, step 8), and what is still open after that is the user's to accept or not; the status
+lists the counts.
 
 ### 5. When a defect got past
 
@@ -208,8 +212,7 @@ task — is a defect of this skill as well as of the code.
 - Write recordings, frames and reports under `.review/runs/` when the project has `.review/`, and
   otherwise under a temporary directory; write `qa/test-cases.md`; correct this file, or
   `/maintain`, after a defect got past
-- At every level, run `pr-post.sh qa <qa-dir>`; at `LANDING=pr` and `merge`, read `pr-post.sh work`
-  first
+- At every level, read `pr-post.sh work` and run `pr-post.sh qa <qa-dir>`
 - The working tree's source and tests: read only — QA reports, the work is done elsewhere
 - Git: read-only (`status`, `diff`, `log`, `show`, `ls-tree`, `cat-file`)
 
