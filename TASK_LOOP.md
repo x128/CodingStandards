@@ -410,44 +410,55 @@ pipeline: raise it when diffs bloat, lower it when defects leak.
 
 **Rounds go on while review keeps finding less.** Every review reads the whole change, so on a large
 change a later round finds what an earlier one missed; three or four rounds are normal. New findings
-of a later round go to the executor like those of the first. A finding is escalated only when the
-fix does not converge: the same `file:line` accepted in two consecutive rounds, or a round that
-accepts as many findings as the one before it, or more.
+of a later round go to the executor like those of the first. The fix does not converge when a
+finding comes back after it: `review.sh` compares what each review accepted with the review before
+it — the same file and category, at the same quote where the file holds that line once, or within
+five lines — and says so at the end of the run.
 
 ```
 round n: execute → gates → review → triage → accepted findings? → fix, round n+1
 ```
 
 - **Done** — gates green, no accepted `blocker`/`major`, no escalations.
-- **Another round** — accepted findings exist, fewer than in the round before.
-  The count is the `accepted (>= threshold)` line of `review.sh`; a run that ended
-  before review — exit 2, 5 or 1 — is not a round.
-- **Escalate** — an escalate verdict fired, the same `file:line` was accepted in
-  two consecutive rounds, or a round accepted as many findings as the one before
-  it, or more: the fix is not converging, and another attempt will not help.
+- **Another round** — accepted findings exist. The count is the `accepted (>= threshold)` line of
+  `review.sh`; a run that ended before review — exit 2, 5 or 1 — is not a round.
+- **Stop and find the cause** — a finding came back after its fix, a round accepted as many findings
+  as the one before it or more, or a run ended the same way as the one before: another attempt of
+  the same kind will not help.
+- **Escalate** — an escalate verdict fired.
 
-**The same failure twice in a row goes to the user**: gates red for the same reason, `review.sh`
-exit 5 or 1, the same refusal of `land.sh`, or `land.sh` exit 4 or `publish.sh` exit 5 for the same
-reason. Another attempt does not mend what broke outside the code — a simulator that will not boot,
-a review that cannot quote a deleted file. Never a third try alone. Checks still running are not a
-failure, and have their own count ([Publishing](#publishing)). A failing case of `/qa` is no such
-failure either: the loop fixes it as often as it fails (`/maintain`, step 8).
+**Three times in a row is a circle, and `review.sh` stops**: a finding accepted at the same place in
+three reviews in a row, each after a change of the work; or three runs in a row that ended the same
+way — the same gates red with the same output, the same end-to-end failures. It runs nothing and
+exits 6. Where the work changed each time and a check of the code stayed red, the fixes do not close
+it, and that is yours: the output says what does not converge, and the next run takes your decision
+to go on (`--past-limit --user-decided`), and no words of yours. Where nothing changed between the
+runs, or the failure is outside the code — a simulator that will not boot, a review that cannot
+quote a deleted file — a retry does not mend it, and the maintainer finds the cause before it runs
+again, with its reason (`--past-limit --because`). A cause only you can remove is told to you once,
+with what was tried. Checks still running are not a failure, and have their own count
+([Publishing](#publishing)). A failing case of `/qa` is no question either: the loop fixes it as
+often as it fails (`/maintain`, step 8).
 
-**`review.sh` stops after `ASK_AFTER_RUNS` runs of one task** (`.review/land.conf`, 5 by default).
-It counts every run that got as far as the gates, whatever ended it: rounds, red gates, unusable
-reviews, and the reviews again after `/qa`, an answer `fixed` or a landing refusal. Five leaves room
-for the three or four rounds of a large change; a large task that also had a red gate reaches it,
-and the user is asked — that is the point, not a wrong count. Past the limit `review.sh` runs
-nothing and exits 6, and the user decides whether to go on. `--past-limit` runs once more and starts
-the count again — on the user's answer, or when the count is wrong (runs of another task under the
-same id), said in the report: it is a warning, not a lock. `land.sh` checks its other conditions
-before the gates, so a landing refused for one of them costs no build; a landing that fails at or
-after its gates — red, killed, or a commit that fails — may be retried once on the same run, so the
-answers to its escalations still apply, and a second time goes back through `review.sh`, since
-nothing else counts landings. At the pull request levels `land.sh` takes no run and counts its own:
-past `ASK_AFTER_RUNS` red or unfinished gate runs of the task it refuses, unless `--past-limit`. The
-two stops back each other: the rule above stops early, at the second failure; the count stops a
-session that missed the rule, on every path that runs a review or the gates.
+**`review.sh` stops after `ASK_AFTER_RUNS` reviews of one task** (`.review/land.conf`, 5 by
+default). It counts the runs that made a review — rounds, and the reviews again after `/qa`, an
+answer `fixed` or a landing refusal — and not the runs that ended before one: red gates, an error,
+an unusable review. Five leaves room for the three or four rounds of a large change. Past the limit
+it runs nothing, exits 6 and prints what it read: how many findings each review accepted, and
+whether one came back after its fix. A count alone is never a question to you. Reviews that found
+different things, each fixed, go on: the maintainer runs `--past-limit`, which runs once more and
+starts the count again. Where a finding came back once, or the reviews accept no fewer, the
+maintainer judges whether the work moves toward the goal and gives its reason,
+`--past-limit --because "<why>"`, which is kept in the run and shown on the pull request; where it
+cannot tell, that is a question to you. The same number of runs in a row with no review stops the
+task too, with how each ended. `land.sh` checks its other conditions before the gates, so a landing
+refused for one of them costs no build; a landing that fails at or after its gates — red, killed, or
+a commit that fails — may be retried once on the same run, so the answers to its escalations still
+apply, and a second time goes back through `review.sh`, since nothing else counts landings. At the
+pull request levels `land.sh` takes no run and counts its own: past `ASK_AFTER_RUNS` red or
+unfinished gate runs of the task it refuses, unless `--past-limit`. The stops back each other: the
+line at the end of a run says early what repeats, the circle stops the third repeat, and the count
+stops a session that goes on finding.
 
 ### Job 3 — Land, then advance
 

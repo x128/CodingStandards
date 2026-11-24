@@ -229,8 +229,8 @@ printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=2\n' >.review/land.conf
 counted "the first run of a task runs" 0 "CLEAN" T-002
 counted "a run up to the limit runs" 0 "CLEAN" T-002
 runs_before="$(ls .review/runs | wc -l)"
-counted "a run past the limit waits for the user" 6 \
-  "WAIT FOR THE USER — T-002 has had 2 runs since the count started, 2 in all" T-002
+counted "a task at its limit of reviews stops and says what it read" 6 \
+  "LIMIT OF REVIEWS — T-002 has had 2 reviews since the count started, 2 runs in all" T-002
 if [ "$(ls .review/runs | wc -l)" -eq "$runs_before" ]; then
   echo "ok    a run past the limit leaves no run behind"
 else
@@ -246,7 +246,7 @@ counted "--past-limit left in the command fails on the next run" 1 \
 counted "after --past-limit the count starts again from zero" 0 "CLEAN" T-002
 counted "a run up to the limit after --past-limit runs" 0 "CLEAN" T-002
 counted "the count after --past-limit reaches the limit again" 6 \
-  "has had 2 runs since the count started, 5 in all" T-002
+  "has had 2 reviews since the count started, 5 runs in all" T-002
 for task_without_id in '{"title": "no id"}' '{"id": "", "title": "empty id"}'; do
   printf '%s' "$task_without_id" >.review/no-id.json
   REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
@@ -1646,6 +1646,336 @@ e2e_land "a case with -manual: in a word is no manual case: a /qa pass does not 
   "a /qa failure without an end-to-end test seen red, then green: TC-003" \
   .review/T-046.json "$last_run"
 cp "$WORK/test-cases.md" qa/test-cases.md
+
+# The stop reads the runs. review.sh reads the runs of the task before it makes a new one,
+# counts the reviews among them, and stops where a finding or an end repeats. Each task
+# here is its own. `round` makes one run: with `new` the work changes first; the reviewer
+# accepts one finding at a line of src/pickup.kt, or none with `-`; ROUND_FILE names
+# another file and ROUND_QUOTE another quote than the line. `on_the_way` is a run a case
+# needs before it, which must end as given.
+cp .review/gates.sh "$WORK/gates.before-rounds"
+cp .review/land.conf "$WORK/land.conf.before-rounds"
+for line in $(seq 80); do printf 'val l%s = %s\n' "$line" "$line"; done >src/pickup.kt
+limit_is() { printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=%s\n' "$1" >.review/land.conf; }
+round_run() {
+  local task_id="$1" work="$2" at="$3"; shift 3
+  [ -f ".review/$task_id.json" ] || printf '{"id": "%s", "title": "Pickup", '\
+'"category": "bugfix", "scope": ["src/*"], "exit_criteria": []}' "$task_id" >".review/$task_id.json"
+  [ "$work" = same ] || printf '// a fix\n' >>src/fix.kt
+  if [ "$at" = - ]; then
+    printf '{"findings":[]}' >"$WORK/reviewer.json"
+    printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+  else
+    printf '{"findings":[{"id":"F-001","file":"%s","line":%s,'\
+'"code_quote":"%s","category":"bug","severity":"major","confidence":"confirmed",'\
+'"evidence":"the pickup is taken twice"}]}' "${ROUND_FILE:-src/pickup.kt}" "$at" \
+      "${ROUND_QUOTE:-val l$at = $at}" >"$WORK/reviewer.json"
+    printf '%s' "$(verdict '"accept"' no-rule-fired)" >"$WORK/maintainer.json"
+  fi
+  REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    "$LIB_DIR/review.sh" --task-file ".review/$task_id.json" "$@" >"$WORK/run.log" 2>&1
+}
+round() {
+  local name="$1" expected_exit="$2" expected_line="$3"; shift 3
+  round_run "$@"
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
+}
+on_the_way() {
+  local expected_exit="$1" actual_exit; shift
+  round_run "$@"
+  actual_exit=$?
+  [ "$actual_exit" -eq "$expected_exit" ] && return 0
+  echo "FAIL  a run on the way ($*): expected exit $expected_exit, got $actual_exit — log follows"
+  sed 's/^/      /' "$WORK/run.log"
+  FAILURES=$((FAILURES + 1))
+}
+red_gates() {
+  printf '#!/usr/bin/env bash\necho %s >"$1"\nexit 1\n' \
+    "'{\"test\":{\"status\":\"fail\",\"blocking\":true,\"command\":\"false\",\"output\":\"$1\"}}'" \
+    >.review/gates.sh
+}
+green_gates() { cp "$WORK/gates.before-rounds" .review/gates.sh; }
+
+# The limit counts reviews, and at the limit the script says what it read.
+limit_is 5
+on_the_way 3 T-060 new 3
+on_the_way 3 T-060 new 20
+on_the_way 3 T-060 new 35
+on_the_way 0 T-060 new -
+on_the_way 0 T-060 new -
+round "reviews that found different things, each fixed, reach the limit and say so" 6 \
+  "LIMIT OF REVIEWS — T-060 has had 5 reviews since the count started, 5 runs in all" \
+  T-060 new -
+says "there it says what each review accepted" \
+  "   accepted by each review, oldest first: 1, 1, 1, 0, 0" "$WORK/run.log"
+says "and that the loop goes on" "   The loop goes on: no finding came back after its fix" \
+  "$WORK/run.log"
+never_says "a count alone is no question" "the user" "$WORK/run.log"
+round "--past-limit then runs the sixth with nobody's words" 0 "CLEAN" T-060 same - --past-limit
+run_records "a run past a limit that converges records that" \
+  '.past_limit_kind == "converging" and .stop == "reviews" and .because == null
+   and .user_decided == null and .count == null'
+
+on_the_way 0 T-061 new -
+red_gates "could not compile"
+on_the_way 2 T-061 same -
+red_run_of_t061="$(newest_run)"
+green_gates
+on_the_way 0 T-061 same -
+printf '#!/usr/bin/env bash\nexit 1\n' >.review/gates.sh
+on_the_way 1 T-061 same -
+green_gates
+on_the_way 0 T-061 same -
+round "of five runs, two that made no review leave three reviews" 0 "CLEAN" T-061 same -
+run_records "the sixth run is the fourth review" '.count == 4'
+if jq -e '.count == null and .end == "gates-red"' "$red_run_of_t061/meta.json" >/dev/null; then
+  echo "ok    a run that made no review has no number among the reviews"
+else
+  echo "FAIL  a run that made no review has no number among the reviews: "\
+"$(jq -c '{count, end: .end}' "$red_run_of_t061/meta.json")"
+  FAILURES=$((FAILURES + 1))
+fi
+limit_is 3
+on_the_way 0 T-062 new -
+red_gates "could not compile"
+on_the_way 2 T-062 same -
+green_gates
+on_the_way 0 T-062 same -
+on_the_way 0 T-062 same -
+round "at the limit the count says reviews and runs apart" 6 \
+  "has had 3 reviews since the count started, 4 runs in all" T-062 same -
+says "reviews that accepted nothing are no question either" \
+  "   The loop goes on: no review accepted a finding, so the reviews are not what repeats" \
+  "$WORK/run.log"
+
+# A finding that comes back after its fix: said at the second time, a stop at the third.
+limit_is 100
+on_the_way 3 T-063 new 10
+round "a finding that comes back after its fix is said at the end of the run" 3 \
+  "   again after a change: F-001 src/pickup.kt:10 — also accepted in " T-063 new 10
+says "with what comes of a third time" "   a third time in a row review.sh stops" "$WORK/run.log"
+round "the third review of it still runs, and says that the next run stops" 3 \
+  "   that is 3 reviews in a row: the next run of review.sh stops" T-063 new 10
+third_review_of_t063="$(newest_run)"
+runs_before="$(ls .review/runs | wc -l)"
+round "a third time in a row review.sh stops" 6 \
+  "NOT CONVERGING — the fixes of T-063 do not close a finding of the review; nothing ran." \
+  T-063 new 10
+says "it says what does not converge" \
+  '   src/pickup.kt:10 (bug) `val l10 = 10` was accepted in 3 reviews in a row, each after' \
+  "$WORK/run.log"
+says "it says where the finding is written, and that a run's patch is the whole change" \
+  "   what it says: $third_review_of_t063/approved.json; the whole change as each review saw "\
+"it: the diff.patch of each of those runs — what a fix changed is what differs between two" \
+  "$WORK/run.log"
+says "and that it is the user's" \
+  "   For the user, the work does not converge: the same finding came back after each of 2 fixes" \
+  "$WORK/run.log"
+says "with the way on once they decided" "--past-limit --user-decided then runs once more" \
+  "$WORK/run.log"
+if [ "$(ls .review/runs | wc -l)" -eq "$runs_before" ]; then
+  echo "ok    a stop leaves no run behind"
+else
+  echo "FAIL  a stop left a run directory behind"
+  FAILURES=$((FAILURES + 1))
+fi
+round "--past-limit alone does not pass a stop that is the user's" 1 \
+  "this stop takes --user-decided" T-063 same 10 --past-limit
+round "the loop's own reason does not pass it either" 1 \
+  "this stop takes --user-decided" T-063 same 10 --past-limit --because "it moves"
+round "--user-decided takes no words" 1 "unknown argument: try the other rounding" \
+  T-063 same 10 --past-limit --user-decided "try the other rounding"
+round "beside the user's decision no reason is taken: nothing keeps words there" 1 \
+  "this stop takes --user-decided alone" \
+  T-063 same 10 --past-limit --user-decided --because "they said to try the other rounding"
+round "once the user decided to go on it runs once more" 3 "accepted (>= major): 1" \
+  T-063 same 10 --past-limit --user-decided
+run_records "and the run records that they decided, and no words" \
+  '.user_decided == true and .past_limit_kind == "user" and .stop == "finding"
+   and .because == null and ([.. | strings] | all(test("rounding") | not))'
+# What the finding says is read where the newest review of the row wrote it, also when a
+# run after that review made none: runs made before review.sh read them may stand so.
+on_the_way 3 T-083 new 10
+on_the_way 3 T-083 new 10
+red_gates "could not compile"
+on_the_way 2 T-083 new 10
+red_run_of_t083="$(newest_run)"
+green_gates
+on_the_way 3 T-083 new 10
+third_review_of_t083="$(newest_run)"
+jq '.time = now' "$red_run_of_t083/meta.json" >"$WORK/meta.json" \
+  && mv "$WORK/meta.json" "$red_run_of_t083/meta.json"
+round "the stop of a finding names the run of the newest review, not a newer run without one" \
+  6 "   what it says: $third_review_of_t083/approved.json; " T-083 new 10
+on_the_way 3 T-064 new 10
+round "the same finding on unchanged work did not come back after a fix" 3 \
+  "accepted (>= major): 1" T-064 same 10
+never_says "so nothing is said of it at the end of the run" "again after a change" \
+  "$WORK/run.log"
+on_the_way 3 T-064 same 10
+round "the same finding on unchanged work is no circle" 3 "accepted (>= major): 1" \
+  T-064 same 10
+on_the_way 3 T-065 new 10
+on_the_way 3 T-065 new 12
+on_the_way 3 T-065 new 14
+round "a finding whose line moved with each fix is the same place" 6 \
+  "NOT CONVERGING — the fixes of T-065 do not close a finding of the review" T-065 new 14
+on_the_way 3 T-066 new 3
+round "another finding in the same file is not the first come back" 3 \
+  "accepted (>= major): 1" T-066 new 20
+never_says "so nothing is said of it either" "again after a change" "$WORK/run.log"
+on_the_way 3 T-066 new 35
+round "different findings in one file are no circle" 3 "accepted (>= major): 1" T-066 new 50
+# The same quote is the same place only where the file holds that line once. Three
+# defects that begin with a line the file holds at several places, each fixed before the
+# next is found, are three findings; a finding whose line the file holds once is the same
+# finding however far a fix moved it.
+for line in $(seq 80); do
+  case "$line" in
+    10 | 40 | 70) printf '    return null\n' ;;
+    *) printf 'val g%s = %s\n' "$line" "$line" ;;
+  esac
+done >src/guard.kt
+for line in 10 40 70; do
+  ROUND_FILE=src/guard.kt ROUND_QUOTE="return null" on_the_way 3 T-080 new "$line"
+  sed "${line}s/.*/    return fallback$line/" src/guard.kt >"$WORK/guard.kt" \
+    && mv "$WORK/guard.kt" src/guard.kt
+done
+round "findings far apart that begin with a line the file held at several places are no circle" \
+  0 "CLEAN" T-080 new -
+cp src/pickup.kt src/moved.kt
+for line in 10 30 50; do
+  ROUND_FILE=src/moved.kt ROUND_QUOTE="val l10 = 10" on_the_way 3 T-081 new "$line"
+  { for moved in $(seq 20); do printf '// moved down\n'; done; cat src/moved.kt; } \
+    >"$WORK/moved.kt" && mv "$WORK/moved.kt" src/moved.kt
+done
+round "a finding that each fix moved far, quoted by a line the file holds once, is the same place" \
+  6 '   src/moved.kt:50 (bug) `val l10 = 10` was accepted in 3 reviews in a row' T-081 new -
+rm src/guard.kt src/moved.kt
+
+# At the limit, where the script cannot read that the work converges, the loop judges and
+# gives its reason.
+limit_is 3
+on_the_way 3 T-067 new 3
+on_the_way 3 T-067 new 20
+on_the_way 3 T-067 new 35
+round "findings that differ and do not get fewer are the loop's to judge" 6 \
+  "   they do not get fewer" T-067 new 50
+says "the loop is told to judge whether the work moves" \
+  "   The loop goes on: the findings differ and do not get fewer: judge whether the work moves" \
+  "$WORK/run.log"
+never_says "and nothing there is the user's" "the user" "$WORK/run.log"
+round "there --past-limit needs its reason" 1 \
+  '--past-limit at this stop needs --because "<what moves toward the goal>"' \
+  T-067 same 50 --past-limit
+round "a reason of blanks is no reason" 1 \
+  '--past-limit at this stop needs --because "<what moves toward the goal>"' \
+  T-067 same 50 --past-limit --because "  "
+round "the loop's reason passes it" 3 "accepted (>= major): 1" \
+  T-067 same 50 --past-limit --because "each was a defect of its own"
+run_records "and the run records it" \
+  '.past_limit_kind == "loop" and .stop == "reviews" and .user_decided == null
+   and .because == "each was a defect of its own"'
+limit_is 2
+on_the_way 3 T-068 new 10
+on_the_way 3 T-068 new 10
+round "a finding that came back once asks why at the limit" 6 \
+  "   came back after its fix: src/pickup.kt:10 (bug), in 2 reviews in a row (" T-068 new 10
+says "the loop finds why the fix did not hold" \
+  "   The loop goes on: a finding came back after its fix: find why the fix did not hold" \
+  "$WORK/run.log"
+on_the_way 3 T-068 same 10 --past-limit --because "another fix"
+round "a run past the limit does not wipe the circle" 6 \
+  "was accepted in 3 reviews in a row" T-068 new 10
+
+# Runs that end the same way: the same gates red with the same output.
+limit_is 100
+red_gates "the pickup test fails"
+on_the_way 2 T-069 new -
+round "two runs that end the same way say so at the end of the second" 2 \
+  "── the same end as the run before (" T-069 new -
+says "with what was red" \
+  "): gates red: test, the same output each time but for its numbers; a third time in a row" \
+  "$WORK/run.log"
+round "the third run that ends the same way says that the next run stops" 2 \
+  "── the same end as the 2 runs before: gates red: test, the same output each time but for "\
+"its numbers; the next run of review.sh stops and says whose turn it is" T-069 new -
+round "three runs in a row that end the same way after changes stop the fourth" 6 \
+  "NOT CONVERGING — T-069 ended the same way in 3 runs in a row, each after a change" \
+  T-069 new -
+says "it names the gates that stayed red" \
+  "   gates red: test, the same output each time but for its numbers (" "$WORK/run.log"
+says "and that is the user's" \
+  "   For the user, the work does not converge: the same check stayed red through 2 fixes" \
+  "$WORK/run.log"
+round "there too --past-limit takes --user-decided" 1 "this stop takes --user-decided" \
+  T-069 same - --past-limit --because "the gate is mended"
+on_the_way 2 T-070 new -
+on_the_way 2 T-070 same -
+on_the_way 2 T-070 same -
+round "on the same work it is a retry that does not mend it" 6 \
+  "STOPPED — T-070 ended the same way in 3 runs in a row; nothing ran." T-070 same -
+says "and the loop's to find the cause of" "   The loop goes on: a retry does not mend it" \
+  "$WORK/run.log"
+never_says "a retry is no question" "the user" "$WORK/run.log"
+round "the loop's reason passes that stop" 2 "GATES RED" \
+  T-070 same - --past-limit --because "the simulator is booted again"
+for seconds in 6 7 9; do
+  red_gates "BUILD FAILED in ${seconds}s"
+  on_the_way 2 T-071 new -
+done
+round "numbers alone do not make another output" 6 "NOT CONVERGING — T-071 ended the same way" \
+  T-071 new -
+for output in "a is undefined" "b is undefined" "c is undefined"; do
+  red_gates "$output"
+  on_the_way 2 T-072 new -
+done
+red_gates "d is undefined"
+round "another output each time is no circle" 2 "GATES RED" T-072 new -
+limit_is 3
+for output in "a is undefined" "b is undefined" "c is undefined"; do
+  red_gates "$output"
+  on_the_way 2 T-073 new -
+done
+round "as many runs in a row with no review stop the task" 6 \
+  "LIMIT OF RUNS — the last 3 runs of T-073 made no review (ASK_AFTER_RUNS=3); nothing ran." \
+  T-073 new -
+says "it says how each ended" \
+  "   how they ended, oldest first: gates red; gates red; gates red" "$WORK/run.log"
+says "and the loop looks for what they share" \
+  "   The loop goes on: find what they share before another run" "$WORK/run.log"
+round "that stop too needs the loop's reason" 1 "--past-limit at this stop needs --because" \
+  T-073 same - --past-limit
+# A run made before review.sh recorded how a run ends is read from what it left.
+for meta in .review/runs/*/meta.json; do
+  jq 'del(.end, .exit, .stage, .past_limit_kind, .stop, .because, .user_decided)' "$meta" \
+    >"$meta.old" && mv "$meta.old" "$meta"
+done
+round "runs made before their end was recorded are read from what they left" 6 \
+  "   how they ended, oldest first: gates red; gates red; gates red" T-073 same -
+round "and so are their reviews" 6 "was accepted in 3 reviews in a row" T-065 same 14
+green_gates
+limit_is 100
+
+# A run folder that cannot be read is never read as no run; the flags that pass a stop go
+# with --past-limit alone.
+mkdir -p .review/runs/unreadable && printf '{' >.review/runs/unreadable/meta.json
+round "a meta.json that cannot be read stops the count" 1 \
+  ".review/runs/unreadable/meta.json is not readable — the runs of a task are read from" \
+  T-060 same -
+printf '' >.review/runs/unreadable/meta.json
+round "nor is an empty one read as no run" 1 \
+  ".review/runs/unreadable/meta.json is not readable" T-060 same -
+rm -r .review/runs/unreadable
+round "--because without --past-limit is a usage error" 1 "--because goes with --past-limit" \
+  T-060 same - --because "it moves"
+round "an empty --because without --past-limit is one too" 1 \
+  "--because goes with --past-limit" T-060 same - --because ""
+round "and so is --user-decided" 1 "--user-decided goes with --past-limit" \
+  T-060 same - --user-decided
+rm src/pickup.kt src/fix.kt
+cp "$WORK/land.conf.before-rounds" .review/land.conf
+
 # Last in this repository, since it commits: the harness as a link to a file in
 # the reviewed tree.
 new_task T-013
@@ -2992,6 +3322,57 @@ pr_land "after it the count starts again" 0 "landed T-001 on task/T-001"
 pr_work
 pr_land "--past-limit below the limit is refused" 1 "only for a task at its limit" --past-limit
 
+# On the pull request the summary of a run counts reviews, and says what passed a stop.
+published_project origin
+set_level pr ASK_AFTER_RUNS=3
+pr_work
+step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review "a review of the pull request is its first review" 0 "CLEAN — gates green"
+holds "the summary on the pull request counts reviews" posted "Review 1 of 3 (ASK_AFTER_RUNS)."
+printf '#!/usr/bin/env bash\necho %s >"$1"\nexit 1\n' \
+  "'{\"test\":{\"status\":\"fail\",\"blocking\":true,\"command\":\"false\",\"output\":\"red\"}}'" \
+  >.review/gates.sh
+pr_review "a run with red gates on the pull request makes no review" 2 "GATES RED"
+holds "and its summary says so" posted "gates red. No review was made in this run."
+cp "$WORK/gates.green" .review/gates.sh
+answer_is_wrong="{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()')]}"
+accepted="{\"verdicts\": [$(pr_verdict F-001 accept no-rule-fired)]}"
+pr_review "the second review accepts a finding" 3 "accepted (>= major): 1" \
+  "$answer_is_wrong" "$accepted"
+holds "the red run between is not counted" posted "Review 2 of 3 (ASK_AFTER_RUNS)."
+pr_review "and so does the third" 3 "accepted (>= major): 1" "$answer_is_wrong" "$accepted"
+pr_review "at the limit of reviews the pull request gets no run" 6 \
+  "LIMIT OF REVIEWS — T-001 has had 3 reviews since the count started, 4 runs in all" \
+  "$answer_is_wrong" "$accepted"
+printf '%s' "$answer_is_wrong" >"$WORK/reviewer.json"
+printf '%s' "$accepted" >"$WORK/maintainer.json"
+REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+  "$LIB_DIR/review.sh" --task-file .review/task.json --past-limit \
+  --because "each was a defect of its own." >"$WORK/run.log" 2>&1
+check "the loop's reason passes the limit on the pull request" 3 "accepted (>= major): 1" $? \
+  "$WORK/run.log"
+holds "the summary of a run past the limit says why" posted \
+  "The limit was passed on the loop's judgement: each was a defect of its own."
+holds "with one full stop" not posted "its own.."
+# The same finding after each of two fixes, each landed on the pull request: a circle.
+for fix in first second; do
+  pr_work
+  step "the landing of the $fix fix" "$WORK/land.log" \
+    "$LIB_DIR/land.sh" --task-file .review/task.json
+  pr_review "the review after the $fix fix accepts the finding again" 3 \
+    "   again after a change: F-001 src/answer.kt:1" "$answer_is_wrong" "$accepted"
+done
+pr_review "on the pull request too a third time in a row review.sh stops" 6 \
+  "NOT CONVERGING — the fixes of T-001 do not close a finding of the review" \
+  "$answer_is_wrong" "$accepted"
+REVIEWER_CMD="cat $WORK/reviewer.json #" MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+  "$LIB_DIR/review.sh" --task-file .review/task.json --past-limit --user-decided \
+  >"$WORK/run.log" 2>&1
+check "once the user decided to go on the pull request is reviewed again" 3 \
+  "accepted (>= major): 1" $? "$WORK/run.log"
+holds "and the summary says that the stop was passed on their decision" posted \
+  "The stop was passed on the user's decision."
+
 # A failure of /qa at the pull request levels: item M5 says the same as condition 7.
 published_project origin
 reviewed_pull_request merge
@@ -3574,6 +3955,66 @@ if [ -z "$missing" ]; then
   echo "ok    every decision rule of the prompt is in the schema"
 else
   echo "FAIL  decision rules of prompts/maintainer.md missing from the schema: $missing"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# The scripts ask for jq 1.6 or newer, and jq 1.6 reads a word of its own after `$` as
+# that word: a program that binds a variable of such a name — after `as`, alone or inside
+# a pattern that takes a list or an object apart, as a label, as a named argument of the
+# command line, as a parameter of a function — does not compile there, and neither does
+# such a word alone as a key of an object. jq 1.7 takes both, so only this case holds the
+# scripts to it on a machine with a newer jq. jq needs no blank between `as` or `label`
+# and what follows, so a binding is read with one or with none. Comment lines are passed
+# over, and a pattern is read as far as its line goes: one that binds such a word on a
+# later line of its own is not seen. jq_words_bound <file>... prints the lines that do so,
+# as grep -Hn gives them.
+jq_words='and|as|catch|def|elif|else|end|foreach|if|import|include|label|module|or|reduce'
+jq_words="$jq_words|then|try|__loc__"
+jq_binds="(\\b(as|label) *\\\$|\\bas *[[{][^|]*\\\$|--(arg|argjson|slurpfile|rawfile) +"
+jq_binds="$jq_binds|\\bdef +[a-z_]+\\([^)]*\\\$)($jq_words)\\b"
+jq_words_bound() {
+  grep -HnE -- "$jq_binds|[{,] *($jq_words) *[,}]" "$@" | grep -vE '^[^:]+:[0-9]+: *#'
+}
+# What the case must catch, in programs made up here. printf puts the word in, so that
+# this file, which the case reads too, holds no such binding.
+mkdir -p "$WORK/jq-names" || fail_setup "jq-names"
+printf '. as [$%s] | 1\n' end >"$WORK/jq-names/list.sh"
+printf '. as {$%s} | 1\n' end >"$WORK/jq-names/object.sh"
+printf 'reduce .[] as [$key, {at: [$%s]}] (0; . + 1)\n' or >"$WORK/jq-names/deeper.sh"
+printf '. as [$first] ?// {$%s} | 1\n' if >"$WORK/jq-names/alternative.sh"
+printf '. as $x | label $%s | 1\n' end >"$WORK/jq-names/label.sh"
+printf '. as {%s: $x} | [$x, {%s: 1}] | . as [$%sing] | 1\n' end end end \
+  >"$WORK/jq-names/none.sh"
+# jq reads a pattern, a variable and a label written with no blank before them as well.
+printf '. as[$%s] | 1\n' end >"$WORK/jq-names/list-close.sh"
+printf '. as{$%s} | 1\n' end >"$WORK/jq-names/object-close.sh"
+printf '. as$%s | 1\n' end >"$WORK/jq-names/variable-close.sh"
+printf '. as $x | label$%s | 1\n' end >"$WORK/jq-names/label-close.sh"
+printf '. as[$%sing] | {%s: 1} | . as{%s: $x} | label$%sless | 1\n' end end end end \
+  >"$WORK/jq-names/none-close.sh"
+jq_words_bound "$WORK"/jq-names/*.sh >"$WORK/jq-names.log"
+says "a variable that a list pattern binds by a word jq 1.6 keeps is caught" \
+  "/list.sh:1:" "$WORK/jq-names.log"
+says "and one that an object pattern binds" "/object.sh:1:" "$WORK/jq-names.log"
+says "and one bound deeper in a pattern" "/deeper.sh:1:" "$WORK/jq-names.log"
+says "and one bound in the alternative of a pattern" "/alternative.sh:1:" "$WORK/jq-names.log"
+says "and a label of such a name" "/label.sh:1:" "$WORK/jq-names.log"
+never_says "a key of a pattern that is such a word, and a longer name, are none" \
+  "/none.sh" "$WORK/jq-names.log"
+says "a list pattern written with no blank after as is caught too" \
+  "/list-close.sh:1:" "$WORK/jq-names.log"
+says "and an object pattern written so" "/object-close.sh:1:" "$WORK/jq-names.log"
+says "and a variable bound with no blank after as" "/variable-close.sh:1:" "$WORK/jq-names.log"
+says "and a label with no blank before its name" "/label-close.sh:1:" "$WORK/jq-names.log"
+never_says "written so, a key of a pattern and a longer name are none either" \
+  "/none-close.sh" "$WORK/jq-names.log"
+bound="$(jq_words_bound "$LIB_DIR"/*.sh "$LIB_DIR"/../project/*.sh)"
+if [ -z "$bound" ]; then
+  echo "ok    no jq program of the scripts names a variable or a lone key by a word jq 1.6 keeps"
+else
+  echo "FAIL  no jq program of the scripts names a variable or a lone key by a word jq 1.6 "\
+"keeps: these do not compile there"
+  printf '%s\n' "$bound" | sed 's/^/      /'
   FAILURES=$((FAILURES + 1))
 fi
 

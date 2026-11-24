@@ -789,9 +789,9 @@ run_result() {
 }
 
 # One run of a task as task_runs_json gives it, read from its meta.json and the files beside
-# it; $run, $approved, $escalated, $gates, $e2e and $findings are the folder and the text of
-# each file, empty when it is not there. `same` is here the text that says what failed; its
-# digest takes its place.
+# it; $run, $approved, $escalated, $gates, $e2e, $findings and $quote_lines are the folder
+# and the text of each file, empty when it is not there. `same` is here the text that says
+# what failed; its digest takes its place.
 JQ_RUN='
 def parsed: if . == "" then null else (try fromjson catch null) end;
 def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
@@ -799,6 +799,7 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 | ($gates | parsed) as $gates
 | ($e2e | parsed | if type == "object" then . else {} end) as $e2e
 | ($findings | parsed) as $findings
+| ($quote_lines | parsed | if type == "object" then . else {} end) as $quote_lines
 | (($approved | type) == "array") as $reviewed
 | [$gates | objects | to_entries[]
    | select((.value | type) == "object" and .value.status == "fail" and .value.blocking != false)]
@@ -820,11 +821,13 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 | {run: $run, time: (.time // 0), epoch: (.epoch // 0), past_limit: (.past_limit == true),
    user_decided: (.user_decided == true), work: .tree_fingerprint, reviewed: $reviewed,
    accepted: [$approved | arrays | .[] | objects
-              | {id: .finding_id}
+              | .finding_id as $id
+              | {id: $id}
                 + (.finding | objects
                    | {file, line, category,
                       quote: ([(.code_quote // "" | tostring | split("\n")[]
-                                | gsub("^\\s+|\\s+$"; "") | select(. != ""))] | first // "")})],
+                                | gsub("^\\s+|\\s+$"; "") | select(. != ""))] | first // ""),
+                      quote_lines: ($quote_lines[$id | tostring] // null)})],
    end: $ending, failed: $failed,
    same: (if $failed == "gates"
             then [$failed, [$red_gates[] | [.key, (.value.output // "" | no_digits)]]]
@@ -840,8 +843,10 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 #   {run, time, epoch, past_limit, user_decided, work, reviewed, accepted, end, failed, same}
 # `work` is the fingerprint of the tree the run looked at. `reviewed`: the run made a review
 # — its approved.json is there and is a list, which review.sh writes only when the triage
-# ended. `accepted`: what the review accepted, each {id, file, line, category, quote}, the
-# quote being the first line of the finding's quote that is not blank, trimmed. `end`: how
+# ended. `accepted`: what the review accepted, each {id, file, line, category, quote,
+# quote_lines}, the quote being the first line of the finding's quote that is not blank,
+# trimmed, and quote_lines on how many lines the file held it when the review was made
+# (quote-lines.json; null for a run that does not say). `end`: how
 # the run ended, as review.sh records it (record_end); for a run that does not say — one
 # made before review.sh recorded it, or one that was killed — it is read from what the run
 # left: clean, findings or escalations when it is reviewed, gates-red when a blocking gate
@@ -853,36 +858,145 @@ def no_digits: tostring | [explode[] | select(. < 48 or . > 57)] | implode;
 # digits taken out, so that two runs that end the same way but for a time or a count have
 # one digest. A run that ended in an error has none: two errors at one stage may be two
 # errors. A meta.json that cannot be read fails the whole call and says which: it must
-# never read as "no run".
+# never read as "no run". task_run_json <run-dir> gives one run.
+task_run_json() {
+  local run="$1" entry same
+  local approved="$1/approved.json" escalated="$1/escalated.json" gates="$1/gates.json"
+  local e2e="$1/e2e.json" findings="$1/findings.json" quote_lines="$1/quote-lines.json"
+  [ -f "$approved" ] || approved=/dev/null
+  [ -f "$escalated" ] || escalated=/dev/null
+  [ -f "$gates" ] || gates=/dev/null
+  [ -f "$e2e" ] || e2e=/dev/null
+  [ -f "$findings" ] || findings=/dev/null
+  [ -f "$quote_lines" ] || quote_lines=/dev/null
+  entry="$(jq -c --arg run "$run" --rawfile approved "$approved" \
+    --rawfile escalated "$escalated" --rawfile gates "$gates" --rawfile e2e "$e2e" \
+    --rawfile findings "$findings" --rawfile quote_lines "$quote_lines" \
+    "$JQ_RUN" "$run/meta.json")" && [ -n "$entry" ] || return 1
+  # `same` is the last key of the entry, so a run that failed nothing ends with its null.
+  case "$entry" in
+    *'"same":null}') ;;
+    *) same="$(printf '%s' "$entry" | jq -r '.same' | sha256_stdin)" || return 1
+       entry="$(printf '%s' "$entry" | jq -c --arg same "$same" '.same = $same')" || return 1 ;;
+  esac
+  printf '%s\n' "$entry"
+}
+
+unreadable_meta() {
+  echo "$1 is not readable — the runs of a task are read from these files: repair it or "\
+"remove that run folder" >&2
+}
+
+# The run folders are read 500 at a time, one jq for each 500: a project keeps hundreds of
+# them, and every run of review.sh reads them all.
 task_runs_json() {
-  local meta run task entry entries same approved escalated gates e2e findings
-  entries="$(for meta in .review/runs/*/meta.json; do
-      [ -f "$meta" ] || continue
-      case "$meta" in .review/runs/land-*|.review/runs/qa-*) continue ;; esac
-      task="$(jq -r 'if type == "object" then "task:\(.task // "")" else error("no object") end' \
-        "$meta" 2>/dev/null)" && [ -n "$task" ] || {
-        echo "$meta is not readable — the runs of a task are read from these files: repair "\
-"it or remove that run folder" >&2
+  local meta from=0 entries
+  local -a metas=()
+  for meta in .review/runs/*/meta.json; do
+    [ -f "$meta" ] || continue
+    case "$meta" in .review/runs/land-*|.review/runs/qa-*) continue ;; esac
+    [ -s "$meta" ] || { unreadable_meta "$meta"; return 1; }
+    metas+=("$meta")
+  done
+  entries="$(while [ "$from" -lt "${#metas[@]}" ]; do
+      jq -r --arg id "$1" 'if type == "object" then select(.task == $id) | input_filename
+                           else error("no object") end' "${metas[@]:from:500}" 2>/dev/null || {
+        for meta in "${metas[@]:from:500}"; do
+          jq -e 'type == "object"' "$meta" >/dev/null 2>&1 || { unreadable_meta "$meta"; break; }
+        done
         exit 1
       }
-      [ "$task" = "task:$1" ] || continue
-      run="${meta%/meta.json}"
-      approved="$run/approved.json" escalated="$run/escalated.json" gates="$run/gates.json"
-      e2e="$run/e2e.json" findings="$run/findings.json"
-      [ -f "$approved" ] || approved=/dev/null
-      [ -f "$escalated" ] || escalated=/dev/null
-      [ -f "$gates" ] || gates=/dev/null
-      [ -f "$e2e" ] || e2e=/dev/null
-      [ -f "$findings" ] || findings=/dev/null
-      entry="$(jq -c --arg run "$run" --rawfile approved "$approved" \
-        --rawfile escalated "$escalated" --rawfile gates "$gates" --rawfile e2e "$e2e" \
-        --rawfile findings "$findings" "$JQ_RUN" "$meta")" && [ -n "$entry" ] || exit 1
-      same="$(printf '%s' "$entry" | jq -r '.same // empty')" || exit 1
-      [ -z "$same" ] || entry="$(printf '%s' "$entry" \
-        | jq -c --arg same "$(printf '%s' "$same" | sha256_stdin)" '.same = $same')" || exit 1
-      printf '%s\n' "$entry"
+      from=$((from + 500))
+    done | while IFS= read -r meta; do
+      task_run_json "${meta%/meta.json}" || exit 1
     done)" || return 1
   printf '%s' "$entries" | jq -sc 'sort_by(.time)'
+}
+
+# What repeats in the runs of a task, the stop in force and whose it is. Input: {runs, qa,
+# limit}. runs: task_runs_json. qa: the /qa records of the task, oldest first, each {run,
+# time, work, failures: [case]}. limit: ASK_AFTER_RUNS.
+#
+# The stops, the first that holds: `finding` — a finding of the newest review was accepted
+# at the same place in three reviews in a row, each of other work than the one before;
+# `case` — a case the newest /qa failed has failed on three works; `same-end` — three runs
+# in a row ended the same way (`same`); `reviews` — `limit` reviews since the count started;
+# `runs` — `limit` runs in a row with no review. `whose`: `user` for a circle of the work —
+# the finding, the case, or the same gates or end-to-end tests red through the newest three
+# runs, each of other work than the one before; `loop` where the script cannot read that
+# the work converges; `converging` at the limit of reviews when no finding came back and
+# the reviews accept fewer.
+#
+# The same place of two findings: the same file and category, and the same quote or lines
+# no more than five apart. A quote names a place only where the file held it on one line
+# when each review was made: `return null` on three lines of a file is three places. A
+# review of the same work as the review after it is passed over: nothing was fixed between.
+# The count reads the reviews of the newest epoch; the rows read every run of the task, so
+# a run past the limit does not wipe a circle.
+JQ_READING='
+def on_one_line: (.quote_lines // 1) <= 1;
+def same_place($a; $b):
+  $a.file == $b.file and $a.category == $b.category
+  and (($a.quote != "" and $a.quote == $b.quote and ($a | on_one_line) and ($b | on_one_line))
+       or (($a.line | type) == "number" and ($b.line | type) == "number"
+           and (($a.line - $b.line) | fabs) <= 5));
+.runs as $runs | .qa as $qa | .limit as $limit
+| ($runs | map(.epoch // 0) | max // 0) as $epoch
+| [$runs[] | select(.reviewed)] as $reviews
+| [range(0; $reviews | length) as $i
+   | select($i == ($reviews | length) - 1 or $reviews[$i].work != $reviews[$i + 1].work)
+   | $reviews[$i]] as $steps
+| ($steps | reverse) as $back
+| [ ($back[0].accepted // [])[] | . as $finding
+    | reduce $back[1:][] as $review ({row: 1, at: $finding, runs: [$back[0].run], open: true};
+        if .open | not then .
+        else (.at as $at | [$review.accepted[] | select(same_place(.; $at))] | first) as $hit
+          | if $hit == null then .open = false
+            else .row += 1 | .at = $hit | .runs += [$review.run] end
+        end)
+    | select(.row >= 2)
+    | $finding + {row: .row, runs: (.runs | reverse)} ] as $came_back
+| ([$runs | reverse | .[] | .reviewed] | (index(true) // length)) as $no_review_row
+| ($runs | reverse) as $newest_first
+| (if ($newest_first | length) == 0 or $newest_first[0].same == null then 0
+   else ([$newest_first[] | .same == $newest_first[0].same] | (index(false) // length)) end)
+    as $same_end_row
+| ($newest_first[0:$same_end_row]
+   | [range(0; length - 1) as $i | .[$i].work != .[$i + 1].work]
+   | (index(false) // length) + 1) as $changed_row
+| (($newest_first[0].failed // "") as $failed
+   | $changed_row >= 3 and ($failed == "gates" or $failed == "e2e")) as $same_end_of_the_work
+| (($qa[-1].time // 0) as $newest
+   | any($runs[]; .user_decided == true and (.time // 0) > $newest)) as $qa_answered
+| ([$qa[-1].failures[]?] | unique | map(. as $case
+     | [$qa[] | select(.failures | index($case)) | {work: (.work // .run), run}]
+     | {case: $case, times: (map(.work) | unique | length), runs: map(.run)})
+   | map(select(.times >= 2))) as $qa_back
+| ([$reviews[] | select((.epoch // 0) == $epoch and .past_limit != true)] | length) as $counted
+| [$reviews[] | .accepted | length] as $series
+| (($series | length) >= 2 and $series[-1] > 0 and $series[-1] >= $series[-2]) as $not_fewer
+| (if any($came_back[]; .row >= 3) then {stop: "finding", whose: "user"}
+   elif ($qa_answered | not) and any($qa_back[]; .times >= 3) then {stop: "case", whose: "user"}
+   elif $same_end_row >= 3
+     then {stop: "same-end", whose: (if $same_end_of_the_work then "user" else "loop" end)}
+   elif $counted >= $limit
+     then {stop: "reviews",
+           whose: (if ($came_back | length) > 0 or $not_fewer then "loop" else "converging" end)}
+   elif $no_review_row >= $limit then {stop: "runs", whose: "loop"}
+   else {stop: null, whose: null} end) as $stop
+| {epoch: $epoch, reviews: $counted, runs_in_all: ($runs | length), accepted: $series,
+   not_fewer: $not_fewer, came_back: $came_back, no_review_row: $no_review_row,
+   ends: [$newest_first[0:$no_review_row] | reverse | .[].end],
+   same_end_row: $same_end_row, same_end_changed: $changed_row,
+   same_end_runs: [$newest_first[0:$same_end_row] | reverse | .[].run],
+   newest: ($newest_first[0] // {} | {run, failed}), qa_back: $qa_back}
+  + $stop'
+
+# The reading of a task's runs: task_reading <runs> <qa-records> <limit>, each as JSON. They
+# go to jq on its input, never as an argument: a task with many runs is longer than one
+# argument may be.
+task_reading() {
+  printf '{"runs": %s, "qa": %s, "limit": %s}' "$1" "$2" "$3" | jq -c "$JQ_READING"
 }
 
 # The tasks other than <task-id> whose commits are between <base-ref> and HEAD, one line,

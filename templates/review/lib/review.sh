@@ -15,8 +15,8 @@
 #   prompts/, schemas/ — used whenever .review/ has no override.
 #
 # Usage, from your project root:
-#   review.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>] [--past-limit]
-#             [--dry-run]
+#   review.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>]
+#             [--past-limit [--because <why>] [--user-decided]] [--dry-run]
 #
 # Without --base, reviews the uncommitted work — exactly what land.sh commits.
 # With --base <ref>, reviews the whole branch since that ref (a final pass).
@@ -32,8 +32,9 @@
 #   3  accepted findings remain — hand them to the executor
 #   4  escalations — answered before landing (maintain, step 7)
 #   5  review unusable — every finding failed quote verification; re-run
-#   6  the task has had ASK_AFTER_RUNS runs — nothing ran; the user decides
-#      whether another one is worth it (--past-limit runs it)
+#   6  nothing ran: the task is at its limit of reviews, or the script read a
+#      circle in its runs — its last line says whose turn it is (--past-limit
+#      runs once more)
 #   1  pipeline error, including any malformed agent output (fails closed), or
 #      no working end-to-end harness; at LANDING=pr and merge also work that is not
 #      committed, a pull request that is not at HEAD, or a run that could not be
@@ -52,6 +53,9 @@ BASE=""
 THRESHOLD_CLI=""
 TASK_FILE=""
 PAST_LIMIT=false
+BECAUSE=""
+BECAUSE_GIVEN=false
+USER_DECIDED=false
 DRY_RUN=false
 
 while [ $# -gt 0 ]; do
@@ -60,10 +64,22 @@ while [ $# -gt 0 ]; do
     --threshold)  require_value "--threshold" $#; THRESHOLD_CLI="$2"; shift 2 ;;
     --task-file)  require_value "--task-file" $#; TASK_FILE="$2"; shift 2 ;;
     --past-limit) PAST_LIMIT=true; shift ;;
+    --because)    require_value "--because" $#; BECAUSE_GIVEN=true; BECAUSE="$2"; shift 2 ;;
+    --user-decided) USER_DECIDED=true; shift ;;
     --dry-run)    DRY_RUN=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
 done
+
+# What passes a stop goes with --past-limit alone: the loop's own reason, or that the user
+# decided to go on. --user-decided takes no words: nothing keeps what a person said. The
+# reason is read without the blanks around it, so one made of blanks is none.
+BECAUSE="${BECAUSE#"${BECAUSE%%[![:space:]]*}"}"
+BECAUSE="${BECAUSE%"${BECAUSE##*[![:space:]]}"}"
+if [ "$PAST_LIMIT" = false ]; then
+  [ "$BECAUSE_GIVEN" = false ] || { echo "--because goes with --past-limit" >&2; exit 1; }
+  [ "$USER_DECIDED" = false ] || { echo "--user-decided goes with --past-limit" >&2; exit 1; }
+fi
 
 # A task file that does not exist must be a usage error, never a silent
 # downgrade. Without this the maintainer is told "no task file supplied" and
@@ -125,14 +141,35 @@ if [ -n "$TASK_FILE" ]; then
 fi
 
 # Every repetition of the loop is another run of this script: a new round, a
-# re-run after red gates or an unusable review, a review again after a landing
-# refusal. Nothing else counts them, and none of those paths has a limit of its
-# own, so a session nobody watches could repeat one of them for as long as the
-# account pays. Past ASK_AFTER_RUNS runs of the same task this script runs
-# nothing and says the user decides. A warning, not a lock: --past-limit runs
-# once more and starts the count again from zero, for when the user said go on
-# or the count is wrong. It is accepted only at the limit, so a flag left in the
-# command fails on the next run instead of switching the count off.
+# re-run after red gates or an unusable review, a review again after /qa or a
+# landing refusal. Nothing else counts them, and none of those paths has a limit
+# of its own, so a session nobody watches could repeat one of them for as long as
+# the account pays. So the script reads the runs of the task before it makes a
+# new one (task_runs_json and JQ_READING, common.sh) and stops, with exit 6 and
+# nothing run, in four cases:
+#   a finding in a circle  a finding of the newest review was accepted at the same
+#                          place in three reviews in a row, each of other work than
+#                          the one before
+#   the same end           three runs in a row ended the same way: the same gates
+#                          red with the same output, the same end-to-end tests red,
+#                          the same missing harness, an unusable review
+#   the limit of reviews   ASK_AFTER_RUNS reviews since the count started: the runs
+#                          that made a review, not those that ended before one
+#   the limit of runs      ASK_AFTER_RUNS runs in a row with no review, whatever
+#                          ended them
+# Each stop prints what was read and ends with one line that says whose turn it is
+# (turn). A circle of the work — the finding, or gates or end-to-end tests that
+# stayed red while the work changed each time — is the user's: --past-limit
+# --user-decided runs once more when they decided to go on, and takes no reason
+# beside it. Every other stop is
+# the loop's, since a count alone is never a question. Where the script reads that
+# the work converges — no finding came back and the reviews do not accept as many
+# as before or more — --past-limit alone runs once more; where it cannot read that,
+# --past-limit takes the loop's own reason, --because <why>. What passed a stop is
+# kept in the run and shown on the pull request. A run with --past-limit starts
+# the count of reviews again from zero, and the flag is accepted only at a stop,
+# so one left in the command fails on the next run instead of switching the count
+# off.
 ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
 case "$ASK_AFTER_RUNS" in
   ''|*[!0-9]*|0*|??????????*)
@@ -149,41 +186,156 @@ if [ -n "$TASK_FILE" ]; then
   }
 fi
 
-# One line per earlier run of this task. Each run records its count number,
-# `epoch`: the highest one among the task's runs, one more for a --past-limit
-# run. The runs counted are the plain ones of the highest epoch, so the count
-# depends neither on the order of the run directories — their names come from
-# the local clock and the process id, and neither sorts by time reliably — nor
-# on old run directories having been deleted.
-task_runs() {
-  local meta
-  for meta in "$REVIEW_DIR"/runs/*/meta.json; do
-    [ -f "$meta" ] || continue
-    jq -c --arg id "$TASK_ID" 'select(.task == $id) | {past_limit, epoch}' "$meta" 2>/dev/null
-  done
+# What a run's check that was not green came to, in words: what_failed <run> <failed>,
+# <failed> as task_runs_json names it.
+what_failed() {
+  case "$2" in
+    gates)
+      printf 'gates red: %s, the same output each time but for its numbers' \
+        "$(jq -r '[to_entries[] | select(.value.status == "fail" and .value.blocking != false)
+                   | .key] | join(", ")' "$1/gates.json" 2>/dev/null)" ;;
+    e2e)
+      printf 'end-to-end tests red: %s' \
+        "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)" ;;
+    harness)
+      printf 'no working end-to-end harness: %s' \
+        "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)" ;;
+    unusable) printf 'the review was unusable' ;;
+  esac
 }
 
+# The stop in force, as $READING has it: what was read, on stdout, then whose turn it is.
+say_stop() {
+  local newest failed row came_back accepted what
+  IFS=$'\t' read -r newest failed row came_back accepted < <(printf '%s' "$READING" | jq -r '
+    [.newest.run // "-", .newest.failed // "-",
+     (if .stop == "finding" then ([.came_back[].row] | max) else .same_end_changed end),
+     (.came_back | length), (.accepted | add // 0)] | @tsv')
+  case "$STOP" in
+    reviews)
+      printf '%s' "$READING" | jq -r --arg id "$TASK_ID" --arg limit "$ASK_AFTER_RUNS" '
+        "LIMIT OF REVIEWS — \($id) has had \(.reviews) reviews since the count started, "
+          + "\(.runs_in_all) runs in all (ASK_AFTER_RUNS=\($limit)); nothing ran.",
+        "   accepted by each review, oldest first: \(.accepted | map(tostring) | join(", "))",
+        (.came_back[]
+         | "   came back after its fix: \(.file):\(.line) (\(.category)), in \(.row) reviews "
+           + "in a row (\(.runs | map(split("/") | last) | join(", ")))"),
+        (if .not_fewer then "   they do not get fewer" else empty end)'
+      if [ "$STOP_WHOSE" = converging ] && [ "$accepted" -eq 0 ]; then
+        turn loop "no review accepted a finding, so the reviews are not what repeats: if a "\
+"landing or /qa sends the task back each time, find that cause first — then run again with "\
+"--past-limit, which runs once more and starts the count again"
+      elif [ "$STOP_WHOSE" = converging ]; then
+        turn loop "no finding came back after its fix: the reviews found different things, "\
+"and each was fixed — run again with --past-limit, which runs once more and starts the count "\
+"again"
+      elif [ "$came_back" -gt 0 ]; then
+        turn loop "a finding came back after its fix: find why the fix did not hold "\
+"(maintain, step 6), then run again with --past-limit --because \"<why it came back, and what "\
+"is different now>\""
+      else
+        turn loop "the findings differ and do not get fewer: judge whether the work moves "\
+"toward the goal (maintain, step 6) — each was a defect of its own and is fixed: run again "\
+"with --past-limit --because \"<what moves>\"; each fix brings the next, or you cannot tell: "\
+"the work does not converge, and that is a question, asked with the lines above"
+      fi ;;
+    finding)
+      # Every row ends at the newest review, which need not be the newest run. A run's
+      # diff.patch is the whole change that review saw, not one fix.
+      printf '%s' "$READING" | jq -r --arg id "$TASK_ID" '
+        "NOT CONVERGING — the fixes of \($id) do not close a finding of the review; nothing ran.",
+        (.came_back[] | select(.row >= 3)
+         | "   \(.file):\(.line) (\(.category)) `\(.quote)` was accepted in \(.row) reviews in "
+           + "a row, each after a change of the work: "
+           + (.runs | map(split("/") | last) | join(", "))),
+        "   what it says: \([.came_back[] | select(.row >= 3) | .runs | last] | first)"
+          + "/approved.json; the whole change as each review saw it: the diff.patch of each of "
+          + "those runs — what a fix changed is what differs between two"'
+      turn user:not-converging "the same finding came back after each of $((row - 1)) fixes "\
+"— whether to go on trying, to stop the task here, or to rule that it is no problem (/policy); "\
+"--past-limit --user-decided then runs once more"
+      ;;
+    same-end)
+      what="$(what_failed "$newest" "$failed")"
+      if [ "$STOP_WHOSE" = user ]; then
+        echo "NOT CONVERGING — $TASK_ID ended the same way in $row runs in a row, each after "\
+"a change of the work; nothing ran."
+        echo "   $what ($(basename "$newest"))"
+        turn user:not-converging "the same check stayed red through $((row - 1)) fixes — "\
+"whether to go on trying, to stop the task here, or to change what is asked of it; "\
+"--past-limit --user-decided then runs once more"
+      else
+        echo "STOPPED — $TASK_ID ended the same way in "\
+"$(printf '%s' "$READING" | jq -r '.same_end_row') runs in a row; nothing ran."
+        echo "   $what ($(basename "$newest"))"
+        turn loop "a retry does not mend it — find the cause in that output: in the code, "\
+"fix it; in the machine, restore the tool or the device; then run again with --past-limit "\
+"--because \"<what was mended>\""
+      fi ;;
+    runs)
+      printf '%s' "$READING" | jq -r --arg id "$TASK_ID" --arg limit "$ASK_AFTER_RUNS" '
+        {"gates-red": "gates red", "e2e-red": "end-to-end tests red",
+         "no-harness": "no working end-to-end harness", "unusable": "an unusable review",
+         "error": "an error"} as $words
+        | "LIMIT OF RUNS — the last \(.no_review_row) runs of \($id) made no review "
+          + "(ASK_AFTER_RUNS=\($limit)); nothing ran.",
+        "   how they ended, oldest first: \(.ends | map($words[.] // .) | join("; "))"'
+      turn loop "find what they share before another run, then run again with --past-limit "\
+"--because \"<what was mended>\""
+      ;;
+  esac
+}
+
+# EPOCH is the count number: the highest one among the task's runs, one more for a
+# --past-limit run. The reviews counted are the plain ones of the highest epoch, so the
+# count depends neither on the order of the run directories — their names come from the
+# local clock and the process id, and neither sorts by time reliably — nor on old run
+# directories having been deleted.
 EPOCH=null
+REVIEWS_SO_FAR=0
+STOP=-
+STOP_WHOSE=-
+PAST_LIMIT_KIND=""
 if [ -n "$TASK_ID" ]; then
-  TASK_RUNS="$(task_runs)"
-  RUNS_IN_ALL="$(printf '%s' "$TASK_RUNS" | jq -s 'length')"
-  EPOCH="$(printf '%s' "$TASK_RUNS" | jq -s 'map(.epoch // 0) | max // 0')"
-  RUNS_SO_FAR="$(printf '%s' "$TASK_RUNS" | jq -s --argjson epoch "$EPOCH" \
-    'map(select((.epoch // 0) == $epoch and .past_limit != true)) | length')"
+  RUNS="$(task_runs_json "$TASK_ID")" || {
+    echo "the runs of $TASK_ID could not be read; nothing ran" >&2
+    exit 1
+  }
+  READING="$(task_reading "$RUNS" '[]' "$ASK_AFTER_RUNS")" && [ -n "$READING" ] || {
+    echo "the runs of $TASK_ID could not be read; nothing ran" >&2
+    exit 1
+  }
+  IFS=$'\t' read -r STOP STOP_WHOSE REVIEWS_SO_FAR EPOCH < <(printf '%s' "$READING" \
+    | jq -r '[.stop // "-", .whose // "-", .reviews, .epoch] | @tsv')
   if [ "$PAST_LIMIT" = true ]; then
-    if [ "$RUNS_SO_FAR" -lt "$ASK_AFTER_RUNS" ]; then
-      echo "--past-limit is only for a task at its limit: "\
-"$TASK_ID has had $RUNS_SO_FAR of $ASK_AFTER_RUNS runs — run without it" >&2
-      exit 1
-    fi
+    case "$STOP_WHOSE" in
+      -)
+        echo "--past-limit is only for a task at its limit: $TASK_ID has had "\
+"$REVIEWS_SO_FAR of $ASK_AFTER_RUNS reviews, and review.sh reads no circle — run without it" >&2
+        exit 1 ;;
+      user)
+        [ "$USER_DECIDED" = true ] || {
+          echo "this stop takes --user-decided: the work does not converge, and that is no "\
+"decision of the loop — run without --past-limit to read it; --past-limit --user-decided "\
+"runs once more" >&2
+          exit 1
+        }
+        [ -z "$BECAUSE" ] || {
+          echo "this stop takes --user-decided alone: --because is the loop's reason at a "\
+"stop of its own, and nothing keeps words where the user decided — run again without it" >&2
+          exit 1
+        } ;;
+      loop)
+        [ -n "$BECAUSE" ] || [ "$USER_DECIDED" = true ] || {
+          echo "--past-limit at this stop needs --because \"<what moves toward the goal>\" "\
+"— run without --past-limit to read the stop" >&2
+          exit 1
+        } ;;
+    esac
     EPOCH=$((EPOCH + 1))
-  elif [ "$RUNS_SO_FAR" -ge "$ASK_AFTER_RUNS" ]; then
-    echo "WAIT FOR THE USER — "\
-"$TASK_ID has had $RUNS_SO_FAR runs since the count started, $RUNS_IN_ALL in all"
-    echo "   (ASK_AFTER_RUNS=$ASK_AFTER_RUNS); nothing ran."
-    echo "   Ask the user whether to go on. Run again with --past-limit only on their"
-    echo "   answer, or when the count is wrong — runs of another task under the same"
-    echo "   id — and then say so."
+    PAST_LIMIT_KIND="$STOP_WHOSE"
+  elif [ "$STOP" != - ]; then
+    say_stop
     exit 6
   fi
 elif [ "$PAST_LIMIT" = true ]; then
@@ -453,7 +605,8 @@ run_agent() {
   fi
 }
 
-# Nearest line in the file whose text contains the quote, or nothing at all.
+# Nearest line in the file whose text contains the quote, and on how many lines the
+# file holds it, as `<line> <lines>`; or nothing at all.
 # The reviewer reads line numbers off a unified diff, so being a few lines out
 # is ordinary; the quote is the reliable part. Relocating beats dropping —
 # a dropped finding is a silent loss of recall.
@@ -474,7 +627,7 @@ locate_quote() {
         [ range(0; $lines | length) | select($lines[.] | contains($needle)) | . + 1 ] as $hits
         | if ($hits | length) == 0 then empty
           else ($hits | map({line: ., distance: ((. - $finding.line) | fabs)})
-                      | sort_by(.distance) | .[0].line)
+                      | sort_by(.distance) | "\(.[0].line) \($hits | length)")
           end
       end
   ' "$findings_file" 2>/dev/null
@@ -482,10 +635,14 @@ locate_quote() {
 
 # Drops findings whose quote appears nowhere in the file, and corrects the line
 # number of the rest. Cheap, deterministic, and it removes a large share of
-# hallucinated findings before the maintainer sees them.
+# hallucinated findings before the maintainer sees them. With a third file it
+# writes there on how many lines of its file each located quote stands, as
+# {<finding id>: <lines>}: a quote the file holds at several places names no one
+# place, and the reading of a task's runs does not take it for one (same_place,
+# common.sh).
 verify_quotes() {
-  local input_file="$1" output_file="$2"
-  local finding_id source_file cited_line actual_line
+  local input_file="$1" output_file="$2" lines_file="${3:-}"
+  local finding_id source_file cited_line actual_line held
   local corrections=""
 
   # id, file and line come out in one read rather than one jq call each, and the
@@ -496,7 +653,7 @@ verify_quotes() {
       echo "   dropped $finding_id — no such file: $source_file" >&2
       continue
     fi
-    actual_line="$(locate_quote "$input_file" "$finding_id" "$source_file")"
+    read -r actual_line held <<<"$(locate_quote "$input_file" "$finding_id" "$source_file")"
     if [ -z "$actual_line" ]; then
       echo "   dropped $finding_id — quote not found anywhere in $source_file" >&2
       continue
@@ -504,8 +661,14 @@ verify_quotes() {
     if [ "$actual_line" != "$cited_line" ]; then
       echo "   relocated $finding_id — $source_file:$cited_line → :$actual_line" >&2
     fi
-    corrections="$corrections$finding_id $actual_line"$'\n'
+    corrections="$corrections$finding_id $actual_line $held"$'\n'
   done < <(jq -r '.findings[] | [.id, .file, .line] | @tsv' "$input_file")
+
+  if [ -n "$lines_file" ]; then
+    printf '%s' "$corrections" | jq -Rs '
+      [split("\n")[] | select(length > 0) | split(" ") | {key: .[0], value: (.[2] | tonumber)}]
+      | from_entries' >"$lines_file" || return 1
+  fi
 
   # A finding with no correction line was dropped, and drops must be silent
   # losses of noise only — an id that survives always carries a located line.
@@ -608,29 +771,34 @@ if [ ! -s "$RUN_DIR/diff.patch" ]; then
   exit 0
 fi
 
-# `time` orders the runs of a task (M1 of the merge takes the newest), `count` is its
-# place among the ASK_AFTER_RUNS, and `head`, `pr_url` and `merge_base` say what was
-# reviewed at the pull request levels. `end`, `exit` and `stage` say how the run ended and
-# are written when it does (record_end); `past_limit_kind`, `stop`, `because` and
-# `user_decided` say what a run past the limit passed, and are null on a plain run.
-COUNT=null
-[ -z "$TASK_ID" ] || [ "$PAST_LIMIT" = true ] || COUNT=$((RUNS_SO_FAR + 1))
+# `time` orders the runs of a task (M1 of the merge takes the newest), and `head`, `pr_url`
+# and `merge_base` say what was reviewed at the pull request levels. `end`, `exit` and
+# `stage` say how the run ended, and `count` which review of the ASK_AFTER_RUNS it made:
+# they are written when it ends (record_end), and a run that made no review, or one past
+# the limit, has no count. What a run with --past-limit passed: `stop` names the stop,
+# `past_limit_kind` whose it was — user, loop, or converging where the script read that
+# the work converges — `because` is the loop's reason, and `user_decided` is true when the
+# user decided to go on. All four are null on a plain run.
 REVIEWED_FINGERPRINT="$(tree_fingerprint)"
 jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg fingerprint "$REVIEWED_FINGERPRINT" --arg task "$TASK_FILE" \
       --arg task_id "$TASK_ID" --argjson past_limit "$PAST_LIMIT" \
-      --argjson epoch "$EPOCH" --argjson count "$COUNT" \
+      --argjson epoch "$EPOCH" --arg kind "$PAST_LIMIT_KIND" --arg stop "$STOP" \
+      --arg because "$BECAUSE" --argjson user_decided "$USER_DECIDED" \
       --arg reviewer "$REVIEWER_CMD" --arg maintainer "$MAINTAINER_CMD" --arg models "$MODELS" \
       --arg head "$(git rev-parse HEAD)" --arg pr_url "$PR_URL" --arg merge_base "$MERGE_BASE" \
       '{base: $base, threshold: $threshold, tree_fingerprint: $fingerprint,
         task_file: (if $task == "" then null else $task end),
         task: (if $task_id == "" then null else $task_id end),
-        past_limit: $past_limit, epoch: $epoch, count: $count, time: now, head: $head,
+        past_limit: $past_limit, epoch: $epoch, count: null, time: now, head: $head,
         pr_url: (if $pr_url == "" then null else $pr_url end),
         merge_base: (if $merge_base == "" then null else $merge_base end),
         models: $models, reviewer: $reviewer, maintainer: $maintainer,
         end: null, exit: null, stage: null,
-        past_limit_kind: null, stop: null, because: null, user_decided: null}' \
+        past_limit_kind: (if $kind == "" then null else $kind end),
+        stop: (if $past_limit then $stop else null end),
+        because: (if $because == "" then null else $because end),
+        user_decided: (if $user_decided then true else null end)}' \
   >"$RUN_DIR/meta.json"
 
 # How the run ended, written into its meta.json whatever ends it: the next run of the task
@@ -642,12 +810,53 @@ jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
 STAGE=""
 END=""
 record_end() {
+  local count=null
+  case "$END" in
+    clean | findings | escalations)
+      [ -z "$TASK_ID" ] || [ "$PAST_LIMIT" = true ] || count=$((REVIEWS_SO_FAR + 1)) ;;
+  esac
   jq --arg ending "${END:-error}" --argjson exit "$1" --arg stage "$STAGE" \
-    '.end = $ending | .exit = $exit | .stage = (if $stage == "" then null else $stage end)' \
+    --argjson count "$count" \
+    '.end = $ending | .exit = $exit | .stage = (if $stage == "" then null else $stage end)
+     | .count = $count' \
     "$RUN_DIR/meta.json" >"$RUN_DIR/meta.json.new" 2>/dev/null \
     && mv "$RUN_DIR/meta.json.new" "$RUN_DIR/meta.json" \
     || { rm -f "$RUN_DIR/meta.json.new"
          echo "   how the run ended could not be written into $RUN_DIR/meta.json" >&2; }
+}
+
+# What repeats, said at the end of a run, with this run among those read: a finding its
+# review accepted again after a change of the work, and an end that is the same as that of
+# the run before. A third time in a row the next run stops.
+say_what_repeats() {
+  local this runs reading row before failed
+  [ -n "$TASK_ID" ] || return 0
+  this="$(task_run_json "$RUN_DIR" 2>/dev/null)" || return 0
+  runs="$(printf '[%s, [%s]]' "$RUNS" "$this" | jq -c 'add' 2>/dev/null)" || return 0
+  reading="$(task_reading "$runs" '[]' "$ASK_AFTER_RUNS" 2>/dev/null)" || return 0
+  case "$END" in
+    findings | escalations)
+      printf '%s' "$reading" | jq -r '
+        (.came_back[] | "   again after a change: \(.id) \(.file):\(.line) — also accepted in "
+           + (.runs[:-1] | map(split("/") | last) | join(", "))),
+        (if any(.came_back[]; .row >= 3)
+         then "   that is \([.came_back[].row] | max) reviews in a row: the next run of "
+              + "review.sh stops and says whose turn it is (maintain, step 5)"
+         elif (.came_back | length) > 0
+         then "   a third time in a row review.sh stops (maintain, step 5)"
+         else empty end)' ;;
+  esac
+  IFS=$'\t' read -r row before failed < <(printf '%s' "$reading" | jq -r '
+    [.same_end_row, (.same_end_runs[-2] // "-" | split("/") | last), .newest.failed // "-"]
+    | @tsv')
+  [ "${row:-0}" -ge 2 ] || return 0
+  if [ "$row" -eq 2 ]; then
+    echo "── the same end as the run before ($before): $(what_failed "$RUN_DIR" "$failed"); "\
+"a third time in a row review.sh stops"
+  else
+    echo "── the same end as the $((row - 1)) runs before: "\
+"$(what_failed "$RUN_DIR" "$failed"); the next run of review.sh stops and says whose turn it is"
+  fi
 }
 
 # At the pull request levels every run is posted there, whatever its end: red checks and
@@ -657,6 +866,7 @@ end_run() {
   local code=$?
   trap - EXIT
   record_end "$code"
+  say_what_repeats
   if [ -n "$PR_URL" ] && ! "$LIB_DIR/pr-post.sh" run "$RUN_DIR"; then
     echo "   the run is not posted on $PR_URL — run $LIB_DIR/pr-post.sh run $RUN_DIR alone" >&2
     if [ "$code" -eq 0 ]; then
@@ -817,7 +1027,8 @@ jq -e --argjson categories "$CATEGORY_VALUES" --argjson severities "$SEVERITY_VA
 
 STAGE=verify
 RAW_COUNT="$(jq '.findings | length' "$RUN_DIR/findings.raw.json")"
-verify_quotes "$RUN_DIR/findings.raw.json" "$RUN_DIR/findings.json" || {
+verify_quotes "$RUN_DIR/findings.raw.json" "$RUN_DIR/findings.json" \
+  "$RUN_DIR/quote-lines.json" || {
   echo "   quote verification failed — see $RUN_DIR" >&2
   exit 1
 }

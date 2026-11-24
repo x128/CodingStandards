@@ -348,7 +348,7 @@ fi
 # A landing whose gates end red or unfinished, or which fails after them, may be
 # retried once on the same run — the simulator is booted again, say — so the
 # answers to its escalations still apply. A second time sends the work back
-# through review.sh: review.sh counts its runs per task and stops at ASK_AFTER_RUNS,
+# through review.sh: review.sh counts the reviews of a task and stops at ASK_AFTER_RUNS,
 # and nothing else counts landings, so retrying landing alone could rebuild and
 # retest without end. The attempt is written before the gates start, so a gate
 # run that hangs or is killed counts too, and taken back only once the commit is
@@ -356,9 +356,9 @@ fi
 #
 # At pr and merge there is no run: the landings of the task are counted instead, each
 # in a folder of its own, land-<time>-<pid>, which is no review run. Past
-# ASK_AFTER_RUNS that did not commit, since the count started, the user decides, as
-# review.sh does with its runs: --past-limit lands once more and starts the count
-# again, and is accepted only at the limit.
+# ASK_AFTER_RUNS that did not commit, since the count started, the user decides:
+# --past-limit lands once more and starts the count again, and is accepted only at
+# the limit.
 if landing_opens_pull_request "$LANDING"; then
   ASK_AFTER_RUNS="$(read_conf "$CONFIG" ASK_AFTER_RUNS 5)"
   case "$ASK_AFTER_RUNS" in

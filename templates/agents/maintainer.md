@@ -38,13 +38,14 @@ decided it. Output JSON only, no prose.
 ## 2. Another round, or on to landing — at `pr` and `merge`, to the merge?
 
 Done when gates are green, no accepted finding is at or above the threshold, and nothing is
-escalated. Otherwise send the accepted findings back to the executor, round after round, while each
-round accepts fewer findings than the one before. A finding accepted in two rounds in a row, or a
-round that accepts as many as the one before or more, is escalated: the fix is not converging and
-another attempt will not help. The same failure twice in a row — gates red for the same reason,
-`review.sh` exit 5 or 1 again, the same refusal of `land.sh` — goes to the user as well. A failing
-case of `/qa` is no such failure: the loop fixes it as often as it fails (`/maintain`, step 8).
-`review.sh` exit 6 means the task has had `ASK_AFTER_RUNS` runs: the user decides whether to go on.
+escalated. Otherwise send the accepted findings back to the executor, round after round. `review.sh`
+says at the end of a run when a finding came back after its fix, or when the run ended the same way
+as the one before: find the cause before another attempt, never a third try that changes nothing. A
+third time in a row it stops with exit 6, and so it does at `ASK_AFTER_RUNS` reviews of the task.
+Its last line says whose turn it is: `The loop goes on` names the next step, and `--past-limit` runs
+once more, with `--because "<why>"` where the line asks for it; `For the user` is asked once, and
+when they decide to go on, `--past-limit --user-decided` runs once more: it takes no words. A
+failing case of `/qa` is no question: the loop fixes it as often as it fails (`/maintain`, step 8).
 
 ## 3. Land, then advance
 
