@@ -344,6 +344,33 @@ task_id_of() {
   git log -1 --format='%(trailers:key=Task-Id,valueonly)' "$1"
 }
 
+# When a landing of the task last committed with its review, as the tree records it: the
+# time, in seconds since 1970, of the newest commit in the history of HEAD that carries the
+# trailer Task-Id: <id> and names the review it landed with — Review-Run, which land.sh
+# writes below the pull request levels, or Review-Runs, which the squash of a pull request
+# carries (squash_trailers); 0 when there is none: task_landed_at <id>. A commit of land.sh
+# on the branch of a pull request names no review: the task goes on after it. What ran
+# before that time was another task under the same id, so what repeats is read from what
+# came after it (landed_since): the runs of the task and its /qa records by review.sh, the
+# /qa records by the print after /qa, the landings by land.sh.
+task_landed_at() {
+  local one='valueonly,separator=%x2C'
+  git log --fixed-strings --grep="Task-Id: $1" \
+    --format="%ct%x09%(trailers:key=Task-Id,$one)%x09%(trailers:key=Review-Run,$one)"\
+"%(trailers:key=Review-Runs,$one)" HEAD 2>/dev/null \
+    | awk -F'\t' -v id="$1" '
+        $2 == id && $3 != "" && $1 + 0 > newest { newest = $1 + 0 }
+        END { printf "%d\n", newest }'
+}
+
+# As jq: landed_since($after) holds for a record made after the landing that committed at
+# $after — its `time`, in whole seconds, is later, since a commit records no part of a
+# second — and for every record when no landing committed (0). A record that does not say
+# its time is not known to be later.
+JQ_LANDED_SINCE='def landed_since($after):
+  $after == 0 or (((.time | numbers) // 0) | floor) > $after;
+'
+
 # Commits of this branch that no landing made, one per line. At push and pr these
 # are the ones the push would add to the remote: a person merges afterwards and sees
 # what the branch holds. What the remote has is what it says now, as far as those
@@ -894,7 +921,9 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
 # digits taken out, so that two runs that end the same way but for a time or a count have
 # one digest. A run that ended in an error has none: two errors at one stage may be two
 # errors. A meta.json that cannot be read fails the whole call and says which: it must
-# never read as "no run". task_run_json <run-dir> gives one run.
+# never read as "no run". task_run_json <run-dir> gives one run. task_runs_json <id>
+# [<landed-at>] gives the runs made after a landing of the id committed (task_landed_at),
+# every run of the id without it.
 task_run_json() {
   local run="$1" entry same
   local approved="$1/approved.json" escalated="$1/escalated.json" gates="$1/gates.json"
@@ -936,8 +965,9 @@ task_runs_json() {
     metas+=("$meta")
   done
   entries="$(while [ "$from" -lt "${#metas[@]}" ]; do
-      jq -r --arg id "$1" 'if type == "object" then select(.task == $id) | input_filename
-                           else error("no object") end' "${metas[@]:from:500}" 2>/dev/null || {
+      jq -r --arg id "$1" --argjson after "${2:-0}" "$JQ_LANDED_SINCE"'
+        if type == "object" then select(.task == $id and landed_since($after)) | input_filename
+        else error("no object") end' "${metas[@]:from:500}" 2>/dev/null || {
         for meta in "${metas[@]:from:500}"; do
           jq -e 'type == "object"' "$meta" >/dev/null 2>&1 || { unreadable_meta "$meta"; break; }
         done
@@ -1233,24 +1263,29 @@ qa_records_of() {
 }
 
 # The /qa records of a task as the reading of its runs takes them (JQ_READING): the output
-# of qa_records_of on stdin, each record cut to {run, time, work, failures: [case]}.
+# of qa_records_of on stdin, each record cut to {run, time, work, failures: [case]}. With
+# the time a landing of the task committed (task_landed_at), the records made after it.
 qa_cases_of() {
-  jq -c 'map({run, time: (.time // 0), work: (.work // null), failures: [.failures[].case]})'
+  jq -c --argjson after "${1:-0}" "$JQ_LANDED_SINCE"'
+    map(select(landed_since($after))
+        | {run, time: (.time // 0), work: (.work // null), failures: [.failures[].case]})'
 }
 
 # On how many works /qa of a task failed each case that a record lists in failures — the
 # newest record of the task, or the one given — and in which records: a JSON array of
 # {case, times, runs}, runs being the folders, oldest first, one for each work
-# (works_failed).
+# (works_failed). The records counted are those made after a landing of the task
+# committed, as review.sh reads them.
 qa_times() {
-  local records cases
+  local records cases landed_at
+  landed_at="$(task_landed_at "$1")" || return 1
   records="$(qa_records_of "$1")" || return 1
   if [ $# -ge 2 ]; then
     cases="$(jq -c '[.failures[].case]' "$2")" || return 1
   else
     cases="$(printf '%s' "$records" | jq -c '[(last // {}).failures[]?.case]')" || return 1
   fi
-  records="$(printf '%s' "$records" | qa_cases_of)" || return 1
+  records="$(printf '%s' "$records" | qa_cases_of "$landed_at")" || return 1
   printf '%s' "$records" | jq -c --argjson cases "$cases" "$JQ_WORKS_FAILED"'
     . as $records
     | reduce $cases[] as $case ([]; if index($case) != null then . else . + [$case] end)

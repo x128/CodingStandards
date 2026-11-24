@@ -2263,6 +2263,67 @@ round "a record that cannot be read may be another task's: the line says which f
 rm -r .review/runs/0-qa-other-task
 rm -r .review/runs/0-qa-T-079-items
 round "with the record gone the review runs" 0 "CLEAN" T-079 new -
+
+# Runs of a task that landed are not read as the runs of a new task under the same id. The
+# tree records that a landing committed with its review: a commit that carries the trailer
+# Task-Id and names the review — Review-Run, which land.sh writes below the pull request
+# levels, or Review-Runs, on the squash of a pull request. The runs and the /qa records of
+# an id are read from the newest such commit on. `landed <task>` makes that commit, as
+# land.sh writes it, of the tree as it is committed; with `no-review` it names no review,
+# as a commit of land.sh on the branch of a pull request. A commit records its time in
+# whole seconds, so the second it was made in is let pass.
+landed() {
+  local trailers="Task-Id: $1
+Gates: test=pass"
+  [ "${2:-}" = no-review ] || trailers="$trailers
+Review-Run: $(basename "$(newest_run)") (local)"
+  git update-ref HEAD \
+    "$(git commit-tree -p HEAD -m "$1: Pickup" -m "$trailers" 'HEAD^{tree}')" \
+    || fail_setup "the landing of $1"
+  sleep 1
+}
+limit_is 2
+on_the_way 0 T-094 new -
+on_the_way 0 T-094 new -
+on_the_way 6 T-094 new -
+landed T-094
+round "a task that takes the id of one that landed has its own count of reviews" 0 "CLEAN" \
+  T-094 new -
+run_records "its first review is the first of its count" '.count == 1 and .epoch == 0'
+on_the_way 0 T-094 new -
+round "and its own limit" 6 \
+  "LIMIT OF REVIEWS — T-094 has had 2 reviews since the count started, 2 runs in all" T-094 new -
+limit_is 100
+on_the_way 3 T-091 new 10
+on_the_way 3 T-091 new 10
+landed T-091
+round "a finding where the task that landed had one is the first of the new task" 3 \
+  "accepted (>= major): 1" T-091 new 10
+never_says "it did not come back: what was fixed before the landing was another task" \
+  "again after a change" "$WORK/run.log"
+round "the same finding after a fix of the new task came back once" 3 \
+  "   a third time in a row review.sh stops (maintain, step 5)" T-091 new 10
+for work in w1 w2 w3; do qa_record T-092 "$work" "$(failing TC-001 "$work")"; done
+on_the_way 6 T-092 new -
+landed T-092
+qa_record T-092 new "$(failing TC-001 n1)"
+round "a case that failed in the /qa of a task that landed has failed once in the new task" \
+  0 "CLEAN" T-092 new -
+qa_says "the print after /qa counts the /qa of the new task alone" 0 "   TC-001 failed" \
+  .review/runs/0-qa-T-092-new
+never_says "so the case failed once" "it failed in" "$WORK/post.log"
+never_says "and that is no question" "the user" "$WORK/post.log"
+# What does not record that a landing committed with its review: a commit that names no
+# review, and the landing of a task whose id only begins with this one.
+limit_is 2
+on_the_way 0 T-093 new -
+on_the_way 0 T-093 new -
+landed T-093 no-review
+round "a commit that names no review, as land.sh makes on a pull request, ends no task" 6 \
+  "LIMIT OF REVIEWS — T-093 has had 2 reviews since the count started, 2 runs in all" T-093 new -
+landed T-0931
+round "nor does the landing of a task whose id begins with this one" 6 \
+  "LIMIT OF REVIEWS — T-093 has had 2 reviews since the count started, 2 runs in all" T-093 new -
 rm src/pickup.kt src/fix.kt
 cp "$WORK/land.conf.before-rounds" .review/land.conf
 
@@ -3865,6 +3926,46 @@ pr_land "three landings since, each after a change, are then the user's" 3 \
 says "and the landing says that the work does not converge" \
   "   For the user, the work does not converge: the same gates stayed red through the cause "\
 "the loop found and the fixes after it" "$WORK/land.log"
+
+# The landing of land.sh below the pull request levels is such a record: the new task
+# under the id starts its own count.
+published_project origin
+set_level on ASK_AFTER_RUNS=1
+git switch -q -c work
+reviewed_change
+step "the landing of the task" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json --run "$run"
+sleep 1
+pr_work
+pr_review "a task under the id of one that land.sh landed has its own count" 0 \
+  "CLEAN — gates green"
+
+# At the pull request levels the squash of the merge is that record, and a commit of
+# land.sh on the branch of the pull request is none: the reviews and the landings of the
+# task that merged are not counted for the new task under its id.
+published_project origin
+set_level merge ASK_AFTER_RUNS=2
+red_at_landing "the pickup test fails"
+pr_work
+refused_landing
+cp "$WORK/gates.green" .review/gates.sh
+step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked
+step "the merge of the task" "$WORK/publish.log" \
+  "$LIB_DIR/publish.sh" --task-file .review/task.json --merge
+sleep 1
+pr_work
+step "the landing of the new task" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly
+run_records "the first review of a task under the id of one that merged is the first of its count" \
+  '.count == 1'
+red_at_landing "the pickup test fails"
+pr_work
+refused_landing
+cp "$WORK/gates.green" .review/gates.sh
+pr_land "a red landing of the task that merged is none of the new task" 0 \
+  "landed T-001 on task/T-001"
 
 # On the pull request the summary of a run counts reviews, and says what passed a stop.
 published_project origin

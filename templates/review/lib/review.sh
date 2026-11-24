@@ -351,13 +351,17 @@ STOP=-
 STOP_WHOSE=-
 PAST_LIMIT_KIND=""
 if [ -n "$TASK_ID" ]; then
-  RUNS="$(task_runs_json "$TASK_ID")" || {
+  # Runs of a task that landed are not the runs of a new task under its id: where the tree
+  # records that a landing of the id committed with its review, the runs and the /qa
+  # records made after it are read (task_landed_at, common.sh).
+  LANDED_AT="$(task_landed_at "$TASK_ID")"
+  RUNS="$(task_runs_json "$TASK_ID" "$LANDED_AT")" || {
     echo "the runs of $TASK_ID could not be read; nothing ran" >&2
     exit 1
   }
   # A /qa record that cannot be read, or one of the task that does not hold, is never read
   # as no failure: qa_records_of says which and what, and nothing runs.
-  QA="$(qa_records_of "$TASK_ID" | qa_cases_of)" && [ -n "$QA" ] || {
+  QA="$(qa_records_of "$TASK_ID" | qa_cases_of "$LANDED_AT")" && [ -n "$QA" ] || {
     echo "the /qa records of $TASK_ID could not be read: a qa.json is unreadable or not "\
 "{task, failures: [{case: TC-nnn}]}, or its items do not hold; the line before this one says "\
 "what; nothing ran" >&2
