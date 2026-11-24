@@ -360,7 +360,7 @@ UNANSWERED="$(review_runs_on "$TASK_ID" "$PR_URL" | while IFS= read -r run; do
 
 # M8: whatever a person wrote on the pull request — a comment, a review, a comment on a
 # line — is settled: the loop fixed it, or the user decided it (common.sh,
-# people_comments_open). The loop's own posts carry its marker.
+# people_comments_open). The loop's own posts start with its marker.
 OPEN_COMMENTS="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
   fail "gh could not read the comments of $PR_URL"
 UNANSWERED="$(printf '%s' "$OPEN_COMMENTS" | jq -r 'first // empty

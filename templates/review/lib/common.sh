@@ -647,21 +647,26 @@ pull_request_of() {
 
 # What people wrote on pull request <number> of <repository> that the loop has not settled, as
 # a JSON array, oldest first: each comment, review and comment on a line that is not the loop's
-# own (its marker) nor a bot's, with its id, author, where it is and its whole text. A person
-# outranks the loop: what they wrote is settled by a reply of the loop that names it with the
-# answer `fixed`, or with `user` — the user's own decision, from the chat or from what they
-# wrote. A reply of the loop that disagrees, or defers, leaves it to the person.
+# own nor a bot's, with its id, author, where it is and its whole text. A post is the loop's
+# own only when it starts with the loop's marker, and a reply of the loop is read only from
+# such a post: the marker inside what a person wrote hides nothing and settles nothing. A
+# person outranks the loop: what they wrote is settled by a reply of the loop that names it
+# with the answer `fixed`, or with `user` — the user's own decision, from the chat or from what
+# they wrote. A reply of the loop that disagrees, or defers, leaves it to the person.
+# Each of the three requests fails the call by its own exit code (gh_repo_api_list, under the
+# caller's pipefail); the text read is never searched for a failure: a comment may quote the
+# log of a build.
 people_comments_open() {
-  local repository="$1" number="$2" all
-  all="$( { gh_repo_api_list "$repository" "issues/$number/comments" || echo FAILED
-            gh_repo_api_list "$repository" "pulls/$number/reviews" || echo FAILED
-            gh_repo_api_list "$repository" "pulls/$number/comments" || echo FAILED; } )"
-  case "$all" in *FAILED*) return 1 ;; esac
-  printf '%s\n' "$all" | jq -sc '
+  local repository="$1" number="$2" issue_comments reviews line_comments
+  issue_comments="$(gh_repo_api_list "$repository" "issues/$number/comments")" || return 1
+  reviews="$(gh_repo_api_list "$repository" "pulls/$number/reviews")" || return 1
+  line_comments="$(gh_repo_api_list "$repository" "pulls/$number/comments")" || return 1
+  printf '%s\n' "$issue_comments" "$reviews" "$line_comments" | jq -sc '
+    def own: (.body // "") | startswith("<!-- loop:");
     add as $all
-    | [$all[] | (.body // "") | capture("<!-- loop:reply (?<id>[^ ]+) (?<answer>[a-z-]+) -->")?]
-      as $replies
-    | [$all[] | select((.body // "") != "" and ((.body | contains("<!-- loop")) | not)
+    | [$all[] | select(own) | .body
+       | capture("^<!-- loop:reply (?<id>[^ ]+) (?<answer>[a-z-]+) -->")?] as $replies
+    | [$all[] | select((.body // "") != "" and (own | not)
                        and (.state // "") != "PENDING" and (.user.type // "") != "Bot")
        | (.id | tostring) as $id | (.node_id // "") as $node
        | [$replies[] | select(.id == $id or ($node != "" and .id == $node)) | .answer] as $answers

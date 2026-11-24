@@ -8,9 +8,10 @@
 # commit or merge, and writes no file of the tree: only its records under .review/runs.
 # Every gh call names the repository of REMOTE. Every post starts with a hidden marker,
 # <!-- loop:<what> -->: gh is logged in as the person, so the marker is how the loop
-# and publish.sh tell the loop's posts from what people wrote. A report of /qa over
-# 60 000 characters goes in several comments; any other text over 65 000 characters is
-# cut, with a line naming the local file that holds it whole.
+# and publish.sh tell the loop's posts from what people wrote. It counts only at the
+# start of a post: a person's text that quotes it is still the person's. A report of
+# /qa over 60 000 characters goes in several comments; any other text over 65 000
+# characters is cut, with a line naming the local file that holds it whole.
 #
 # Commands:
 #   run <run-dir>        one review of the run at the commit it reviewed, then the
