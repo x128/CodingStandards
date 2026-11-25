@@ -1294,14 +1294,34 @@ qa_times() {
 }
 
 # What a /qa record did not check, wherever a count decides or is shown — the merge (M5,
-# qa_left_nothing_open) and the status of /qa: the items it counts as not checked, and
-# those it put off until after the merge (counts.after_merge). No script checks anything
-# after a merge yet, so until one does an item put off is an item not checked. A count of
-# them that is no number counts as one: it never reads as none.
-JQ_NOT_CHECKED='def put_off:
-  ((.counts | objects | .after_merge) // 0) | if type == "number" then . else 1 end;
-def not_checked: (.counts.not_checked // 0) + put_off;
+# qa_left_nothing_open) and the status of /qa. An item /qa put off until after the merge
+# (after_merge, with its reason and its check) is none of them: the merge does not wait on
+# it, and the script that merges owes its check (owe_after_merge). A count of items put
+# off that no item of the record backs names no check to owe (put_off_unlisted), so it
+# stays among those not checked; one that is no number counts as one: it never reads as
+# none.
+JQ_NOT_CHECKED='def put_off_unlisted:
+  (((.counts | objects | .after_merge) // 0) | if type == "number" then . else 1 end) as $counted
+  | ([.items | arrays | .[] | objects | select(.verdict == "after_merge")] | length) as $listed
+  | if $counted > $listed then $counted - $listed else 0 end;
+def not_checked: (.counts.not_checked // 0) + put_off_unlisted;
 '
+
+# What /qa put off until after the merge of a task: the items with the verdict after_merge
+# of its records, as a JSON array of {id, reason, check, from}, `from` being the folder of
+# the record. Of an id that several records list, the newest decides: its reason and its
+# check hold, and an item that it lists with another verdict was checked and is put off no
+# more. The records are those made after a landing of the task committed (landed_since).
+qa_after_merge_items() {
+  local records landed_at
+  landed_at="$(task_landed_at "$1")" || return 1
+  records="$(qa_records_of "$1")" || return 1
+  printf '%s' "$records" | jq -c --argjson after "$landed_at" "$JQ_LANDED_SINCE"'
+    reduce (.[] | select(landed_since($after)) | .run as $from | .items[]?
+            | {id, verdict, reason, check, from: $from}) as $item
+      ([]; map(select(.id != $item.id)) + [$item])
+    | map(select(.verdict == "after_merge") | del(.verdict))'
+}
 
 # One line of what /qa left: the items of a record with one verdict, as `   <n> <words>:
 # <id> (<reason>); …`, the ids and reasons when the record lists its items. Nothing, and
@@ -1324,10 +1344,11 @@ qa_left_items() {
 # often /qa was red; the same case failing on three works — after each of two fixes — does
 # not converge, and that is the user's: review.sh stops the task there, and runs once more
 # when they decided to go on. An unproven item and one not checked are the loop's. An item
-# put off until after the merge is an item not checked (JQ_NOT_CHECKED): at the pull
-# request levels — <level> is the LANDING of the project — it holds the merge and is the
-# user's to accept or not, and below them nothing waits on it. What the app does that
-# nothing written describes is the one question that holds nothing.
+# put off until after the merge holds nothing: it says its check, which the loop makes
+# right after the merge at the pull request levels — <level> is the LANDING of the
+# project — and below them, where nothing merges, it stands in the report. A count of such
+# items with no item behind it counts as not checked (JQ_NOT_CHECKED). What the app does
+# that nothing written describes is the one question that holds nothing.
 qa_left() {
   local task_id="$1" qa_dir="$2" level="$3" record="$2/qa.json" times entry case_id count runs
   local line
@@ -1402,19 +1423,31 @@ qa_left() {
     said=true
     turn loop "restore what failed — a tool, a device — and run /qa again"
   fi
-  if qa_left_items "$record" after_merge "put off until after the merge"; then
+  line="$(jq -r '
+    [.items[]? | select(.verdict == "after_merge")]
+    | select(length > 0)
+    | "   \(length) to check after the merge — they do not hold it:",
+      (.[] | "      \(.id) — \(.reason | sub("[.]$"; "")). Then: \(.check)")' "$record")" \
+    || return 1
+  if [ -n "$line" ]; then
     said=true
-    echo "      no script checks an item after the merge yet: at the pull request levels it "\
-"holds the merge like an item not checked"
+    printf '%s\n' "$line"
     if landing_opens_pull_request "$level"; then
-      turn user:beyond-agreed "to merge with it not checked, or not — unless a /qa of the "\
-"whole pull request can check it before the merge; their acceptance goes into "\
-"$qa_dir/open-answered.json, "\
-"{\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}"
+      turn loop "they are checked right after the merge (/qa --after-merge $task_id)"
     else
-      turn loop "nothing waits on it at LANDING=$level, which makes no merge: the report of "\
-"/qa says that it is not checked, and why"
+      turn loop "nothing merges at LANDING=$level: what is put off stands in the report of "\
+"the task (maintain, step 13)"
     fi
+  fi
+  line="$(jq -r "$JQ_NOT_CHECKED"'
+    put_off_unlisted | select(. > 0)
+    | "   \(.) put off until after the merge by a count alone: no item says its check, so "
+      + "they count as not checked"' "$record")" || return 1
+  if [ -n "$line" ]; then
+    said=true
+    printf '%s\n' "$line"
+    turn loop "have /qa list each as an item, with its reason and the check that will be "\
+"made then (items), or check it now"
   fi
   while IFS= read -r entry; do
     [ -n "$entry" ] || continue
@@ -1578,12 +1611,30 @@ run_escalations_answered() {
 # 7. Every exit criterion carries an explicit verification claim. Machine-checkable criteria
 #    belong in gates; the rest must at least be stated, so the claim lands in the commit and
 #    can be audited later. A task may have none: criteria are gathered before a task starts,
-#    never written at its start (PLANNING_GUIDE.md, "Task Rules").
+#    never written at its start (PLANNING_GUIDE.md, "Task Rules"). A claim that starts with
+#    `after the merge:` is not made yet: what follows the colon is the id of an item /qa
+#    put off until then (qa_after_merge_items), whose result after the merge is the evidence.
 criteria_verified() {
-  local unverified
+  local unverified later put_off unnamed
   unverified="$(jq -r '[.exit_criteria[] | select((.verified_by // "") == "")] | length' "$1")"
   [ "$unverified" -eq 0 ] || \
     refuse 7 "$unverified exit criterion/criteria have no verified_by claim"
+  later="$(jq -c '[.exit_criteria[] | select(.verified_by | strings
+                                             | startswith("after the merge:"))]' "$1")"
+  [ "$later" != "[]" ] || return 0
+  put_off="$(qa_after_merge_items "$(jq -r '.id' "$1")")" || \
+    refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
+"do not hold — refusing to read what /qa put off until after the merge; the line before this "\
+"one says what"
+  unnamed="$(jq -rn --argjson later "$later" --argjson put_off "$put_off" '
+    [$later[]
+     | (.verified_by | sub("^after the merge:\\s*"; "") | sub("\\s+$"; "")) as $id
+     | select(any($put_off[]; .id == $id) | not) | .text // "with no text"]
+    | first // empty')"
+  [ -z "$unnamed" ] || \
+    refuse 7 "the criterion '$unnamed' is put off until after the merge and names no item /qa "\
+"put off until then (after the merge: <the item's id>)" loop \
+"have /qa record the item with its check, or claim what was checked"
 }
 
 # 7, /qa. /qa checked the task, and each failure it recorded — in a qa.json, or in the
@@ -1778,9 +1829,10 @@ qa_checked_this_work() {
 # left, in <its folder>/open-answered.json: {"by": "human", "answer": "accepted-as-is",
 # "words": "<what they said>"}. A /qa after a fix checks only what the fix can reach, so
 # what an earlier one left open goes away only with a later /qa of the whole pull request or
-# with the user's acceptance. A merge nobody looks at never stands on a check nobody made:
-# an item put off until after the merge is not checked either (JQ_NOT_CHECKED), and the
-# refusal says how many of those not checked are such.
+# with the user's acceptance. An item put off until after the merge is in neither count:
+# the merge does not wait on it, and owes its check (owe_after_merge). A count of items put
+# off that no item backs is among those not checked (JQ_NOT_CHECKED), and the refusal says
+# how many of them are such.
 qa_left_nothing_open() {
   local task_id="$1" merge_base="$2" records open run counts put_off_note
   records="$(qa_records_of "$task_id")" || \
@@ -1791,8 +1843,9 @@ qa_left_nothing_open() {
       | .key] | last // 0) as $from
     | .[$from:][] | select(((.counts.unproven // 0) + not_checked) > 0)
     | "\(.run)\t\(.counts.unproven // 0) unproven and \(not_checked) not checked\t"
-      + (if put_off > 0
-         then " (\(put_off) of them put off until after the merge, which no script checks yet)"
+      + (if put_off_unlisted > 0
+         then " (\(put_off_unlisted) of them put off until after the merge by a count alone: "
+              + "no item says its check)"
          else "" end)')"
   while IFS=$'\t' read -r run counts put_off_note; do
     [ -n "$run" ] || continue
@@ -1822,7 +1875,7 @@ qa_reports_posted() {
 # its pull request ends with too. Self-contained: the run folders are local and gitignored,
 # so the commit carries the audit facts themselves rather than a path to them.
 squash_trailers() {
-  local task_file="$1" pr_url="${2:-}" task_id runs newest run qa
+  local task_file="$1" pr_url="${2:-}" task_id runs newest run qa later
   task_id="$(jq -r '.id' "$task_file")"
   if [ -n "$pr_url" ]; then
     runs="$(review_runs_on "$task_id" "$pr_url")"
@@ -1843,15 +1896,121 @@ squash_trailers() {
       "$(jq 'length' "$newest/approved.json" 2>/dev/null || echo "?")" \
       "$(jq -r '.threshold // "major"' "$newest/meta.json")"
   fi
-  printf 'Exit-Criteria: %s verified\n' \
-    "$(jq '[.exit_criteria[]? | select((.verified_by // "") != "")] | length' "$task_file")"
+  printf 'Exit-Criteria: %s\n' "$(jq -r '
+    [.exit_criteria[]? | .verified_by // "" | select(. != "")]
+    | ([.[] | strings | select(startswith("after the merge:"))] | length) as $later
+    | "\(length - $later) verified"
+      + (if $later > 0 then ", \($later) to check after the merge" else "" end)' "$task_file")"
   if [ -n "$newest" ]; then
     printf 'Review-Runs: %s, last %s\n' "$(printf '%s\n' "$runs" | grep -c .)" \
       "$(basename "$newest")"
   else
     printf 'Review-Runs: 0\n'
   fi
-  qa="$(qa_records_of "$task_id" 2>/dev/null | jq -r 'last // empty
-    | "QA: \(.run | split("/") | last) (\(.extent // "extent not recorded"))"' 2>/dev/null)"
+  later="$(qa_after_merge_items "$task_id" 2>/dev/null | jq 'length' 2>/dev/null)"
+  qa="$(qa_records_of "$task_id" 2>/dev/null | jq -r --argjson later "${later:-0}" '
+    last // empty
+    | "QA: \(.run | split("/") | last) (\(.extent // "extent not recorded")"
+      + (if $later > 0 then "; \($later) to check after the merge" else "" end) + ")"' \
+    2>/dev/null)"
   [ -z "$qa" ] || printf '%s\n' "$qa"
+}
+
+# What a merged task owes: the checks /qa put off until after its merge, written down by
+# the script that merged, once for a pull request, as
+# .review/runs/after-merge-<task>/owed.json — {task, pr_url, pr_number, base, time, items:
+# [{id, reason, check, from}]}. owe_after_merge <task-id> <pr-url> <pr-number> <base>
+# [<items>] writes it when there are such items, and prints nothing. <items> is what
+# qa_after_merge_items gave before the merge: a merge may leave this checkout on the base
+# branch, where the records of the task read as those of a task that landed. A folder that
+# holds the list of another pull request of the task keeps it, and this one's goes beside
+# it, with the number of its pull request in its name.
+owe_after_merge() {
+  local task_id="$1" pr_url="$2" pr_number="$3" base="$4" items="${5:-}" folder list count
+  for list in .review/runs/after-merge-*/owed.json; do
+    [ -f "$list" ] || continue
+    ! jq -e --arg url "$pr_url" '.pr_url == $url' "$list" >/dev/null 2>&1 || return 0
+  done
+  [ -n "$items" ] || items="$(qa_after_merge_items "$task_id")" || return 1
+  count="$(printf '%s' "$items" | jq 'length')" || return 1
+  [ "$count" -gt 0 ] || return 0
+  folder=".review/runs/after-merge-$task_id"
+  [ ! -e "$folder/owed.json" ] || folder="$folder-pr$pr_number"
+  mkdir -p "$folder" || return 1
+  jq -n --arg task "$task_id" --arg url "$pr_url" --arg number "$pr_number" --arg base "$base" \
+    --argjson items "$items" '
+    {task: $task, pr_url: $url, pr_number: ($number | tonumber? // $number), base: $base,
+     time: (now | floor), items: $items}' >"$folder/owed.json.new" \
+    && mv "$folder/owed.json.new" "$folder/owed.json"
+}
+
+# What is still owed after the merges of earlier tasks: one line of JSON for each item of
+# an owed.json that is not settled, {task, id, why, kind, folder, check, reason, pr_url}.
+# An item is settled when results.json beside the list, a JSON array, holds an entry of its
+# id — the last one — that says
+#  - pass, with what was seen (evidence);
+#  - fail, with its reason and the task that takes the defect: a heading `### <task>: ` of
+#    TASK_TRACKER.md, and not the merged task;
+#  - or not_checked, with its reason, and open-answered.json beside it records the
+#    acceptance: {"by": "human", "answer": "accepted-as-is"}.
+# `kind` says what is missing: result — the check, or what it saw; task — the task of a
+# failure; accepted — the acceptance of a check that could not be made; list — an owed.json
+# that cannot be read, which names no task. A file that cannot be read settles nothing.
+after_merge_unsettled() {
+  local list folder tasks="" results accepted
+  for list in .review/runs/after-merge-*/owed.json; do
+    [ -f "$list" ] || continue
+    folder="${list%/owed.json}"
+    [ -n "$tasks" ] || \
+      tasks="$(awk '/^### / { line = substr($0, 5); at = index(line, ": ")
+                              if (at > 1) print substr(line, 1, at - 1) }' TASK_TRACKER.md \
+                 2>/dev/null | jq -R . | jq -sc .)"
+    results="$(jq -sc 'if length == 1 and (.[0] | type) == "array" then .[0] else empty end' \
+      "$folder/results.json" 2>/dev/null)"
+    accepted=false
+    ! jq -e '.by == "human" and .answer == "accepted-as-is"' "$folder/open-answered.json" \
+        >/dev/null 2>&1 || accepted=true
+    jq -c --arg folder "$folder" --argjson results "${results:-[]}" \
+      --argjson tasks "${tasks:-[]}" --argjson accepted "$accepted" '
+      def text: type == "string" and . != "";
+      . as $owed
+      | .items[] | .id as $id
+      | ([$results[] | objects | select(.id == $id)] | last) as $result
+      | (if $result == null then ["result", "no result"]
+         elif $result.verdict == "pass" then
+           (if $result.evidence | text then null
+            else ["result", "passed without what was seen (evidence)"] end)
+         elif $result.verdict == "fail" then
+           (if $result.reason | text | not
+              then ["result", "failed without what was seen (reason)"]
+            elif ($result.task | text) and $result.task != $owed.task
+                 and any($tasks[]; . == $result.task) then null
+            else ["task", "failed and names no task of the tracker"] end)
+         elif $result.verdict == "not_checked" then
+           (if $result.reason | text | not
+              then ["result", "not checked without the reason (reason)"]
+            elif $accepted then null
+            else ["accepted", "could not be checked and is not accepted"] end)
+         else ["result", "no result"] end) as $open
+      | select($open != null)
+      | {task: $owed.task, id: $id, why: $open[1], kind: $open[0], folder: $folder,
+         check: (.check // ""), reason: ($result.reason? // ""),
+         pr_url: ($owed.pr_url // "")}' "$list" 2>/dev/null \
+      || jq -nc --arg folder "$folder" '
+           {task: "", id: "owed.json", why: "the list is not readable", kind: "list",
+            folder: $folder, check: "", reason: "", pr_url: ""}'
+  done
+}
+
+# The same, as review.sh and land.sh say it in every run: one line on stderr for each item,
+# or for a list that cannot be read, and nothing when nothing is owed. It stops no run: only
+# a later merge waits (publish.sh, M10).
+say_after_merge_unsettled() {
+  local unsettled
+  unsettled="$(after_merge_unsettled)"
+  [ -n "$unsettled" ] || return 0
+  printf '%s\n' "$unsettled" | jq -r '
+    if .kind == "list"
+    then "OWED — \(.folder)/owed.json, the list of the checks a merged task owes, is not readable"
+    else "OWED — \(.task): \(.id), put off until after its merge: \(.why) (\(.folder))" end' >&2
 }

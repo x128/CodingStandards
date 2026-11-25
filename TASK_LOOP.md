@@ -639,11 +639,12 @@ may stay uncommitted; `.review/` apart.
 | M2 | Its end-to-end tests passed on every platform the tree ships, the harness as it ran, every `e2e:` mark checked | 3, the end-to-end half |
 | M3 | Zero accepted findings at or above the threshold in it | 4 |
 | M4 | Every escalation of it answered | 5 |
-| M5 | Every exit criterion has `verified_by`; the task's `/qa` failures are proven as condition 7 says; no test is skipped for this task; the newest `qa.json` of the task (by its `time`) has `work` = the fingerprint now, and some `qa.json` of the task checked the whole pull request (`since` = the merge base); both say how far `/qa` went and why (`extent`, `reason`) and what came of it (`counts`), and their reports are on the pull request (`pr-comment.json`); no `/qa` since the newest of the whole pull request left anything unproven or not checked, or you accepted what it left (`open-answered.json` beside it) — a `/qa` after a fix does not clear what an earlier one left open | 7 |
+| M5 | Every exit criterion has `verified_by`; the task's `/qa` failures are proven as condition 7 says; no test is skipped for this task; the newest `qa.json` of the task (by its `time`) has `work` = the fingerprint now, and some `qa.json` of the task checked the whole pull request (`since` = the merge base); both say how far `/qa` went and why (`extent`, `reason`) and what came of it (`counts`), and their reports are on the pull request (`pr-comment.json`); no `/qa` since the newest of the whole pull request left anything unproven or not checked, or you accepted what it left (`open-answered.json` beside it) — a `/qa` after a fix does not clear what an earlier one left open; an item `/qa` put off until after the merge (`after_merge`, with the check it will make) is in neither count and does not hold the merge | 7 |
 | M6 | The changed files of `merge-base..HEAD` ⊆ scope ∪ loop files ∪ harness ∪ records | 6 |
 | M7 | Every review run of this task made on this pull request is posted there, and every finding of its `approved.json` and `escalated.json` has its answer posted (`answers-posted.json`) — not `optional.json`, which is never handed over | — |
 | M8 | Everything a person wrote on the pull request — a comment, a review, a comment on a line; not the loop's own (a post that starts with its `<!-- loop:` marker) nor a bot's — is settled: a reply of the loop names it with the answer `fixed`, or `user`, your decision in your words, from the chat or from what you wrote. A reply that disagrees or defers leaves it to you. Otherwise wait (5) | — |
 | M9 | On GitHub, at HEAD: each status of the loop is `success` — `loop/<gate>` for each blocking gate, `loop/e2e-<platform>` for each platform, `loop/review`, `loop/qa`; no other check failing or pending (the wait of `CHECKS_WAIT`); no changes requested; the pull request carries no other task's commits; its head is HEAD | — |
+| M10 | No task merged before this one still owes a check that `/qa` put off until after its merge: each has its result in `.review/runs/after-merge-<task>/results.json` — `pass` with what was seen, `fail` with the task of the tracker that takes the defect, or `not_checked` with your acceptance beside it — and the report is on its pull request | — |
 
 An item that does not hold refuses, exit 3, naming it; M8 and M9 wait, exit 5. A failed gate that is
 not blocking is posted as success, "fail (not blocking)". The statuses are for people to see; the
@@ -660,7 +661,8 @@ stand until the one who asked approves or dismisses it.
 The merge is a squash of that head and no other: `--squash --match-head-commit`, the subject
 `<id>: <title>`, and the body the trailers — `Task-Id`, `Gates` (of the newest run),
 `Findings: N reviewed, R rejected, 0 outstanding at <threshold>+` (all runs of the task),
-`Exit-Criteria: N verified`, `Review-Runs: <count>, last <run>`, `QA: <qa run> (<extent>)`. The pull
+`Exit-Criteria: N verified`, `Review-Runs: <count>, last <run>`, `QA: <qa run> (<extent>)`; where
+`/qa` put checks off until after the merge, `Exit-Criteria` and `QA` say how many. The pull
 request's description ends with the same trailers, so at `pr` your squash can take them.
 
 ### Branches
@@ -730,11 +732,15 @@ a pull request that was not opened, without another commit. It merges only with 
    after that long merges. It merges that commit and no other, with `--squash --match-head-commit`,
    and `--delete-branch` for `task/<id>` only: any other branch is someone's. A refusal by `gh` is
    exit `5` with its reason. It finishes on the base branch, updated with `git pull --ff-only`, and
-   deletes the local `task/<id>` with `git branch -d`. When the base branch is checked out in
-   another worktree, this one stays where it is and says so. When the checkout cannot move, it says
-   so and exits `1`: the merge is in, and running `publish.sh --merge` again only retries the move.
-   When the base branch here cannot fast-forward, the same; that one is for you to settle, as the
-   script refuses on the base branch.
+   deletes the local `task/<id>` with `git branch -d`. When it has merged a task whose `/qa` put
+   checks off until after the merge, it writes them down beside the runs
+   (`after-merge-<task>/owed.json`) and lists them; the maintainer has `/qa` make them at once, and
+   one that fails then is a defect like any other: a task in the tracker. A later task is reviewed
+   and landed meanwhile; its merge waits until each check has its result (M10). When the base branch
+   is checked out in another worktree, this one stays where it is and says so. When the checkout
+   cannot move, it says so and exits `1`: the merge is in, and running `publish.sh --merge` again
+   only retries the move. When the base branch here cannot fast-forward, the same; that one is for
+   you to settle, as the script refuses on the base branch.
 
 Exit codes: `0` done, `1` error, `3` refused, `5` waiting.
 
@@ -1093,7 +1099,7 @@ Use hooks for invariants, never for logic:
 - [ ] Fresh session per role
 - [ ] Rounds go on while each accepts fewer findings; an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly; at `pr` and `merge`, the commit contract
-      before the review and the merge contract, M1–M9, before the merge
+      before the review and the merge contract, M1–M10, before the merge
 - [ ] At `pr` and `merge` the review, the end-to-end tests and `/qa` run on the pull request and
       post there; before the merge every finding handed over has its answer there, and every
       person's comment is fixed or decided by the user
