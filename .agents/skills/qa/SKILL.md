@@ -192,12 +192,14 @@ does the work, an item not checked because a tool or device failed is restored b
 user's to accept or not; the status lists the counts. What was put off until after the merge does
 not hold it.
 
-**After the merge.** `publish.sh --merge` lists what `/qa` put off once it has merged, in
-`.review/runs/after-merge-<task>/owed.json`, and `/qa --after-merge <task>` makes each check then:
-`results.json` beside the list gets one `{"id", "verdict", "evidence", "reason", "task"}` for each —
-`pass` with what was seen, `fail` with its reason and the task of the tracker that takes the defect,
-or `not_checked` with its reason — and `report.md` says what was looked at.
-`pr-post.sh after-merge <folder>` posts the report on the merged pull request.
+**After the merge.** `publish.sh` lists what `/qa` put off once the pull request is merged — by
+`--merge`, or at `pr` when it finds it merged — in `owed.json` in the folder it names:
+`.review/runs/after-merge-<task>/`, or one of its own for a task id that was used before.
+`/qa --after-merge <task>` makes each check then: `results.json` beside the list gets one
+`{"id", "verdict", "evidence", "reason", "task"}` for each — `pass` with what was seen, `fail` with
+its reason and the task of the tracker that takes the defect, or `not_checked` with its reason — and
+`report.md` says what was looked at. `pr-post.sh after-merge <folder>` posts the report on the
+merged pull request.
 
 ### 5. When a defect got past
 

@@ -307,14 +307,16 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    and into the report of step 13. A check that fails then is a defect like any other: write it into
    the tracker as a task, and name the task in its result. One that still cannot be made is the
    user's to accept, in `open-answered.json` beside the results, written as
-   `{"by": "human", "answer": "accepted-as-is"}`. No later task merges while a result is missing;
-   its review and its landing go on meanwhile, and `publish.sh` posts the report on the merged pull
-   request. At `pr`, `--check` lists these items with "ready to merge": once the user has merged,
-   run `publish.sh` on the task's branch, which lists them the same way; where the checkout has left
-   that branch by then, the next review or landing writes the list and says what is owed. At `pr`,
-   `0` says the pull request is ready for the user to merge. A refusal names its item, and says in
-   its last line when it is the user's: meet it — a review run, `/qa` again, an answer to post — or
-   tell them what that line says. On `4` or `5`, read the pull request with `gh pr view`,
+   `{"by": "human", "answer": "accepted-as-is"}`. After `/qa --after-merge`, post the report on the
+   merged pull request with `pr-post.sh after-merge <folder>`, so that the report of the last task
+   is not left on this machine. No later task merges while a result is missing; its review and its
+   landing go on meanwhile, and `publish.sh` posts a report that is still missing before it merges
+   the next task. At `pr`, `--check` lists these items with "ready to merge": once the user has
+   merged, run `publish.sh` on the task's branch, which lists them the same way; where the checkout
+   has left that branch by then, the next review or landing writes the list and says what is owed.
+   At `pr`, `0` says the pull request is ready for the user to merge. A refusal names its item, and
+   says in its last line when it is the user's: meet it — a review run, `/qa` again, an answer to
+   post — or tell them what that line says. On `4` or `5`, read the pull request with `gh pr view`,
    `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure: run `--check`
    or `--merge` again, up to three runs in a row, then tell the user once that the merge waits for
    the checks, and come back to it. Changes requested in a review stand until the one who asked
@@ -352,11 +354,14 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
       new task on top of it, or a revert the user makes.
     - `ADVANCE=auto`, at any `LANDING` but `off` and `pr`: go on without waiting, with one line
       saying which task landed and which starts, only when `land.sh`, or the last `publish.sh` after
-      it — at `merge` with `--merge` — ended with `0` and no check is owed after the merge (step
-      11), the task's category is in `ADVANCE_CATEGORIES`, nothing it touched is in `RISK_PATHS` and
-      step 10 left no question that the next unblocked task waits on; otherwise as `ask`. A question
-      another task waits on stays in that task, and the one line names it. At `pr` the next task
-      waits for the user's merge anyway (step 1).
+      it — at `merge` with `--merge` — ended with `0`, the task's category is in
+      `ADVANCE_CATEGORIES`, nothing it touched is in `RISK_PATHS` and step 10 left no question that
+      the next unblocked task waits on; otherwise as `ask`. A check owed after the merge (step 11)
+      is no reason to stop, since the user has nothing to decide there: make the checks at once, say
+      in the one line what still has no result, and go on — the next task is reviewed and landed
+      meanwhile, and its merge waits until each check has its result (M10). A question another task
+      waits on stays in that task, and the one line names it. At `pr` the next task waits for the
+      user's merge anyway (step 1).
 
 ### What goes to the user
 
