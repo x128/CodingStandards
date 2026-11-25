@@ -735,25 +735,29 @@ post_run() {
 # ---------------------------------------------------------------------------
 
 post_answers() {
-  local run="$1" name answers posted head key id kind text comment_id loose=""
+  local run="$1" name answers="" escalations posted head key id kind text comment_id loose=""
   name="$(basename "$run")"
   jq -e --arg url "$PR_URL" '.pr_url == $url' "$run/pr-review.json" >/dev/null 2>&1 || \
     refuse "the review of $name is not on $PR_URL — pr-post.sh run $run posts it first, if "\
 "it was made on this pull request"
   head="$HEAD_COMMIT"
   # The four answers of EXECUTION_GUIDE.md, "A review's findings", and the answers to
-  # escalations; a file that is there must be read whole.
-  answers="$( { if [ -f "$run/answers.json" ]; then
-                  jq -c '.[] | {finding_id, kind: "answer", answer, text: (.text // ""),
-                                commit: (.commit // "")}' "$run/answers.json" || echo FAILED
-                fi
-                if [ -f "$run/escalations-answered.json" ]; then
-                  jq -c '.[] | select((.resolution // "") != "")
-                         | {finding_id, kind: "escalation", answer: .resolution,
-                            text: (.note // ""), by: (.by // "")}' \
-                    "$run/escalations-answered.json" || echo FAILED
-                fi; } )"
-  case "$answers" in *FAILED*) fail "the answers of $name are not readable" ;; esac
+  # escalations; a file that is there must be read whole. Whether it was is told by the
+  # exit code of its own read, never by a word in what was read: an answer may say what
+  # failed.
+  if [ -f "$run/answers.json" ]; then
+    answers="$(jq -c '.[] | {finding_id, kind: "answer", answer, text: (.text // ""),
+                             commit: (.commit // "")}' "$run/answers.json")" || \
+      fail "the answers of $name are not readable: $run/answers.json"
+  fi
+  if [ -f "$run/escalations-answered.json" ]; then
+    escalations="$(jq -c '.[] | select((.resolution // "") != "")
+                          | {finding_id, kind: "escalation", answer: .resolution,
+                             text: (.note // ""), by: (.by // "")}' \
+                     "$run/escalations-answered.json")" || \
+      fail "the answers of $name are not readable: $run/escalations-answered.json"
+    answers="$answers"$'\n'"$escalations"
+  fi
   printf '%s\n' "$answers" | jq -se 'all(.[]; (.finding_id | type) == "string"
     and (.kind == "escalation" or (.answer as $answer
       | ["fixed", "not-a-problem", "other-task", "unsettled"] | index($answer)) != null))' \
@@ -815,7 +819,7 @@ post_answers() {
 # in it, at its root. The marker names the comment answered, by the id given, which
 # publish.sh matches with the id or the node id of what the person wrote, and the answer.
 post_person_reply() {
-  local comment_id="$1" answer="$2" text_file="$3" lines thread marker
+  local comment_id="$1" answer="$2" text_file="$3" lines issue_comments thread marker
   marker="reply $comment_id $answer"
   lines="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/comments")" || \
     fail "gh could not read the comments of $PR_URL"
@@ -831,12 +835,14 @@ post_person_reply() {
     post_reply "$thread" "$marker" "$text_file" "$text_file" >/dev/null || \
       fail "gh could not post the reply to $comment_id on $PR_URL"
   else
-    gh_repo_api_list "$REPOSITORY" "issues/$PR_NUMBER/comments" \
-      | jq -e --arg marker "<!-- loop:$marker -->" \
-          'any(.[]; (.body // "") | startswith($marker))' >/dev/null && {
+    # A read that failed says nothing of whether the reply is there: it is not posted on it.
+    issue_comments="$(gh_repo_api_list "$REPOSITORY" "issues/$PR_NUMBER/comments")" || \
+      fail "gh could not read the comments of $PR_URL"
+    if printf '%s' "$issue_comments" | jq -e --arg marker "<!-- loop:$marker -->" \
+         'any(.[]; (.body // "") | startswith($marker))' >/dev/null; then
       echo "the reply to $comment_id ($answer) is on $PR_URL already: no second one"
       return 0
-    }
+    fi
     post_comment "$marker" "$text_file" "$text_file" >/dev/null || \
       fail "gh could not post the reply to $comment_id on $PR_URL"
   fi
