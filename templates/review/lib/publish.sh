@@ -532,42 +532,63 @@ CHANGES_REQUESTED="$(printf '%s' "$REVIEWS" | jq -r '
     user:a-person-said "ask them to approve or dismiss it, once every remark is answered"
 
 # By bucket, not by gh's exit code: a cancelled check exits 0, and it did not pass. The
-# loop's own statuses (loop/*) are read apart: waiting does not change them.
+# loop's own statuses (loop/*) are read apart: waiting does not change them. An answer
+# that is no list of checks is "none" or a read that failed, and gh ends with 1 for both:
+# a second request says which, by its exit code and a field. No word of an answer is
+# looked for: the description of a check may hold any, and so may an error. What gh says
+# on stderr is kept apart, for the read that failed. The type and the length are
+# printed and compared: jq 1.6 ends -e with 0 on an answer that is empty.
+CHECKS_ERROR="$(mktemp)" || fail "no temporary file for what gh says of the checks"
+trap 'rm -f "$CHECKS_ERROR"' EXIT
 read_checks() {
-  CHECKS_OUTPUT="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,bucket,description \
-    2>&1)"
+  local rollup
   LOOP_CHECKS='[]'
-  case "$CHECKS_OUTPUT" in
-    *"no checks reported"*) CHECKS_STATE=none; return ;;
-  esac
-  LOOP_CHECKS="$(printf '%s' "$CHECKS_OUTPUT" \
-    | jq -c '[.[] | select(.name | startswith("loop/"))]' 2>/dev/null)" || LOOP_CHECKS='[]'
-  CHECKS_STATE="$(printf '%s' "$CHECKS_OUTPUT" | jq -r '
-    if type != "array" then "failing"
-    else map(select(.name | startswith("loop/") | not))
-    | if length == 0 then "none"
-      elif any(.bucket == "fail" or .bucket == "cancel") then "failing"
-      elif any(.bucket == "pending") then "pending"
-      elif all(.bucket == "pass" or .bucket == "skipping") then "passed"
-      else "failing" end end' 2>/dev/null)" || CHECKS_STATE=failing
+  CHECKS_OUTPUT="$(gh pr checks "$PR_URL" --repo "$REPOSITORY" --json name,bucket,description \
+    2>"$CHECKS_ERROR")"
+  if [ "$(printf '%s' "$CHECKS_OUTPUT" | jq -r 'type' 2>/dev/null)" = "array" ]; then
+    if LOOP_CHECKS="$(printf '%s' "$CHECKS_OUTPUT" \
+         | jq -c '[.[] | select(.name | startswith("loop/"))]' 2>>"$CHECKS_ERROR")" &&
+       CHECKS_STATE="$(printf '%s' "$CHECKS_OUTPUT" | jq -r '
+         map(select(.name | startswith("loop/") | not))
+         | if length == 0 then "none"
+           elif any(.bucket == "fail" or .bucket == "cancel") then "failing"
+           elif any(.bucket == "pending") then "pending"
+           elif all(.bucket == "pass" or .bucket == "skipping") then "passed"
+           else "failing" end' 2>>"$CHECKS_ERROR")"; then
+      return
+    fi
+    LOOP_CHECKS='[]'
+    CHECKS_STATE=unread
+    return
+  fi
+  if rollup="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json statusCheckRollup \
+       2>>"$CHECKS_ERROR")" &&
+     [ "$(printf '%s' "$rollup" | jq -r '(.statusCheckRollup // []) | length' \
+            2>/dev/null)" = "0" ]; then
+    CHECKS_STATE=none
+    return
+  fi
+  CHECKS_STATE=unread
 }
 
 # Checks appear on a commit some seconds after its push, and until then gh says "no
 # checks reported" in a repository that has them, so asked at once every landing
 # would merge before its checks started. Then they run. Both are waited for up to
-# CHECKS_WAIT seconds; after that "none" is believed and "pending" is exit 5.
+# CHECKS_WAIT seconds, and so are checks that gh could not read; after that "none" is
+# believed, "pending" is exit 5 and a read that failed is an error.
 CHECKS_WAIT="$(read_conf "$CONFIG" CHECKS_WAIT 30)"
 CHECKS_DEADLINE=$((SECONDS + 10#$CHECKS_WAIT))
 CHECKS_PAUSE=1
 read_checks
-while { [ "$CHECKS_STATE" = "none" ] || [ "$CHECKS_STATE" = "pending" ]; } \
-      && [ "$SECONDS" -lt "$CHECKS_DEADLINE" ]; do
+while { [ "$CHECKS_STATE" = "none" ] || [ "$CHECKS_STATE" = "pending" ] \
+        || [ "$CHECKS_STATE" = "unread" ]; } && [ "$SECONDS" -lt "$CHECKS_DEADLINE" ]; do
   sleep "$CHECKS_PAUSE"
   [ "$CHECKS_PAUSE" -ge 15 ] || CHECKS_PAUSE=$((CHECKS_PAUSE * 2))
   read_checks
 done
 
 case "$CHECKS_STATE" in
+  unread) cat "$CHECKS_ERROR" >&2; fail "gh could not read the checks of $PR_URL" ;;
   pending) waiting "checks are pending on $PR_URL — run publish.sh --$MODE again later" ;;
   failing) printf '%s\n' "$CHECKS_OUTPUT"; waiting "checks are failing on $PR_URL" ;;
 esac

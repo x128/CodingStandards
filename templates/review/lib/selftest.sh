@@ -2385,7 +2385,10 @@ e2e_land "a harness committed as a link lands" 0 "For the user to commit" .revie
 # for, and acts only on the repository --repo names, as real gh does with the flag,
 # or gh api its path. A gh api whose path matches the pattern in api-fails does not
 # reach GitHub: it prints gh's line for that and exits 1. So does one that only reads and
-# whose path matches the pattern in api-read-fails, where a post would still arrive.
+# whose path matches the pattern in api-read-fails, where a post would still arrive. With
+# checks-fail neither gh pr checks nor a gh pr view that asks for statusCheckRollup
+# reaches it; with `pr checks` in that file, gh pr checks alone does not. The line
+# `unread` of the file checks is one gh pr checks that does not reach it.
 # ---------------------------------------------------------------------------
 
 # A PATH with no gh on it, whatever this machine has installed. A folder that is on
@@ -2470,6 +2473,44 @@ someone_pushes() {
 }
 
 next_id() { jq '[.[].id] | (max // 99) + 1' "$COMMENTS"; }
+
+# What says which checks a pull request has: its own word, or the first line of the file
+# checks.
+checks_word() {
+  local word
+  word="$(find_pr "$1" | jq -r '.checks // empty')"
+  [ -n "$word" ] || word="$(head -1 "$GH_STATE/checks")"
+  printf '%s' "$word"
+}
+
+# The checks a pull request reports now, as gh pr checks lists them and as gh pr view
+# gives them in statusCheckRollup.
+checks_of() {
+  local checks
+  case "$(checks_word "$1")" in
+    passed) checks='[{"name":"build","bucket":"pass"}]' ;;
+    skipped) checks='[{"name":"build","bucket":"pass"},{"name":"docs","bucket":"skipping"}]' ;;
+    pending) checks='[{"name":"build","bucket":"pass"},{"name":"test","bucket":"pending"}]' ;;
+    failing) checks='[{"name":"build","bucket":"fail"}]' ;;
+    cancelled) checks='[{"name":"build","bucket":"cancel"}]' ;;
+    cancelled+pending)
+      checks='[{"name":"build","bucket":"cancel"},{"name":"test","bucket":"pending"}]' ;;
+    unknown) checks='[{"name":"build","bucket":"neutral"}]' ;;
+    # A failing check beside one whose description holds the words gh has for "none".
+    word) checks='[{"name":"build","bucket":"fail","description":"1 test failed"},
+                   {"name":"lint","bucket":"pass",
+                    "description":"no checks reported for Kotlin sources"}]' ;;
+    *) checks='[]' ;;
+  esac
+  # The statuses posted at the head of the pull request are checks of it too, the
+  # newest of each context.
+  current_heads
+  jq -c --argjson checks "$checks" --arg head "$(find_pr "$1" | jq -r .headRefOid)" '
+    $checks + ([.[] | select(.sha == $head)] | group_by(.context) | map(last)
+      | map({name: .context, description,
+             bucket: ({success: "pass", failure: "fail", error: "fail"}[.state]
+                      // "pending")}))' "$STATUSES"
+}
 
 case "$1 $2" in
   "auth status") [ ! -e "$GH_STATE/logged-out" ]; exit ;;
@@ -2600,36 +2641,33 @@ case "$1 $2" in
       someone_pushes "$(find_pr "$3" | jq -r .headRefName)"
     fi
     current_heads
-    find_pr "$3" | fields "$@" ;;
+    record="$(find_pr "$3")"
+    case ",$(flag --json "$@")," in
+      *,statusCheckRollup,*)
+        if [ -e "$GH_STATE/checks-fail" ] &&
+           [ "$(cat "$GH_STATE/checks-fail")" != "pr checks" ]; then
+          echo "error connecting to api.github.com" >&2
+          exit 1
+        fi
+        record="$(printf '%s' "$record" | jq -c --argjson rollup "$(checks_of "$3")" \
+          '. + {statusCheckRollup: $rollup}')" ;;
+    esac
+    printf '%s' "$record" | fields "$@" ;;
   "pr checks")
     if [ -e "$GH_STATE/pushes-at-checks" ]; then
       rm "$GH_STATE/pushes-at-checks"
       someone_pushes "$(find_pr "$3" | jq -r .headRefName)"
     fi
-    answer="$(find_pr "$3" | jq -r '.checks // empty')"
-    if [ -z "$answer" ]; then
-      answer="$(head -1 "$GH_STATE/checks")"
+    answer="$(checks_word "$3")"
+    checks="$(checks_of "$3")"
+    # Each call takes one line of the file checks, down to its last.
+    if [ -z "$(find_pr "$3" | jq -r '.checks // empty')" ]; then
       [ "$(wc -l <"$GH_STATE/checks")" -le 1 ] || sed -i.old 1d "$GH_STATE/checks"
     fi
-    case "$answer" in
-      passed) checks='[{"name":"build","bucket":"pass"}]' ;;
-      skipped) checks='[{"name":"build","bucket":"pass"},{"name":"docs","bucket":"skipping"}]' ;;
-      pending) checks='[{"name":"build","bucket":"pass"},{"name":"test","bucket":"pending"}]' ;;
-      failing) checks='[{"name":"build","bucket":"fail"}]' ;;
-      cancelled) checks='[{"name":"build","bucket":"cancel"}]' ;;
-      cancelled+pending)
-        checks='[{"name":"build","bucket":"cancel"},{"name":"test","bucket":"pending"}]' ;;
-      unknown) checks='[{"name":"build","bucket":"neutral"}]' ;;
-      *) checks='[]' ;;
-    esac
-    # The statuses posted at the head of the pull request are checks of it too, the
-    # newest of each context.
-    current_heads
-    checks="$(jq -c --argjson checks "$checks" --arg head "$(find_pr "$3" | jq -r .headRefOid)" '
-      $checks + ([.[] | select(.sha == $head)] | group_by(.context) | map(last)
-        | map({name: .context, description,
-               bucket: ({success: "pass", failure: "fail", error: "fail"}[.state]
-                        // "pending")}))' "$STATUSES")"
+    if [ -e "$GH_STATE/checks-fail" ] || [ "$answer" = unread ]; then
+      echo "error connecting to api.github.com" >&2
+      exit 1
+    fi
     if [ "$checks" = "[]" ]; then
       echo "no checks reported on the 'head' branch" >&2
       exit 1
@@ -5181,6 +5219,47 @@ publish "reviewed again, a merge of the base by a person does not stop the merge
   "merged T-001" --merge
 holds "the task reaches the base branch" remote_log_has main "Task-Id: T-001"
 holds "and what the base had" remote_file_has main src/other.kt "from main"
+
+# The checks of a pull request: none, failing, or not read. gh ends with 1 when there are
+# none as when its request failed, and the description of a check may hold any words. So
+# a list of checks is read by its buckets, and anything else by a second request, which
+# says by its exit code and a field whether the pull request has none.
+published_project origin
+reviewed_pull_request merge
+printf 'word\n' >"$GH_STATE/checks"
+publish "a check whose description says no checks reported is still a check" 5 \
+  "checks are failing on https://example.test/pull/1" --merge
+holds "the failing check beside it stops the merge" not gh_called "pr merge"
+printf 'passed\n' >"$GH_STATE/checks"
+touch "$GH_STATE/checks-fail"
+publish "checks that cannot be read are an error, not failing checks" 1 \
+  "gh could not read the checks of https://example.test/pull/1" --merge
+says "what gh said is shown" "error connecting to api.github.com" "$WORK/publish.log"
+never_says "nothing says that checks are failing" "checks are failing" "$WORK/publish.log"
+holds "nothing is merged on checks that were not read" not gh_called "pr merge"
+publish "--check says of checks that cannot be read what --merge says" 1 \
+  "gh could not read the checks of https://example.test/pull/1" --check
+printf 'pr checks' >"$GH_STATE/checks-fail"
+publish "checks that gh could not list on a pull request that has some are not none" 1 \
+  "gh could not read the checks of https://example.test/pull/1" --merge
+holds "that merges nothing either" not gh_called "pr merge"
+rm "$GH_STATE/checks-fail"
+printf 'none\n' >"$GH_STATE/checks"
+cp "$GH_STATE/statuses.json" "$WORK/statuses.json"
+printf '[]' >"$GH_STATE/statuses.json"
+publish "a pull request with no check and no status is told from one that cannot be read" 5 \
+  "is not posted" --merge
+holds "by a second request, which says that it has none" gh_called "statusCheckRollup"
+never_says "and no read failed" "could not read" "$WORK/publish.log"
+cp "$WORK/statuses.json" "$GH_STATE/statuses.json"
+publish "a repository with no checks is still told from one that cannot be read" 0 \
+  "merged T-001" --merge
+
+published_project origin
+printf 'unread\npassed\n' >"$GH_STATE/checks"
+merged_change "checks that could not be read at first are asked for again within CHECKS_WAIT" 0 \
+  "merged T-001" CHECKS_WAIT=5
+holds "it asked until gh answered" gh_count_is "pr checks" 2
 
 # ---- the end of a merge ----------------------------------------------------
 
