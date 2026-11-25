@@ -3144,6 +3144,8 @@ says "bringing the two branches together is the user's" \
   "   For the user, only they can: bring the two together" "$WORK/land.log"
 holds "that refusal commits nothing" [ "$(git rev-parse HEAD)" = "$landed" ]
 publish "a rejected push is an error saying the branch moved" 1 "the remote branch task/T-001 moved"
+holds "a push refused for a branch that moved is the user's too, as before the commit" \
+  test "$(tail -1 "$WORK/publish.log")" = "   For the user, only they can: bring the two together"
 holds "a rejected push forces nothing" remote_is task/T-001 "$moved"
 git config remote.origin.push '+refs/heads/*:refs/heads/*'
 publish "a + in remote.origin.push does not force it" 1 "the remote branch task/T-001 moved"
@@ -5318,6 +5320,44 @@ publish "a push that still fails is an error" 1 "the push to origin failed"
 rm "$GH_REMOTE/hooks/pre-receive"
 publish "publish.sh alone finishes once the cause is gone" 0 "published T-001: task/T-001 on origin"
 holds "the commit reaches the remote" remote_is task/T-001 "$(git rev-parse HEAD)"
+
+# Whether the remote branch moved is read from git's own line for the branch, never from
+# a word of what the push printed: a hook may print any, that line too.
+published_project origin
+cat >"$GH_REMOTE/hooks/pre-receive" <<'EOF'
+#!/bin/sh
+echo "[rejected] by the policy of this remote"
+printf '!\trefs/heads/task/T-001:refs/heads/task/T-001\t[rejected] (fetch first)\n'
+echo "[rejected] says the hook on stderr too" >&2
+exit 1
+EOF
+chmod +x "$GH_REMOTE/hooks/pre-receive"
+land_change "a push a hook refuses with the word [rejected] is for land.sh a push that failed" 4 \
+  "the push to origin failed" push
+never_says "land.sh shows no branch that moved" "moved on origin" "$WORK/land.log"
+publish "a hook of the remote that prints [rejected] is not a branch that moved" 1 \
+  "the push to origin failed"
+never_says "nothing says that the branch moved" "moved on origin" "$WORK/publish.log"
+says "what the hook printed is shown" "[rejected] by the policy of this remote" \
+  "$WORK/publish.log"
+holds "nothing of that push is on the remote" not remote_has task/T-001
+rm "$GH_REMOTE/hooks/pre-receive"
+# A hook of this copy prints where git prints its own lines, with nothing before its
+# words, and before git says where it pushes to. What it prints on stderr is not read,
+# whatever it holds.
+cat >.git/hooks/pre-push <<'EOF'
+#!/bin/sh
+echo "[rejected] by the hook of this copy"
+printf '!\trefs/heads/task/T-001:refs/heads/task/T-001\t[rejected] (fetch first)\n'
+printf 'To origin\n!\trefs/heads/task/T-001:refs/heads/task/T-001\t[rejected] (fetch first)\n' >&2
+exit 1
+EOF
+chmod +x .git/hooks/pre-push
+publish "nor is a hook of this copy that prints git's own line for a branch that moved" 1 \
+  "the push to origin failed"
+never_says "that says of no branch that it moved either" "moved on origin" "$WORK/publish.log"
+rm .git/hooks/pre-push
+publish "without the hooks the same commit is published" 0 "published T-001: task/T-001 on origin"
 
 # ---- publish.sh alone -------------------------------------------------------
 
