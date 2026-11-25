@@ -253,7 +253,9 @@ if landing_opens_pull_request "$LANDING"; then
         fi
         exit 0
       fi
-      # New work on a branch whose earlier pull request was merged: a new one.
+      # New work on a branch whose earlier pull request was merged: a new one. The merged
+      # one owes its checks all the same.
+      owe_checks
       PR_URL=""
       PR_NUMBER="" ;;
   esac

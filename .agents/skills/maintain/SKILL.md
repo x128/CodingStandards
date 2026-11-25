@@ -310,21 +310,22 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    `{"by": "human", "answer": "accepted-as-is"}`. No later task merges while a result is missing;
    its review and its landing go on meanwhile, and `publish.sh` posts the report on the merged pull
    request. At `pr`, `--check` lists these items with "ready to merge": once the user has merged,
-   run `publish.sh` on the task's branch, which lists them the same way. At `pr`, `0` says the pull
-   request is ready for the user to merge. A refusal names its item, and says in its last line when
-   it is the user's: meet it — a review run, `/qa` again, an answer to post — or tell them what that
-   line says. On `4` or `5`, read the pull request with `gh pr view`, `gh pr checks` and
-   `pr-post.sh comments`. Checks still running are not a failure: run `--check` or `--merge` again,
-   up to three runs in a row, then tell the user once that the merge waits for the checks, and come
-   back to it. Changes requested in a review stand until the one who asked approves or dismisses it:
-   once the fix is in, that wait goes to the user, and so does a comment the loop answered
-   `not-a-problem` or `other-task`. What needs fixing — a failing check, a person's comment — goes
-   through the loop on the same branch: the work (step 4), `land.sh`, a review run (step 5). What no
-   agent can do goes to the user: a conflict with the base branch, which they merge in, and the loop
-   then publishes, reviews and checks it again; a pull request closed without a merge, which only
-   they reopen; a base branch that could not fast-forward after a merge. The same `4` or `5` for any
-   other reason twice in a row is found out as in step 6; a merge `publish.sh` refused is never done
-   by hand.
+   run `publish.sh` on the task's branch, which lists them the same way; where the checkout has left
+   that branch by then, the next review or landing writes the list and says what is owed. At `pr`,
+   `0` says the pull request is ready for the user to merge. A refusal names its item, and says in
+   its last line when it is the user's: meet it — a review run, `/qa` again, an answer to post — or
+   tell them what that line says. On `4` or `5`, read the pull request with `gh pr view`,
+   `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure: run `--check`
+   or `--merge` again, up to three runs in a row, then tell the user once that the merge waits for
+   the checks, and come back to it. Changes requested in a review stand until the one who asked
+   approves or dismisses it: once the fix is in, that wait goes to the user, and so does a comment
+   the loop answered `not-a-problem` or `other-task`. What needs fixing — a failing check, a
+   person's comment — goes through the loop on the same branch: the work (step 4), `land.sh`, a
+   review run (step 5). What no agent can do goes to the user: a conflict with the base branch,
+   which they merge in, and the loop then publishes, reviews and checks it again; a pull request
+   closed without a merge, which only they reopen; a base branch that could not fast-forward after a
+   merge. The same `4` or `5` for any other reason twice in a row is found out as in step 6; a merge
+   `publish.sh` refused is never done by hand.
 12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format:
     `templates/review/project/decisions/tasks.example.jsonl`) — written once the user has answered
