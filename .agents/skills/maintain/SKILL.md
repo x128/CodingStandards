@@ -68,7 +68,8 @@ shows whole, with its id and place, everything not settled — `gh pr view` show
 line — weigh each like a finding (EXECUTION_GUIDE.md, "A review's findings"), act, and answer it
 with `pr-post.sh reply <comment-id> <answer> <text-file>`, in its thread, the text in a file under
 `.review/runs/`: `fixed`, or why not — `not-a-problem`, `other-task`, `unsettled`. A person outranks
-the loop: what it did not fix goes to the user, and their decision is posted as the answer `user`,
+the loop: what it answered `not-a-problem` or `other-task` goes to the user — an `unsettled` remark
+is the loop's to find out and answer again — and their decision is posted as the answer `user`,
 with their words from the chat or from what they wrote — a decision counts only when given after the
 loop's answer it decides. A comment that asks for no change, such as the user's own decision written
 on the pull request, is settled by a reply `user` that quotes it. The merge waits until each is
@@ -261,11 +262,12 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    further, stop and tell the user to change it or that answer. A lower `LANDING` is the user's to
    set, `off` above all: go on, and say so in the report. Exit codes: `0` landed, as far as
    `LANDING` says, `3` refused, `4` the commit landed but publishing did not finish, `1` error. A
-   refusal names its condition: meet it or tell the user; never work around it. A changed tree or an
-   unfinished run means review again (step 5); below `pr`, a landing that fails at or after its
-   gates may be retried once on the same run, and a second time means review again. With
-   `LANDING=off`, `land.sh` prints the files, the message and the commands: give the user the files
-   and the message as printed, the commands only when asked, and never run them.
+   refusal names its condition, and says in its last line when it is the user's: meet it, or tell
+   them what that line says; never work around it. A changed tree or an unfinished run means review
+   again (step 5); below `pr`, a landing that fails at or after its gates may be retried once on the
+   same run, and a second time means review again. With `LANDING=off`, `land.sh` prints the files,
+   the message and the commands: give the user the files and the message as printed, the commands
+   only when asked, and never run them.
 
    At `push`, `pr` and `merge`, `land.sh` calls `publish.sh` after the commit. On `4` the commit is
    in. If no code has to change, meet the cause its output names and run the script alone, never
@@ -309,18 +311,20 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    its review and its landing go on meanwhile, and `publish.sh` posts the report on the merged pull
    request. At `pr`, `--check` lists these items with "ready to merge": once the user has merged,
    run `publish.sh` on the task's branch, which lists them the same way. At `pr`, `0` says the pull
-   request is ready for the user to merge. A refusal names its item: meet it — a review run, `/qa`
-   again, an answer to post — or tell the user. On `4` or `5`, read the pull request with
-   `gh pr view`, `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure:
-   run `--check` or `--merge` again, up to three runs in a row, then tell the user. Changes
-   requested in a review stand until the one who asked approves or dismisses it: once the fix is in,
-   that wait goes to the user, and so does a comment the loop did not fix. What needs fixing — a
-   failing check, a person's comment — goes through the loop on the same branch: the work (step 4),
-   `land.sh`, a review run (step 5). What no agent can do goes to the user: a conflict with the base
-   branch, which they merge in, and the loop then publishes, reviews and checks it again; a pull
-   request closed without a merge, which only they reopen; a base branch that could not fast-forward
-   after a merge. The same `4` or `5` for any other reason twice in a row goes to the user as in
-   step 6; a merge `publish.sh` refused is never done by hand.
+   request is ready for the user to merge. A refusal names its item, and says in its last line when
+   it is the user's: meet it — a review run, `/qa` again, an answer to post — or tell them what that
+   line says. On `4` or `5`, read the pull request with `gh pr view`, `gh pr checks` and
+   `pr-post.sh comments`. Checks still running are not a failure: run `--check` or `--merge` again,
+   up to three runs in a row, then tell the user once that the merge waits for the checks, and come
+   back to it. Changes requested in a review stand until the one who asked approves or dismisses it:
+   once the fix is in, that wait goes to the user, and so does a comment the loop answered
+   `not-a-problem` or `other-task`. What needs fixing — a failing check, a person's comment — goes
+   through the loop on the same branch: the work (step 4), `land.sh`, a review run (step 5). What no
+   agent can do goes to the user: a conflict with the base branch, which they merge in, and the loop
+   then publishes, reviews and checks it again; a pull request closed without a merge, which only
+   they reopen; a base branch that could not fast-forward after a merge. The same `4` or `5` for any
+   other reason twice in a row is found out as in step 6; a merge `publish.sh` refused is never done
+   by hand.
 12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format:
     `templates/review/project/decisions/tasks.example.jsonl`) — written once the user has answered
@@ -352,6 +356,38 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
       step 10 left no question that the next unblocked task waits on; otherwise as `ask`. A question
       another task waits on stays in that task, and the one line names it. At `pr` the next task
       waits for the user's merge anyway (step 1).
+
+### What goes to the user
+
+The loop goes on by itself wherever it can name no decision of the user's. A script that stops for
+the user says so in a line `For the user, <why it is theirs>: <what they decide or do>`; every other
+stop is the loop's, with its next step in the line `The loop goes on: …` where the script names one,
+and is done without a question. Where no script speaks, the same list holds. The user is asked, or
+told, only this:
+
+- **What should be**, where it is written nowhere — no requirement, exit criterion or case of
+  `qa/test-cases.md` says it — or two of them disagree. A behaviour that is written is no question:
+  a defect against it is fixed.
+- **Beyond what was agreed**: a price, a scope or a risk the task did not have — a refactor first
+  (step 3), a file outside the scope that widens what the task covers (step 4), a library the plan
+  does not name, a merge without a check that `/qa` could not make after the loop tried again (step
+  8).
+- **The work does not converge**: a script read a circle — the same finding or the same failing case
+  came back after its fixes, or the same red check after the cause the loop found (step 5) — or you
+  cannot tell what to do next after finding out.
+- **Only they can**: an act no agent may do or can do — the merge at `pr`, moving the checkout,
+  reopening a pull request, a conflict with the base branch, their machine, their accounts,
+  `land.conf`. It is told, with the act, not asked.
+- **What a person wrote** on the pull request and the loop answered `not-a-problem` or `other-task`,
+  and changes a person requested.
+- **The finished task**, at `ADVANCE=ask` (step 13).
+
+A question says, in this order: what they decide, as two or more actions they can picture; why it is
+theirs — what is written nowhere and where you looked, what it costs, what repeats; what the loop
+already did; what stands still until they answer, and what goes on meanwhile. It is asked once.
+While it is open the loop does every step that does not depend on the answer, and a later message
+names the open question in one line instead of asking it again. A count, a second failure or a red
+check alone is never a question.
 
 ### Rules
 

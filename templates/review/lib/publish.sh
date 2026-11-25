@@ -116,8 +116,8 @@ if [ "$MODE" != publish ]; then
   landing_opens_pull_request "$LANDING" || \
     refuse "--$MODE is for LANDING=pr and merge, not $LANDING: there is no pull request"
   [ "$MODE$LANDING" != mergepr ] || \
-    refuse "LANDING=pr in $CONFIG: the person merges, with squash — "\
-"publish.sh --check says whether the pull request is ready"
+    refuse "LANDING=pr in $CONFIG: publish.sh merges nothing there, and --check says whether "\
+"the pull request is ready" user:only-theirs "the merge, with squash"
 fi
 
 task_id_names_branch "$TASK_ID" || \
@@ -152,8 +152,9 @@ fi
 
 UNLANDED="$(commits_no_landing_made "$LANDING" "$REMOTE" "$BASE")"
 [ -z "$UNLANDED" ] || \
-  refuse "LANDING=$LANDING would publish commits no landing made — "\
-"a person pushes or moves them first: $(printf '%s' "$UNLANDED" | tr '\n' ';')"
+  refuse "LANDING=$LANDING would publish commits no landing made: "\
+"$(printf '%s' "$UNLANDED" | tr '\n' ';')" \
+    user:only-theirs "push or move them: the loop publishes only what its landings made"
 
 # ---------------------------------------------------------------------------
 # What is already there. Asked before the push: pushing a merged branch would bring
@@ -217,7 +218,8 @@ finish_on_base() {
   fi
   git pull --ff-only "$REMOTE" "refs/heads/$BASE" || \
     fail "$merged_note, and nothing is left to publish, but $BASE here could not fast-forward; "\
-"git says why above. That is for a person to settle: publish.sh refuses on $BASE"
+"git says why above" \
+      user:only-theirs "bring $BASE here in line with $REMOTE: publish.sh refuses on $BASE"
   # Not -D, which is a force: after a squash the branch is in no commit of the base, but
   # its upstream still names the head that was merged.
   if [ "$BRANCH" = "task/$TASK_ID" ] && git show-ref --verify --quiet "refs/heads/$BRANCH"; then
@@ -239,8 +241,8 @@ if landing_opens_pull_request "$LANDING"; then
 
   case "$PR_STATE" in
     CLOSED)
-      waiting "$PR_URL was closed without a merge, which is somebody's no: "\
-"only a person reopens it. Nothing was pushed and no new pull request was opened" ;;
+      waiting "$PR_URL was closed without a merge. Nothing was pushed and no new pull "\
+"request was opened" user:only-theirs "reopen it, or say that the task ends here" ;;
     MERGED)
       if [ "$PR_HEAD" = "$HEAD_COMMIT" ]; then
         owe_checks
@@ -459,17 +461,37 @@ UNANSWERED="$(review_runs_on "$TASK_ID" "$PR_URL" | while IFS= read -r run; do
 
 # M8: whatever a person wrote on the pull request — a comment, a review, a comment on a
 # line — is settled: the loop fixed it, or the user decided it (common.sh,
-# people_comments_open). The loop's own posts start with its marker.
+# people_comments_open). The loop's own posts start with its marker. Whose turn it is is
+# read from all that are open: while one of them is the loop's — one not answered, which
+# it weighs and answers, or one it answered unsettled, which it finds out — the stop is the
+# loop's and names the first such comment, wherever it stands among them. Only when every
+# open comment is one the loop answered not-a-problem or other-task does the stop stand
+# between the author of the first and the loop: then it is the user's.
 OPEN_COMMENTS="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
   fail "gh could not read the comments of $PR_URL"
-UNANSWERED="$(printf '%s' "$OPEN_COMMENTS" | jq -r 'first // empty
-  | "\(.id) by \(.author) on \(.where)"
-    + (if .answered == null then ", not answered"
-       else ", answered \(.answered): the user decides" end)')"
-[ -z "$UNANSWERED" ] || \
-  waiting "$(printf '%s' "$OPEN_COMMENTS" | jq length) comment(s) of people on $PR_URL are not "\
-"settled, the first $UNANSWERED — pr-post.sh comments shows them whole; weigh each like a "\
-"finding and answer with pr-post.sh reply <id> <answer> <text-file>"
+NAMED_COMMENT="$(printf '%s' "$OPEN_COMMENTS" | jq -c '
+  (map(select(.answered == null or .answered == "unsettled")) | first // null) as $loops
+  | (first // empty)
+  | if $loops == null then . + {which: "the first"}
+    elif $loops.id == .id then $loops + {which: "the first"}
+    else $loops + {which: "the first that is the loop'"'"'s"} end')"
+if [ -n "$NAMED_COMMENT" ]; then
+  UNSETTLED="$(printf '%s' "$OPEN_COMMENTS" | jq length) comment(s) of people on $PR_URL are "\
+"not settled, $(printf '%s' "$NAMED_COMMENT" | jq -r '
+    "\(.which) \(.id) by \(.author) on \(.where)"
+    + (if .answered == null then ", not answered" else ", answered \(.answered)" end)')"
+  NAMED_ID="$(printf '%s' "$NAMED_COMMENT" | jq -r '.id')"
+  NAMED_ANSWER="$(printf '%s' "$NAMED_COMMENT" | jq -r '.answered // ""')"
+  NAMED_AUTHOR="$(printf '%s' "$NAMED_COMMENT" | jq -r '.author // ""')"
+  case "$NAMED_ANSWER" in
+    "") waiting "$UNSETTLED" loop "weigh it like a finding and answer it: pr-post.sh comments "\
+"shows it whole, pr-post.sh reply $NAMED_ID <answer> <text-file> answers" ;;
+    unsettled) waiting "$UNSETTLED" loop "find out what is still assumed, then answer it again" ;;
+    *) waiting "$UNSETTLED" user:a-person-said "decide between what ${NAMED_AUTHOR:-its author} "\
+"wrote and the loop's answer $NAMED_ANSWER; their decision is posted with pr-post.sh reply "\
+"$NAMED_ID user <text-file>" ;;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
 # M9: on GitHub. The commit to merge is the one checked here: a commit someone else
@@ -487,9 +509,14 @@ PR_VIEW="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json headRefOid,reviewDec
   fail "gh could not read the review decision of $PR_URL"
 PR_HEAD="$(printf '%s' "$PR_VIEW" | jq -r '.headRefOid')" || \
   fail "gh's answer about $PR_URL is not readable: $PR_VIEW"
-[ "$PR_HEAD" = "$HEAD_COMMIT" ] || \
-  waiting "the head of $PR_URL is $PR_HEAD, not HEAD, $HEAD_COMMIT — publish.sh alone "\
-"pushes it; if it stays so, someone else pushed to $BRANCH"
+if [ "$PR_HEAD" != "$HEAD_COMMIT" ]; then
+  HEAD_DIFFERS="the head of $PR_URL is $PR_HEAD, not HEAD, $HEAD_COMMIT"
+  git merge-base --is-ancestor "$PR_HEAD" HEAD 2>/dev/null && \
+    waiting "$HEAD_DIFFERS" \
+      loop "run publish.sh alone, which pushes it, then publish.sh --$MODE again"
+  waiting "$HEAD_DIFFERS" \
+    user:only-theirs "bring the two together: that commit was pushed to $BRANCH from elsewhere"
+fi
 REVIEW_DECISION="$(printf '%s' "$PR_VIEW" | jq -r '.reviewDecision')"
 # GitHub gives a review decision only where a rule of the branch requires reviews, so the
 # reviews themselves are read too: each person's latest review that decides something.
@@ -500,8 +527,9 @@ CHANGES_REQUESTED="$(printf '%s' "$REVIEWS" | jq -r '
   | group_by(.user.login // "") | map(last) | any(.state == "CHANGES_REQUESTED")')" || \
   fail "the reviews of $PR_URL are not readable"
 [ "$REVIEW_DECISION" != "CHANGES_REQUESTED" ] && [ "$CHANGES_REQUESTED" != true ] || \
-  waiting "changes are requested on $PR_URL — they stand until the person who asked approves "\
-"or dismisses their review: once the fix is in, for the user"
+  waiting "changes are requested on $PR_URL, and they stand until the one who asked approves "\
+"or dismisses their review" \
+    user:a-person-said "ask them to approve or dismiss it, once every remark is answered"
 
 # By bucket, not by gh's exit code: a cancelled check exits 0, and it did not pass. The
 # loop's own statuses (loop/*) are read apart: waiting does not change them.
@@ -586,10 +614,18 @@ MERGE_ARGUMENTS=(--repo "$REPOSITORY" --squash --match-head-commit "$HEAD_COMMIT
 
 if ! MERGE_OUTPUT="$(gh pr merge "$PR_URL" "${MERGE_ARGUMENTS[@]}" 2>&1)"; then
   # gh tidies up after the merge, and can fail there with the pull request already
-  # merged. The question is what happened to it.
-  PR_STATE=\
-"$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json state 2>/dev/null | jq -r '.state' 2>/dev/null)"
-  [ "$PR_STATE" = "MERGED" ] || waiting "gh did not merge $PR_URL: $MERGE_OUTPUT"
+  # merged. The question is what happened to it, and, where it is not merged, whether it
+  # conflicts with the base branch: that merge is no step of the loop.
+  PR_AFTER="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json state,mergeable 2>/dev/null)"
+  PR_STATE="$(printf '%s' "$PR_AFTER" | jq -r '.state' 2>/dev/null)"
+  if [ "$PR_STATE" != "MERGED" ]; then
+    [ "$(printf '%s' "$PR_AFTER" | jq -r '.mergeable' 2>/dev/null)" != "CONFLICTING" ] || \
+      waiting "gh did not merge $PR_URL: $MERGE_OUTPUT" \
+        user:only-theirs "merge $BASE into $BRANCH: the pull request conflicts with it; the "\
+"loop then publishes, reviews and checks it again"
+    waiting "gh did not merge $PR_URL: $MERGE_OUTPUT" \
+      loop "gh's reason is above; run publish.sh --merge again once it no longer holds"
+  fi
   echo "gh merged $PR_URL and did not finish tidying up, "\
 "so $BRANCH may be left on $REMOTE: $MERGE_OUTPUT"
 fi

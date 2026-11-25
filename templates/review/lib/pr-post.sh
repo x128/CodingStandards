@@ -40,7 +40,8 @@
 #                        merge (common.sh, people_comments_open). Never posted twice.
 #   comments             reads only: what people wrote that is not settled, whole, with
 #                        its id, author and place — the line of a file, a review, or the
-#                        pull request; reply answers it in its thread
+#                        pull request — and whose turn it is: the loop's while it is not
+#                        answered or answered unsettled; reply answers it in its thread
 #   work                 reads only, at every level: {work, head} — the fingerprint of
 #                        the work now and HEAD, for /qa to record in qa.json; below the
 #                        pull request levels that is all, and nothing is asked of the
@@ -842,16 +843,20 @@ post_person_reply() {
   echo "reply to $comment_id ($answer) posted: $PR_URL"
 }
 
-# What people wrote that is not settled, whole, for the loop to read before it answers.
+# What people wrote that is not settled, whole, for the loop to read before it answers,
+# each with whose turn it is, as publish.sh says it (M8).
 show_comments() {
   local open
   open="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
     fail "gh could not read the comments of $PR_URL"
-  printf '%s' "$open" | jq -r --arg url "$PR_URL" '
+  printf '%s' "$open" | jq -r --arg url "$PR_URL" \
+    --arg theirs "$(turn_words user:a-person-said)" '
     if length == 0 then "nothing people wrote on \($url) waits for the loop"
     else .[] | "── \(.id) by \(.author) on \(.where), \(.at)"
-                + (if .answered == null then "" else " — answered \(.answered); the user decides"
-                   end),
+                + (if .answered == null then " — not answered: the loop'"'"'s"
+                   elif .answered == "unsettled"
+                   then " — answered unsettled: the loop'"'"'s to settle"
+                   else " — answered \(.answered): \($theirs)" end),
                .text, "" end'
 }
 

@@ -448,6 +448,15 @@ you once, with what was tried. Checks still running are not a failure, and have 
 ([Publishing](#publishing)). A failing case of `/qa` is no question either until `review.sh` stops
 for it: the loop fixes it as often as it fails (`/maintain`, step 8).
 
+**A stop says when it is yours.** A script that stops for you says so in one line,
+`For the user, …`, for one of five reasons: what should be where nothing written says it; something
+beyond what was agreed; work that does not converge; an act only you can do; what a person wrote on
+the pull request. Every other stop is the loop's, and its line `The loop goes on: …`, where it has
+one, names the next step. `turn` in `lib/common.sh` holds the list, and `selftest.sh` checks that no
+script names you outside it. So a failing case of `qa/test-cases.md` is fixed, however many `/qa`
+were red, until `review.sh` stops for it: its words are what should be. A behaviour nothing written
+describes is a question, which `/qa` records and `pr-post.sh qa` prints; it does not hold the task.
+
 **`review.sh` stops after `ASK_AFTER_RUNS` reviews of one task** (`.review/land.conf`, 5 by
 default). It counts the runs that made a review — rounds, and the reviews again after `/qa`, an
 answer `fixed` or a landing refusal — and not the runs that ended before one: red gates, an error,
@@ -487,7 +496,8 @@ and says which condition failed.
   problem.
 - Never edits code, tests, or `REVIEW_POLICY.md`. Policy changes are yours, apart from the rule
   `/policy` writes when the loop answered the same escalation the same way twice.
-- Never resolves an escalation by guessing. Escalation is a cheap, correct outcome.
+- Never resolves an escalation by guessing: it finds out — reads the code, runs the check that
+  settles it — and decides, and only what is yours reaches you.
 - Never runs git directly, and reads a pull request only with `gh pr view`, `gh pr checks` and
   `pr-post.sh comments`. Its only write paths are `land.sh` and `publish.sh`, and on a pull request
   `pr-post.sh`.
@@ -509,7 +519,7 @@ and stops if `LANDING` goes further than the answer; a lower `LANDING` is yours,
 | (a) | `off` | Shows the files and the message | The commit |
 | (b) | `push` | Commits, pushes a branch | The merge |
 | (c) | `pr` | Commits, pushes, opens a pull request before the review; the review, the end-to-end tests and `/qa` run on it and post there; fixes what they find, answers what people write on it | The merge, with squash |
-| (d) | `merge` | The same, fixes what they find, answers what people write on it, merges it with squash | Looking when you want to, and deciding what the loop did not fix |
+| (d) | `merge` | The same, fixes what they find, answers what people write on it, merges it with squash | Looking when you want to, and what only you can decide or do |
 
 `on` commits on the current branch and publishes nothing. Any value not listed here is a refusal,
 never a silent `off` or `on`, and so is a line that only looks like one, such as `LANDING = merge`.
@@ -642,7 +652,7 @@ may stay uncommitted; `.review/` apart.
 | M5 | Every exit criterion has `verified_by`; the task's `/qa` failures are proven as condition 7 says; no test is skipped for this task; the newest `qa.json` of the task (by its `time`) has `work` = the fingerprint now, and some `qa.json` of the task checked the whole pull request (`since` = the merge base); both say how far `/qa` went and why (`extent`, `reason`) and what came of it (`counts`), and their reports are on the pull request (`pr-comment.json`); no `/qa` since the newest of the whole pull request left anything unproven or not checked, or you accepted what it left (`open-answered.json` beside it) — a `/qa` after a fix does not clear what an earlier one left open; an item `/qa` put off until after the merge (`after_merge`, with the check it will make) is in neither count and does not hold the merge | 7 |
 | M6 | The changed files of `merge-base..HEAD` ⊆ scope ∪ loop files ∪ harness ∪ records | 6 |
 | M7 | Every review run of this task made on this pull request is posted there, and every finding of its `approved.json` and `escalated.json` has its answer posted (`answers-posted.json`) — not `optional.json`, which is never handed over | — |
-| M8 | Everything a person wrote on the pull request — a comment, a review, a comment on a line; not the loop's own (a post that starts with its `<!-- loop:` marker) nor a bot's — is settled: a reply of the loop names it with the answer `fixed`, or `user`, your decision in your words, from the chat or from what you wrote. A reply that disagrees or defers leaves it to you. Otherwise wait (5) | — |
+| M8 | Everything a person wrote on the pull request — a comment, a review, a comment on a line; not the loop's own (a post that starts with its `<!-- loop:` marker) nor a bot's — is settled: a reply of the loop names it with the answer `fixed`, or `user`, your decision in your words, from the chat or from what you wrote. A reply that disagrees or defers leaves it to you; one that says `unsettled` is the loop's to settle. Otherwise wait (5) | — |
 | M9 | On GitHub, at HEAD: each status of the loop is `success` — `loop/<gate>` for each blocking gate, `loop/e2e-<platform>` for each platform, `loop/review`, `loop/qa`; no other check failing or pending (the wait of `CHECKS_WAIT`); no changes requested; the pull request carries no other task's commits; its head is HEAD | — |
 | M10 | No task merged before this one still owes a check that `/qa` put off until after its merge: each has its result in `.review/runs/after-merge-<task>/results.json` — `pass` with what was seen, `fail` with the task of the tracker that takes the defect, or `not_checked` with your acceptance beside it — and the report is on its pull request | — |
 
@@ -653,10 +663,11 @@ you can make the base branch take changes only through a pull request, with the 
 required and squash merges only; `/maintain --init` says how, and changes nothing there itself.
 
 A person outranks the loop on the pull request. What you write there is weighed like a finding; the
-loop fixes it, or answers why not, and then the merge waits for your decision, which the loop posts
-as the answer `user` with your words, given after its answer; your own decision written on the pull
-request is settled the same way, by a reply `user` that quotes it. Changes requested in a review
-stand until the one who asked approves or dismisses it.
+loop fixes it, or answers why not — an `unsettled` remark is the loop's to find out and answer
+again — and then the merge waits for your decision, which the loop posts as the answer `user` with
+your words, given after its answer; your own decision written on the pull request is settled the
+same way, by a reply `user` that quotes it. Changes requested in a review stand until the one who
+asked approves or dismisses it.
 
 The merge is a squash of that head and no other: `--squash --match-head-commit`, the subject
 `<id>: <title>`, and the body the trailers — `Task-Id`, `Gates` (of the newest run),
@@ -753,9 +764,9 @@ commit and updates the pull request, then a review run. A person's comment is an
 `pr-post.sh reply <id> <answer> <text-file>`.
 
 Checks still running are not a failure. Each run of `publish.sh --check` or `--merge` waits
-`CHECKS_WAIT` seconds, and the maintainer runs it again, up to three runs in a row, then tells you.
-Set `CHECKS_WAIT` a little over what your checks take and a merge ends in one run, with `0`, which
-is what the next task waits for at `ADVANCE=auto`.
+`CHECKS_WAIT` seconds, and the maintainer runs it again, up to three runs in a row, then tells you
+once, and comes back to it. Set `CHECKS_WAIT` a little over what your checks take and a merge ends
+in one run, with `0`, which is what the next task waits for at `ADVANCE=auto`.
 
 A conflict with the base branch goes to you, since no agent can merge or rebase: `gh` refuses the
 merge and `publish.sh --merge` exits `5` with its reason. Merge the base into the branch, or merge
@@ -1077,7 +1088,7 @@ Use hooks for invariants, never for logic:
 | Same finding every run | Missing policy rule | Write the rule — or better, encode it as a lint rule in Layer 0 |
 | Landed commits you would have rejected | `ADVANCE=auto` too broad | Revert that category to `ask`; tighten thresholds |
 | Landing refused and nobody knows why | Contract failure not surfaced | `land.sh` names the failing condition — read it, do not bypass it |
-| Pull request stuck open | An item of the merge contract: a status or check failing or pending, a person's comment not settled, changes requested, `/qa` left something unproven | `publish.sh --check` or `--merge` says which; fix through the loop on the same branch, answer the comment, ask the user what is theirs to decide, or run it again later |
+| Pull request stuck open | An item of the merge contract: a status or check failing or pending, a person's comment not settled, changes requested, `/qa` left something unproven | `publish.sh --check` or `--merge` says which; fix through the loop on the same branch, answer the comment, or run it again later; its last line says when it is the user's |
 | Pull request will not merge | It conflicts with the base branch | `gh` says so at exit 5; merge the base into the branch yourself; the loop publishes, reviews and checks it again |
 | Next task's branch repeats merged commits | The loop started on the earlier task's branch | After a merge at `push`, go back to the base branch and update it; at `pr` and `merge` `land.sh` refuses to stack |
 | Maintainer metrics improve, real quality doesn't | Reward hacking in the loop | Re-separate roles, lower `ASK_AFTER_RUNS`, strengthen Layer 0 |

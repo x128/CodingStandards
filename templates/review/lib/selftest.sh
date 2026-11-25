@@ -32,6 +32,12 @@ echo "Filesystem 1024-blocks Used Available Capacity Mounted on"
 echo "fake 2147483648 1073741824 1073741824 50%% /"
 ' \
   >"$WORK/df-bin/df" && chmod +x "$WORK/df-bin/df" || { echo "setup failed: df"; exit 1; }
+# On a low disk review.sh measures with du what the loop left under .review/runs. Here du
+# reports DU_KB kilobytes, and none unless a case sets it.
+printf '#!/bin/sh
+printf "%%s\\t%%s\\n" "${DU_KB:-0}" .review/runs
+' \
+  >"$WORK/df-bin/du" && chmod +x "$WORK/df-bin/du" || { echo "setup failed: du"; exit 1; }
 export PATH="$WORK/df-bin:$PATH"
 
 fail_setup() { echo "setup failed: $1"; exit 1; }
@@ -261,6 +267,22 @@ done
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nMIN_FREE_GB=99999\n' >.review/land.conf
 review "a disk with too little free space runs nothing" 1 "DISK LOW" \
   '{"findings":[]}' '{"verdicts":[]}'
+# Whose turn it is on a low disk is read from what the loop left: df has 1024 GB free and
+# 99999 are asked for, so 98975 GB are missing.
+DU_KB=524288 \
+  review "a low disk the loop's files cannot free is the user's" 1 \
+  "   For the user, only they can: free 98975 GB on this disk: what the loop left under "\
+".review/runs takes only 512 MB" '{"findings":[]}' '{"verdicts":[]}'
+DU_KB=103782809600 \
+  review "a low disk the loop's own files can free is the loop's" 1 \
+  "   The loop goes on: delete what the loop left behind (maintain, step 12)" \
+  '{"findings":[]}' '{"verdicts":[]}'
+# The script measures all that is under the runs, and the loop may delete only a part of
+# it: so the loop's line ends with whose the stop is when nothing of that part is left.
+DU_KB=103782809600 \
+  review "the loop's line on a low disk says whose the stop is with nothing left to delete" 1 \
+  "of tasks that landed — and run again. With nothing of that left to delete: For the user, "\
+"only they can: free 98975 GB on this disk" '{"findings":[]}' '{"verdicts":[]}'
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 mkdir -p "$WORK/bin"
 cat >"$WORK/bin/claude" <<'EOF'
@@ -3074,6 +3096,8 @@ moved="$(GIT_AUTHOR_NAME=x GIT_AUTHOR_EMAIL=x@example.com \
 git -C "$GH_REMOTE" update-ref refs/heads/task/T-001 "$moved"
 land_change "a remote branch that moved refuses before the commit" 3 \
   "task/T-001 on origin has moved past this one" push
+says "bringing the two branches together is the user's" \
+  "   For the user, only they can: bring the two together" "$WORK/land.log"
 holds "that refusal commits nothing" [ "$(git rev-parse HEAD)" = "$landed" ]
 publish "a rejected push is an error saying the branch moved" 1 "the remote branch task/T-001 moved"
 holds "a rejected push forces nothing" remote_is task/T-001 "$moved"
@@ -3186,6 +3210,8 @@ git commit -q --allow-empty -m "hand-made, never reviewed"
 start="$(git rev-parse HEAD)"
 land_change "a commit no landing made under the task refuses" 3 "commits no landing made" merge
 holds "that refusal names it" printed "hand-made, never reviewed"
+says "pushing or moving such a commit is the user's" \
+  "   For the user, only they can: push or move them" "$WORK/land.log"
 holds "that refusal comes before the gates" not landing_ran
 holds "that refusal stays on main" on_branch main
 land_change "that goes for push too" 3 "commits no landing made" push
@@ -3199,6 +3225,8 @@ git commit -q --allow-empty -m "hand-made on the branch"
 land_change "a hand commit under a second landing refuses" 3 "hand-made on the branch" push
 git commit -q --allow-empty -m "T-001: another" -m "Task-Id: T-001"
 publish "publish.sh refuses it under a HEAD of the task too" 3 "commits no landing made"
+says "and says there too that pushing or moving it is the user's" \
+  "   For the user, only they can: push or move them" "$WORK/publish.log"
 holds "that refusal pushes nothing" not remote_log_has task/T-001 "hand-made on the branch"
 
 published_project origin
@@ -3371,11 +3399,15 @@ land_change "a pull request a person will close" 0 "pull request: https://exampl
 holds "at merge the landing does not merge either" not gh_called "pr merge"
 on_pull_request 1 '.state = "CLOSED"'
 publish "a closed pull request is a no, and stays one" 5 "was closed without a merge"
+says "reopening it is the user's" \
+  "   For the user, only they can: reopen it, or say that the task ends here" "$WORK/publish.log"
 publish "--merge of a closed pull request waits too" 5 "was closed without a merge" --merge
 holds "a closed pull request opens no other" gh_count_is "pr create" 1
 holds "a closed pull request merges nothing" not gh_called "pr merge"
-pr_review "the review of a closed pull request is for the person" 1 \
-  "was closed without a merge — for the person"
+pr_review "the review of a closed pull request is the user's: only they reopen it" 1 \
+  "   For the user, only they can: reopen it"
+says "the review says that it was closed" \
+  "REVIEW REFUSED — https://example.test/pull/1 was closed without a merge" "$WORK/run.log"
 pr_work
 pr_land "a landing on a closed pull request waits too" 4 "was closed without a merge"
 holds "that landing opens no other" gh_count_is "pr create" 1
@@ -3451,7 +3483,11 @@ holds "its gates measure the change from the merge base (REVIEW_BASE)" \
   [ "$(tail -1 "$WORK/review-base")" = "$(git rev-parse HEAD^)" ]
 holds "its gates are kept in a landing folder, which is no review run" \
   test -f "$(ls -d .review/runs/land-* | tail -1)/gates.json"
-publish "--merge refuses at pr: the person merges" 3 "the person merges, with squash" --merge
+publish "--merge refuses at pr: the merge is the user's" 3 \
+  "   For the user, only they can: the merge, with squash" --merge
+says "and says that --check tells whether the pull request is ready" \
+  "publish.sh merges nothing there, and --check says whether the pull request is ready" \
+  "$WORK/publish.log"
 publish "--check with no review run refuses" 3 "M1: no review run of T-001" --check
 pr_review "a review on the pull request" 0 "CLEAN — gates green"
 holds "REVIEW_BASE reaches gates.sh as the merge base" \
@@ -3495,14 +3531,64 @@ publish "a commit of the loop's files keeps the review valid" 0 "ready to merge"
 a_person_comments "$(printf 'Why 42?\nThe tracker says 41.')"
 publish "what a person wrote, unanswered, waits" 5 \
   "are not settled, the first $(person_id) by  on the pull request, not answered" --check
+says "answering it is the loop's" \
+  "   The loop goes on: weigh it like a finding and answer it: pr-post.sh comments shows it "\
+"whole, pr-post.sh reply $(person_id) <answer> <text-file> answers" "$WORK/publish.log"
 pr_post "pr-post.sh comments shows it whole" 0 "The tracker says 41." comments
+says "and says that it is the loop's" " — not answered: the loop's"
+printf 'Whether the tracker or the requirements hold is not found out yet.\n' >"$WORK/reply.md"
+pr_post "the loop answers that it is not settled" 0 "reply to $(person_id) (unsettled) posted" \
+  reply "$(person_id)" unsettled "$WORK/reply.md"
+publish "a remark answered unsettled is the loop's to settle" 5 \
+  "   The loop goes on: find out what is still assumed, then answer it again" --check
+says "its line says how it was answered" \
+  "the first $(person_id) by  on the pull request, answered unsettled" "$WORK/publish.log"
+never_says "and sends nothing to the user" "For the user" "$WORK/publish.log"
+pr_post "pr-post.sh comments says so too" 0 "— answered unsettled: the loop's to settle" comments
 printf 'The requirements ask for 42: REQUIREMENTS.md, "Answer".\n' >"$WORK/reply.md"
 pr_post "the loop answers it" 0 "reply to $(person_id) (not-a-problem) posted" \
   reply "$(person_id)" not-a-problem "$WORK/reply.md"
 holds "the reply names what it answers, and how" \
   posted "<!-- loop:reply $(person_id) not-a-problem -->"
 publish "a person's comment the loop disagreed with waits for the user" 5 \
-  "answered not-a-problem: the user decides" --check
+  "   For the user, what a person wrote: decide between what its author wrote and the loop's "\
+"answer not-a-problem; their decision is posted with pr-post.sh reply $(person_id) user "\
+"<text-file>" --check
+says "its line says how the loop answered" \
+  "the first $(person_id) by  on the pull request, answered not-a-problem" "$WORK/publish.log"
+pr_post "pr-post.sh comments says whose it is" 0 \
+  "— answered not-a-problem: For the user, what a person wrote" comments
+# With several comments open the stop is the loop's while one of them is: one not answered,
+# or one answered unsettled. Its line names that comment, also when another stands before
+# it; the user's line comes only when every open comment is theirs.
+a_person_comments "And the button is red where the plan says blue."
+second="$(jq -r '.[-1].id' "$GH_STATE/comments.json")"
+publish "a comment not answered behind one the loop disagreed with keeps the stop the loop's" 5 \
+  "2 comment(s) of people on https://example.test/pull/1 are not settled, the first that is the loop's $second by  on the pull request, not answered" \
+  --check
+says "its line names the comment the loop has still to answer" \
+  "   The loop goes on: weigh it like a finding and answer it: pr-post.sh comments shows it "\
+"whole, pr-post.sh reply $second <answer> <text-file> answers" "$WORK/publish.log"
+never_says "the user is not asked while the loop has a comment to answer" "For the user" \
+  "$WORK/publish.log"
+printf 'Which colour the plan means is not found out yet.\n' >"$WORK/reply.md"
+pr_post "the loop answers the second that it is not settled" 0 \
+  "reply to $second (unsettled) posted" reply "$second" unsettled "$WORK/reply.md"
+publish "a comment answered unsettled behind one that is the user's is the loop's too" 5 \
+  "the first that is the loop's $second by  on the pull request, answered unsettled" --check
+says "the loop finds out what is still assumed" \
+  "   The loop goes on: find out what is still assumed, then answer it again" "$WORK/publish.log"
+never_says "and the user is not asked then either" "For the user" "$WORK/publish.log"
+printf 'The button is blue now.\n' >"$WORK/reply.md"
+pr_post "the loop fixes the second and says so" 0 "reply to $second (fixed) posted" \
+  reply "$second" fixed "$WORK/reply.md"
+publish "once every open comment is the user's, the stop is theirs" 5 \
+  "1 comment(s) of people on https://example.test/pull/1 are not settled, the first $(person_id) by  on the pull request, answered not-a-problem" \
+  --check
+says "and its line is the user's" \
+  "   For the user, what a person wrote: decide between what its author wrote and the loop's "\
+"answer not-a-problem; their decision is posted with pr-post.sh reply $(person_id) user "\
+"<text-file>" "$WORK/publish.log"
 printf 'The user: 42 it is, the tracker is wrong.\n' >"$WORK/user.md"
 pr_post "the user's decision is posted" 0 "reply to $(person_id) (user) posted" \
   reply "$(person_id)" user "$WORK/user.md"
@@ -3520,6 +3606,9 @@ a_person_reviews() {
 a_person_reviews CHANGES_REQUESTED
 publish "changes requested in a review wait, with no rule of the branch too" 5 \
   "changes are requested" --check
+says "asking the one who requested them is the user's" \
+  "   For the user, what a person wrote: ask them to approve or dismiss it, once every remark "\
+"is answered" "$WORK/publish.log"
 a_person_reviews APPROVED
 publish "the same person's approval lifts them" 0 "ready to merge" --check
 jq -n '{context: "loop/qa", state: "failure", description: "someone said so"}' >"$WORK/status.json"
@@ -4175,8 +4264,11 @@ pr_review "the review refuses work not committed" 1 "commit it with land.sh firs
 touch "$GH_STATE/create-fails"
 pr_land "a landing whose pull request could not be opened" 4 "could not open a pull request"
 rm "$GH_STATE/create-fails"
-pr_review "the review refuses a branch with no pull request: for the person" 1 \
-  "has no open pull request into main — for the person"
+pr_review "the review refuses a branch with no pull request: publish.sh opens it" 1 \
+  "   The loop goes on: run publish.sh alone: it opens the pull request, or says what stops it"
+says "the review says that the branch has no pull request" \
+  "REVIEW REFUSED — task/T-001 has no open pull request into main" "$WORK/run.log"
+never_says "and sends no one to the user for it" "For the user" "$WORK/run.log"
 publish "publish.sh alone opens it" 0 "pull request: https://example.test/pull/1"
 publish "a review of --dry-run stands for no review on the pull request" 3 \
   "M1: no review run of T-001 on https://example.test/pull/1" --check
@@ -4189,6 +4281,17 @@ pr_review "the review refuses a pull request behind HEAD" 1 \
   "is behind HEAD — run publish.sh alone, then review again"
 publish "publish.sh alone pushes it" 0 "pull request: https://example.test/pull/1"
 pr_review "then the review runs" 0 "CLEAN — gates green"
+# The remote branch moves to a commit this copy does not have.
+elsewhere="$(GIT_AUTHOR_NAME=x GIT_AUTHOR_EMAIL=x@example.com \
+  GIT_COMMITTER_NAME=x GIT_COMMITTER_EMAIL=x@example.com \
+  git -C "$GH_REMOTE" commit-tree "task/T-001^{tree}" -p task/T-001 -m "someone else")"
+git -C "$GH_REMOTE" update-ref refs/heads/task/T-001 "$elsewhere"
+pr_review "a head pushed from elsewhere is the user's" 1 \
+  "   For the user, only they can: bring the two together: that commit was pushed to "\
+"task/T-001 from elsewhere"
+says "the review says which head the pull request has" \
+  "the head of https://example.test/pull/1 is $elsewhere, which HEAD does not contain" \
+  "$WORK/run.log"
 
 published_project origin
 set_level pr ASK_AFTER_RUNS=2
@@ -4818,6 +4921,14 @@ rm "$GH_STATE/view-fails"
 touch "$GH_STATE/refuses-merge"
 publish "a merge gh refuses waits with its reason" 5 "the base branch policy prohibits the merge" \
   --merge
+says "trying the merge again is the loop's" \
+  "   The loop goes on: gh's reason is above; run publish.sh --merge again once it no longer "\
+"holds" "$WORK/publish.log"
+on_pull_request 1 '.mergeable = "CONFLICTING"'
+publish "a merge gh refuses for a conflict is the user's" 5 \
+  "   For the user, only they can: merge main into task/T-001: the pull request conflicts "\
+"with it" --merge
+on_pull_request 1 '.mergeable = "MERGEABLE"'
 rm "$GH_STATE/refuses-merge"
 publish "publish.sh finishes the merge once nothing stands in the way" 0 "merged T-001" --merge
 holds "the waiting opened one pull request" gh_count_is "pr create" 1
@@ -4825,8 +4936,30 @@ holds "the waiting opened one pull request" gh_count_is "pr create" 1
 published_project origin
 reviewed_pull_request merge
 touch "$GH_STATE/pushes-at-view"
-publish "a pull request that is ahead of HEAD waits" 5 "someone else pushed to task/T-001" --merge
+publish "a pull request that is ahead of HEAD waits" 5 \
+  "   For the user, only they can: bring the two together: that commit was pushed to "\
+"task/T-001 from elsewhere" --merge
+says "its line says which head the pull request has" \
+  "PUBLISHING WAITS — the head of https://example.test/pull/1 is " "$WORK/publish.log"
 holds "that commit is not merged" not gh_called "pr merge"
+
+# The other way round: this copy is ahead of the pull request, by a landing of the loop's
+# files whose push failed. The work is the work the review saw.
+published_project origin
+reviewed_pull_request merge
+printf '#!/bin/sh\nexit 1\n' >"$GH_REMOTE/hooks/pre-receive"
+chmod +x "$GH_REMOTE/hooks/pre-receive"
+printf '# Tracker\n\n- T-001 done\n' >TASK_TRACKER.md
+pr_land "a landing of the loop's files whose push fails" 4 "the push to origin failed"
+rm "$GH_REMOTE/hooks/pre-receive"
+publish "a pull request that is behind HEAD is the loop's to push" 5 \
+  "   The loop goes on: run publish.sh alone, which pushes it, then publish.sh --merge again" \
+  --merge
+never_says "and nothing of it goes to the user" "For the user" "$WORK/publish.log"
+holds "nothing is merged meanwhile" not gh_called "pr merge"
+publish "publish.sh alone pushes what the landing could not" 0 \
+  "pull request: https://example.test/pull/1"
+publish "and then it merges" 0 "merged T-001" --merge
 
 published_project origin
 reviewed_pull_request merge
@@ -4898,6 +5031,9 @@ reviewed_pull_request merge
 git branch -f main \
   "$(git commit-tree "$(git rev-parse 'main^{tree}')" -p main -m "local work on main")"
 publish "a base branch that cannot fast-forward is an error" 1 "could not fast-forward" --merge
+says "bringing the base branch in line is the user's" \
+  "   For the user, only they can: bring main here in line with origin: publish.sh refuses on "\
+"main" "$WORK/publish.log"
 holds "it does not say merged" not printed "merged T-001"
 publish "run again, it refuses on the base branch, as its message says" 3 "protected branch" \
   --merge
@@ -5173,6 +5309,61 @@ else
   echo "FAIL  no jq program of the scripts names a variable or a lone key by a word jq 1.6 "\
 "keeps: these do not compile there"
   printf '%s\n' "$bound" | sed 's/^/      /'
+  FAILURES=$((FAILURES + 1))
+fi
+
+# The scripts send the user only what is theirs. A script that stops for the user says so
+# through `turn user:<kind>` (common.sh), so a line of a script that names the user or a
+# person and holds no kind of USER_DECIDES would send them what no kind covers.
+# names_a_person <file>... prints such lines, each with its file and the number of its
+# first line: a command that goes on after a `\` is read as one line, and a comment is
+# passed over. Six texts are named here and nowhere else. Three hand the commit over at
+# LANDING=off and on a protected branch, where the hand-over is the setting itself. Three
+# are the scripts' own words about --user-decided, the flag of a stop that is the user's:
+# the two refusals of the flag where it is misused, each in review.sh and in land.sh, and
+# the line of the pull request for a stop that was passed with it.
+user_kinds="$(. "$LIB_DIR/common.sh" && printf '%s' "$USER_DECIDES" | tr ' ' '|')"
+[ -n "$user_kinds" ] || fail_setup "USER_DECIDES"
+names_a_person() {
+  local script
+  for script in "$@"; do
+    awk -v script="$script" '
+      joined == "" { start = NR }
+      { joined = joined $0 }
+      /\\$/ { sub(/\\$/, "", joined); next }
+      { if (joined !~ /^[ \t]*#/) print script ":" start ": " joined; joined = "" }' "$script"
+  done | grep -E 'the user|the person|a person|only they|somebody|someone else' \
+    | grep -vE "user:($user_kinds)" \
+    | grep -vF -e 'For the user to commit:' \
+        -e 'Commands (for the user only when they ask for them; never run them):' \
+        -e 'the loop would not commit here; the user decides where the commit goes' \
+        -e 'and nothing keeps words where the user decided' \
+        -e "--user-decided is for a stop that is the user's" \
+        -e "was passed on the user'\"'\"'s decision."
+}
+# What the case must catch, in scripts made up here.
+mkdir -p "$WORK/names" || fail_setup "names"
+printf 'echo "If that is not enough, tell the user now." >&2\n' >"$WORK/names/plain.sh"
+printf 'refuse "it is never forced, "\\\n"so a person brings the two together"\n' \
+  >"$WORK/names/continued.sh"
+printf '# the user decides this\n  # and so does a person\n' >"$WORK/names/comment.sh"
+printf 'refuse "it was closed" user:only-theirs "the user reopens it"\n' >"$WORK/names/kind.sh"
+printf 'refuse "it was closed" user:anything "the user reopens it"\n' >"$WORK/names/no-kind.sh"
+names_a_person "$WORK"/names/*.sh >"$WORK/names.log"
+says "a line of a script that names the user and says no kind of what is theirs is caught" \
+  "/plain.sh:1:" "$WORK/names.log"
+says "and one that names a person where its command goes on" "/continued.sh:1:" "$WORK/names.log"
+says "and one whose kind is not of the list" "/no-kind.sh:1:" "$WORK/names.log"
+never_says "a comment that names them is none" "/comment.sh" "$WORK/names.log"
+never_says "nor is a line that says the kind" "/kind.sh" "$WORK/names.log"
+named="$(cd "$LIB_DIR" && \
+  names_a_person review.sh land.sh publish.sh pr-post.sh e2e-gate.sh common.sh)"
+if [ -z "$named" ]; then
+  echo "ok    the scripts send the user only what is theirs"
+else
+  echo "FAIL  the scripts send the user only what is theirs: these lines name the user or a "\
+"person and say no kind of what is theirs (turn, common.sh)"
+  printf '%s\n' "$named" | sed 's/^/      /'
   FAILURES=$((FAILURES + 1))
 fi
 
