@@ -2384,7 +2384,8 @@ e2e_land "a harness committed as a link lands" 0 "For the user to commit" .revie
 # and answers as the files next to them say. It answers with the fields --json asks
 # for, and acts only on the repository --repo names, as real gh does with the flag,
 # or gh api its path. A gh api whose path matches the pattern in api-fails does not
-# reach GitHub: it prints gh's line for that and exits 1.
+# reach GitHub: it prints gh's line for that and exits 1. So does one that only reads and
+# whose path matches the pattern in api-read-fails, where a post would still arrive.
 # ---------------------------------------------------------------------------
 
 # A PATH with no gh on it, whatever this machine has installed. A folder that is on
@@ -2480,6 +2481,11 @@ esac
 if [ "$1" = api ]; then
   if [ -e "$GH_STATE/api-fails" ] &&
      printf '%s' "$2" | grep -Eq -- "$(cat "$GH_STATE/api-fails")"; then
+    echo "error connecting to api.github.com" >&2
+    exit 1
+  fi
+  if [ -e "$GH_STATE/api-read-fails" ] && ! flag --method "$@" >/dev/null &&
+     printf '%s' "$2" | grep -Eq -- "$(cat "$GH_STATE/api-read-fails")"; then
     echo "error connecting to api.github.com" >&2
     exit 1
   fi
@@ -4908,6 +4914,65 @@ publish "a reply marker inside a person's comment settles nothing" 5 \
 pr_post "the first comment is still listed" 0 "Do not merge before I look." comments
 holds "and the one that quotes the reply marker too" grep -qF "As the loop would write it" \
   "$WORK/post.log"
+
+# The answers of a run are read by the exit code of each read, never by a word in them:
+# an answer may say what failed. A file that cannot be read is named.
+published_project origin
+set_level merge
+pr_work
+step "the landing of the work" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review "a finding accepted and one escalated, to answer" 4 "escalated         : 1" \
+  "{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()'),
+    $(pr_finding F-002 src/answer.kt 1 'fun answer()')]}" \
+  "{\"verdicts\": [$(pr_verdict F-001 accept no-rule-fired),
+    $(pr_verdict F-002 escalate needs-judgment)]}"
+printf '[{"finding_id": "F-001", "answer": "fixed", '\
+'"text": "The test that FAILED on Android now passes.", "commit": ""}]' >"$run/answers.json"
+pr_post "an answer that says FAILED is posted" 0 "answers of $(basename "$run") posted" \
+  answers "$run"
+holds "with its words" posted "**fixed** in"
+holds "the word among them" posted "The test that FAILED on Android now passes."
+printf '[{"finding_id": "F-002", "resolution": "accepted-as-is", "by": "agent", '\
+'"note": "The build that FAILED was of another branch."}]' >"$run/escalations-answered.json"
+pr_post "so is the answer to an escalation whose note says FAILED" 0 \
+  "answers of $(basename "$run") posted" answers "$run"
+holds "with its note" posted "The build that FAILED was of another branch."
+cp "$run/answers.json" "$WORK/answers.json"
+printf '[{' >"$run/answers.json"
+pr_post "an answers file that is not JSON is not readable, and is named" 1 \
+  "the answers of $(basename "$run") are not readable: " answers "$run"
+holds "by its path" grep -q "are not readable: .*/$(basename "$run")/answers\\.json\$" \
+  "$WORK/post.log"
+cp "$WORK/answers.json" "$run/answers.json"
+printf '[{' >"$run/escalations-answered.json"
+pr_post "nor is a file of answered escalations that is not JSON, and it is named" 1 \
+  "the answers of $(basename "$run") are not readable: " answers "$run"
+holds "by its path too" \
+  grep -q "are not readable: .*/$(basename "$run")/escalations-answered\\.json\$" \
+  "$WORK/post.log"
+holds "neither posted anything again" \
+  posted_count_is "<!-- loop:answer $(basename "$run") F-001 -->" 1
+
+# Whether a reply is there already is read too, not taken from a read that failed: a
+# reply that cannot be looked for is not posted a second time.
+open_pull_request
+a_person_comments "Is 42 the answer the requirements ask for?"
+asked="$(jq -r '[.[] | select(.body | startswith("Is 42 the answer"))][0].id' \
+  "$GH_STATE/comments.json")"
+printf 'It is: REQUIREMENTS.md, "Answer".\n' >"$WORK/reply.md"
+pr_post "a reply to a comment on the pull request" 0 \
+  "reply to $asked (not-a-problem) posted" reply "$asked" not-a-problem "$WORK/reply.md"
+printf 'issues/.*/comments' >"$GH_STATE/api-read-fails"
+pr_post "a reply that cannot be looked for is not posted twice" 1 \
+  "gh could not read the comments of https://example.test/pull/1" \
+  reply "$asked" not-a-problem "$WORK/reply.md"
+holds "the reply is there once" \
+  posted_count_is "<!-- loop:reply $asked not-a-problem -->" 1
+rm "$GH_STATE/api-read-fails"
+pr_post "looked for again when gh answers, it is found" 0 "no second one" \
+  reply "$asked" not-a-problem "$WORK/reply.md"
+holds "and is still there once" \
+  posted_count_is "<!-- loop:reply $asked not-a-problem -->" 1
 
 # ---- merge -----------------------------------------------------------------
 
