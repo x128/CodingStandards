@@ -2068,11 +2068,62 @@ after_merge_unsettled() {
   done
 }
 
+# The lists that no run of publish.sh wrote. At pr the user merges, and publish.sh learns
+# of it only when it is run on the task's branch afterwards; on the base branch it refuses.
+# So a merge is also read from what this copy holds: the /qa records of a task whose
+# reports are on one pull request (pr-comment.json beside each) put items off, the newest
+# of them was made before a landing of the task committed with its review — the squash of
+# that pull request, in the history of HEAD (task_landed_at) — and no list names the pull
+# request. Its list is written then, as owe_after_merge writes it, with the base branch
+# land.conf names, or none: no remote is asked here. While a list is there that cannot be
+# read, or names no pull request, none is written: it may be the one that is missing, and
+# it is said and holds a later merge until it is repaired. owe_merged_unlisted <land.conf>
+# prints nothing; what it could not read or write it leaves to the next run.
+owe_merged_unlisted() {
+  local config="$1" record records listed="" list merged task url landed_at
+  records="$(for record in .review/runs/*/qa.json; do
+      [ -f "$record" ] || continue
+      jq -c --arg run "${record%/qa.json}" \
+        --arg url "$(jq -r '.pr_url // ""' "${record%/qa.json}/pr-comment.json" 2>/dev/null)" '
+        select(type == "object" and (.task | type) == "string" and $url != "")
+        | {task, time: ((.time | numbers) // 0), run: $run, url: $url,
+           items: [.items | arrays | .[] | objects]}' "$record" 2>/dev/null
+    done | jq -sc 'sort_by(.time)')" || return 0
+  for list in .review/runs/after-merge-*/owed.json; do
+    [ -f "$list" ] || continue
+    url="$(jq -r '.pr_url | strings' "$list" 2>/dev/null)"
+    [ -n "$url" ] || return 0
+    listed="$listed$url"$'\n'
+  done
+  listed="$(printf '%s' "$listed" | jq -R . | jq -sc .)" || return 0
+  while IFS= read -r merged; do
+    [ -n "$merged" ] || continue
+    task="$(printf '%s' "$merged" | jq -r '.task')"
+    url="$(printf '%s' "$merged" | jq -r '.url')"
+    landed_at="$(task_landed_at "$task")"
+    [ "${landed_at:-0}" -gt 0 ] || continue
+    json_holds --argjson after "$landed_at" "$JQ_LANDED_SINCE"'landed_since($after) | not' \
+      <<<"$merged" || continue
+    owe_after_merge "$task" "$url" "${url##*/}" "$(read_conf "$config" BASE_BRANCH "")" \
+      "$(printf '%s' "$merged" | jq -c '.items')" 2>/dev/null
+  done < <(printf '%s' "$records" | jq -c --argjson listed "${listed:-[]}" '
+    group_by([.task, .url])[]
+    | select(.[0].url as $url | all($listed[]; . != $url))
+    | {task: .[0].task, url: .[0].url, time: last.time,
+       items: (reduce (.[] | .run as $from | .items[]
+                       | {id, verdict, reason, check, from: $from}) as $item
+                 ([]; map(select(.id != $item.id)) + [$item])
+               | map(select(.verdict == "after_merge") | del(.verdict)))}
+    | select(.items | length > 0)' 2>/dev/null)
+}
+
 # The same, as review.sh and land.sh say it in every run: one line on stderr for each item,
 # or for a list that cannot be read, and nothing when nothing is owed. It stops no run: only
-# a later merge waits (publish.sh, M10).
+# a later merge waits (publish.sh, M10). A merge that no run of publish.sh saw gets its
+# list first (owe_merged_unlisted): say_after_merge_unsettled <land.conf>.
 say_after_merge_unsettled() {
   local unsettled
+  owe_merged_unlisted "$1"
   unsettled="$(after_merge_unsettled)"
   [ -n "$unsettled" ] || return 0
   printf '%s\n' "$unsettled" | jq -r '

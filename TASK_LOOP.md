@@ -746,12 +746,14 @@ a pull request that was not opened, without another commit. It merges only with 
    deletes the local `task/<id>` with `git branch -d`. When it has merged a task whose `/qa` put
    checks off until after the merge, it writes them down beside the runs
    (`after-merge-<task>/owed.json`) and lists them; the maintainer has `/qa` make them at once, and
-   one that fails then is a defect like any other: a task in the tracker. A later task is reviewed
-   and landed meanwhile; its merge waits until each check has its result (M10). When the base branch
-   is checked out in another worktree, this one stays where it is and says so. When the checkout
-   cannot move, it says so and exits `1`: the merge is in, and running `publish.sh --merge` again
-   only retries the move. When the base branch here cannot fast-forward, the same; that one is for
-   you to settle, as the script refuses on the base branch.
+   one that fails then is a defect like any other: a task in the tracker. A merge that no run of
+   `publish.sh` saw — at `pr` you merge, and on the base branch it refuses — is found by the next
+   review or landing, from the task's squash in the history and its `/qa` records, and the list is
+   written then. A later task is reviewed and landed meanwhile; its merge waits until each check has
+   its result (M10). When the base branch is checked out in another worktree, this one stays where
+   it is and says so. When the checkout cannot move, it says so and exits `1`: the merge is in, and
+   running `publish.sh --merge` again only retries the move. When the base branch here cannot
+   fast-forward, the same; that one is for you to settle, as the script refuses on the base branch.
 
 Exit codes: `0` done, `1` error, `3` refused, `5` waiting.
 

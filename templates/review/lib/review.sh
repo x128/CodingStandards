@@ -508,7 +508,7 @@ echo "── models: $MODELS ($AGENTS_CONF)"
 
 # What the merges of earlier tasks still owe — checks that /qa put off until after them —
 # is said in every run and stops none (common.sh).
-say_after_merge_unsettled
+say_after_merge_unsettled "$REVIEW_DIR/land.conf"
 
 # At LANDING=pr and merge the work is committed and its pull request open before it is
 # reviewed, and the run reviews the pull request: the task's work committed, the pull

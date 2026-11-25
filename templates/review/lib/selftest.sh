@@ -4161,6 +4161,71 @@ pr_post "nor does pr-post.sh after-merge read an empty record as a report that i
   "report of the checks after the merge of T-001 posted: https://example.test/pull/1" \
   after-merge "$owed-pr1"
 
+# A merge that no run of publish.sh on the task's branch saw. At pr the user merges and
+# goes back to the base branch, where publish.sh refuses: the list of what the task owes
+# is then written by the next review or landing that finds the squash of the task in the
+# history, its /qa records with items put off, their reports on a pull request, and no
+# list of that pull request.
+published_project origin
+reviewed_pull_request pr
+qa_checked '[]' "" 0 "$put_off"
+merged_by_a_person https://example.test/pull/1
+git fetch -q origin
+git switch -q main && git pull -q --ff-only origin main
+publish "on the base branch publish.sh refuses, also for a task that is merged" 3 \
+  "current branch is main, a protected branch"
+holds "so no list is written there" not test -e "$owed"
+later_task T-002 pr
+says "the landing of the next task finds the merged task and says what it owes" \
+  "OWED — T-001: the build of main, put off until after its merge: no result ($owed)" \
+  "$WORK/land.log"
+holds "it wrote the list of the pull request that was merged" \
+  jq_true --arg from ".review/runs/qa-$((qa_runs - 1))" \
+  '.task == "T-001" and .pr_url == "https://example.test/pull/1" and .pr_number == 1
+   and (.time | type) == "number"
+   and .items == [{id: "the build of main",
+                   reason: "the workflow runs only on a push to the base branch",
+                   check: "the run of the build workflow on main, at the merge commit",
+                   from: $from}]' "$owed/owed.json"
+says "the review of the next task says it too" \
+  "OWED — T-001: the build of main, put off until after its merge: no result ($owed)" \
+  "$WORK/run.log"
+publish "--check of the next task waits for a merge no run of publish.sh saw" 3 \
+  "M10: T-001 was merged with checks put off until after its merge, and these have no result that says what was seen: the build of main" \
+  --check
+written="$(jq '.time' "$owed/owed.json")"
+result_is '{"id": "the build of main", "verdict": "pass",
+  "evidence": "run 41 of the build on main: success"}'
+printf '# After the merge of T-001\n\nRun 41 of the build on main: success.\n' >"$owed/report.md"
+publish "with its result and its report the next task is ready" 0 \
+  "ready to merge: https://example.test/pull/2" --check
+holds "the list found that way is written once" \
+  jq_true --argjson written "$written" '.time == $written' "$owed/owed.json"
+holds "and its report is on the pull request that was merged" \
+  jq_true 'any(.[]; .pr == 1 and (.body | startswith("<!-- loop:after-merge T-001 -->")))' \
+  "$GH_STATE/comments.json"
+
+# A task that is not merged owes nothing yet, whatever its /qa put off; nor does a task
+# whose /qa put nothing off.
+published_project origin
+reviewed_pull_request pr
+qa_checked '[]' "" 0 "$put_off"
+pr_review "a review of a task that is not merged" 0 "CLEAN — gates green"
+never_says "says nothing owed by the task itself" "OWED" "$WORK/run.log"
+holds "and writes no list before the merge" not test -e "$owed"
+
+# A pull request that was merged at an earlier head than HEAD: what is on the branch since
+# is new work and gets a pull request of its own, and the merged one owes its checks.
+published_project origin
+reviewed_pull_request pr
+qa_checked '[]' "" 0 "$put_off"
+merged_by_a_person https://example.test/pull/1
+pr_work
+pr_land "new work on a branch whose pull request was merged gets a pull request of its own" 0 \
+  "pull request: https://example.test/pull/2"
+holds "and the pull request that was merged owes its checks" \
+  jq_true '.pr_number == 1 and (.items | map(.id)) == ["the build of main"]' "$owed/owed.json"
+
 # What /qa could not check is not put off: it holds the merge as before. The refusal names
 # the items and says whose turn it is: the loop's first — the work, or the tool or device,
 # then /qa of the whole pull request again — and the user's once a second /qa of the whole

@@ -141,7 +141,7 @@ TASK_ID="$(jq -r '.id' "$TASK_FILE")"
 
 # What the merges of earlier tasks still owe — checks that /qa put off until after them —
 # is said at every landing and stops none (common.sh).
-say_after_merge_unsettled
+say_after_merge_unsettled "$CONFIG"
 
 # ---------------------------------------------------------------------------
 # 1 to 5. The run is a completed review run (1) of THIS tree (2); its end-to-end
