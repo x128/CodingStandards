@@ -266,16 +266,22 @@ if [ "$MODE" = publish ]; then
   # 2. Push. Never forced: a remote branch that moved is someone's work. Both sides
   #    of the refspec are written out: a bare branch name goes through
   #    remote.<name>.push, where a `+` would force it and a mapping would send it to
-  #    another branch.
+  #    another branch. Whether the branch moved is told by git's own line for it, which
+  #    --porcelain prints on stdout after its line `To <remote>`: `!`, the refspec and
+  #    `[rejected]`, between tabs. A hook may print any word. What git and a hook of the
+  #    remote say goes to stderr and is never read; a pre-push hook of this copy prints
+  #    on stdout before git's `To`, and no line before that one is read.
   # -------------------------------------------------------------------------
 
-  PUSH_OUTPUT="$(git push -u "$REMOTE" "refs/heads/$BRANCH:refs/heads/$BRANCH" 2>&1)"
+  PUSH_REFSPEC="refs/heads/$BRANCH:refs/heads/$BRANCH"
+  PUSH_OUTPUT="$(git push --porcelain -u "$REMOTE" "$PUSH_REFSPEC")"
   PUSH_EXIT=$?
-  printf '%s\n' "$PUSH_OUTPUT"
+  [ -z "$PUSH_OUTPUT" ] || printf '%s\n' "$PUSH_OUTPUT"
   if [ "$PUSH_EXIT" -ne 0 ]; then
-    case "$PUSH_OUTPUT" in
-      *"[rejected]"*) fail "the remote branch $BRANCH moved on $REMOTE — "\
-"the push was rejected, and it is never forced" ;;
+    case $'\n'"$PUSH_OUTPUT" in
+      *$'\n'"To "*$'\n'"!"$'\t'"$PUSH_REFSPEC"$'\t'"[rejected]"*)
+        fail "the remote branch $BRANCH moved on $REMOTE — "\
+"the push was rejected, and it is never forced" user:only-theirs "bring the two together" ;;
       *) fail "the push to $REMOTE failed; git says why above" ;;
     esac
   fi

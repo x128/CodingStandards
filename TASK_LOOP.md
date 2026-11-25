@@ -726,7 +726,7 @@ a pull request that was not opened, without another commit. It merges only with 
    nothing is pushed back.
 3. **Pushes** with `git push -u`, never forced, with both sides of the refspec written out, so
    `remote.<name>.push` cannot force or redirect it. A rejected push is an error that says the
-   remote branch moved.
+   remote branch moved, and that bringing the two together is yours.
 4. **At `pr` and `merge`, opens the pull request**, never as a draft, if the branch has none open:
    the title `<id>: <title>`, the description from `pr-post.sh body`. If one is open it opens none,
    so a rerun never opens a second one, and it prints the URL. Then `pr-post.sh statuses` gives the
