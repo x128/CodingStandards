@@ -188,8 +188,9 @@ what each thing `/qa` left needs next and whose it is, and at the pull request l
 report, in several comments when it is long. The merge waits while a `/qa` since the newest one of
 the whole pull request left anything unproven or not checked: an unproven item goes back to whoever
 does the work, an item not checked because a tool or device failed is restored by the loop
-(`/maintain`, step 8), and what is still open after that is the user's to accept or not; the status
-lists the counts. What was put off until after the merge does not hold it.
+(`/maintain`, step 8), and what a second `/qa` of the whole pull request still leaves open is the
+user's to accept or not; the status lists the counts. What was put off until after the merge does
+not hold it.
 
 **After the merge.** `publish.sh --merge` lists what `/qa` put off once it has merged, in
 `.review/runs/after-merge-<task>/owed.json`, and `/qa --after-merge <task>` makes each check then:

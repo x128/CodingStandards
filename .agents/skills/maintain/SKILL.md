@@ -227,11 +227,13 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    it put off until after the merge: an item that can be checked only once the pull request is
    merged — the build of the base branch, what happens when the pull request closes — is recorded by
    `/qa` as `after_merge`, with the check it will make, and is made right after the merge (step 11).
-   An item not checked because a tool or device failed is the loop's: restore it — boot or erase the
-   simulator — and run `/qa` of the whole pull request again. What is still open after that goes to
-   the user, who decides: another `/qa`, or their acceptance in `open-answered.json` beside its
-   `qa.json`, written as `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`.
-   A `/qa` after a fix does not clear what an earlier one left open.
+   An unproven item goes back to whoever does the work. An item not checked because a tool or device
+   failed is the loop's: restore it — boot or erase the simulator — and run `/qa` of the whole pull
+   request again. What a second `/qa` of the whole pull request still leaves open is the user's —
+   beyond what was agreed: merge without that check, or not — recorded as their acceptance in
+   `open-answered.json` beside its `qa.json`, written as
+   `{"by": "human", "answer": "accepted-as-is"}`. A `/qa` after a fix does not clear what an
+   earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. A criterion that can be
    checked only after the merge is claimed as `after the merge: <the id of the item /qa put off>`;

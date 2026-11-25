@@ -400,7 +400,8 @@ post_statuses() {
   post_status "$HEAD_COMMIT" loop/review "$state" "$text" || return 1
 
   # loop/qa: the /qa part of M5. Pending until /qa checked this work and, once, the whole
-  # pull request, and while what it left unproven or unchecked waits for the user; failing
+  # pull request, and while what it left unproven or not checked stands, with whose turn
+  # that is in the refusal the loop reads (qa_left_nothing_open); failing
   # while a failure it found is not proven as condition 7 asks (qa_failures_proven), or a
   # test is still skipped for the task. What the task puts off until after the merge holds
   # nothing, and the green text counts it.

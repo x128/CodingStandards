@@ -3635,14 +3635,23 @@ pr_post "pr-post.sh run finds the review GitHub took" 0 "unrecorded: recorded no
 holds "and posts no second one" gh_count_is "/reviews --method POST" 1
 qa_checked '[]' "" 1
 open_qa="qa-$qa_runs"
-publish "/qa that left an item unproven waits for the user" 3 \
-  "M5: /qa left 1 unproven and 0 not checked in $open_qa — restore what failed" --merge
+publish "/qa that left an item unproven goes back to the loop" 3 \
+  "M5: /qa left 1 unproven and 0 not checked in $open_qa" --merge
+says "the refusal says what the loop does next" \
+  "   The loop goes on: an unproven item goes back to the work; then run /qa of the whole pull request again" \
+  "$WORK/publish.log"
+never_says "a /qa that left nothing unchecked is sent to no device" "restore what failed" \
+  "$WORK/publish.log"
+holds "a record with counts alone names no item in the refusal" \
+  grep -qxF "PUBLISHING REFUSED — M5: /qa left 1 unproven and 0 not checked in $open_qa" \
+  "$WORK/publish.log"
 holds "so does its status" status_is loop/qa pending
 qa_checked '[]' "$(git rev-parse HEAD)"
 publish "a later /qa of less than the whole pull request does not clear it" 3 \
   "M5: /qa left 1 unproven and 0 not checked in $open_qa" --merge
 jq -n '{by: "human", answer: "accepted-as-is", words: "The emulator is broken: fine."}' \
   >".review/runs/$open_qa/open-answered.json"
+# This record is of the form made before, with words: it is read as it is.
 pr_post "the statuses again" 0 "statuses posted" statuses
 holds "the user's answer turns /qa green" status_is loop/qa success
 publish "and the task merges" 0 "merged T-001" --merge
@@ -3687,6 +3696,11 @@ tracker_lands() {
     "$LIB_DIR/land.sh" --task-file .review/task.json
 }
 result_is() { printf '[%s]' "$1" >"$owed/results.json"; }
+# The loop's line of M5 for what /qa did not check: it restores what failed, and it is told
+# where an item goes that can be checked only after the merge.
+loop_restores="restore what failed — boot or erase the simulator — and run /qa of the whole "\
+"pull request again; an item that can be checked only once the pull request is merged is "\
+"recorded by /qa as after_merge, with the check it will make, and does not hold the merge"
 
 published_project origin
 set_level merge
@@ -3908,13 +3922,20 @@ qa_recorded '[]' "" 0 \
 publish "a /qa with counts alone holds the merge by its count of items put off" 3 \
   "M5: /qa left 0 unproven and 3 not checked in qa-$qa_runs (2 of them put off until after the merge by a count alone: no item says its check)" \
   --check
+says "the loop's line says what to do about a count alone, and about what was not checked" \
+  "   The loop goes on: have /qa list each item it put off by a count alone, with its reason and the check that will be made then (items), or check it now; $loop_restores" \
+  "$WORK/publish.log"
 qa_recorded '[]' "" 0 \
   '{"counts": {"pass": 3, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": "one"}}'
 publish "a count of items put off that is no number holds the merge too" 3 \
-  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs (1 of them put off until after the merge by a count alone" \
+  "M5: /qa of the whole pull request ran again and still left 0 unproven and 1 not checked in qa-$qa_runs (1 of them put off until after the merge by a count alone" \
   --check
 pr_post "the statuses with such a count" 0 "statuses posted" statuses
-holds "the status of /qa waits on such a count" status_is loop/qa pending
+holds "the status of /qa waits on such a count" \
+  jq_true --arg sha "$(git rev-parse HEAD)" \
+  '[.[] | select(.sha == $sha and .context == "loop/qa")] | last
+   | .state == "pending" and (.description | test("still left 0 unproven and 1 not checked"))' \
+  "$GH_STATE/statuses.json"
 qa_checked '[]' "" 0 "$put_off"
 publish "a later /qa of the whole pull request that lists what it puts off clears it" 0 \
   "   after the merge /qa owes 1 check(s): the build of main" --check
@@ -4013,7 +4034,10 @@ says "repairing it is the loop's" \
   "$WORK/publish.log"
 holds "nothing is merged past a list that cannot be read" gh_count_is "pr merge" 2
 
-# What /qa could not check is not put off: it holds the merge as before.
+# What /qa could not check is not put off: it holds the merge as before. The refusal names
+# the items and says whose turn it is: the loop's first — the work, or the tool or device,
+# then /qa of the whole pull request again — and the user's once a second /qa of the whole
+# pull request still leaves something open.
 published_project origin
 reviewed_pull_request merge
 ios_not_checked='{"id": "TC-001 on iOS", "verdict": "not_checked",
@@ -4022,12 +4046,106 @@ qa_checked '[]' "" 0 "$(with_items "$passed_case, $ios_not_checked")"
 open_qa="qa-$qa_runs"
 publish "an item not checked because a device failed holds the merge, as before" 3 \
   "M5: /qa left 0 unproven and 1 not checked in $open_qa" --merge
+says "the refusal names what /qa could not check, with its reason" \
+  "M5: /qa left 0 unproven and 1 not checked in $open_qa: TC-001 on iOS (the simulator did not boot)" \
+  "$WORK/publish.log"
+says "what /qa could not check is the loop's to try again first" \
+  "   The loop goes on: $loop_restores" "$WORK/publish.log"
+never_says "a /qa that left nothing unproven sends nothing back to the work" \
+  "an unproven item" "$WORK/publish.log"
+never_says "the user is not asked before the loop tried again" "For the user" "$WORK/publish.log"
 holds "nothing is merged with an item not checked" not gh_called "pr merge"
-jq -n '{by: "human", answer: "accepted-as-is", words: "The simulator is broken: fine."}' \
-  >".review/runs/$open_qa/open-answered.json"
+qa_checked '[]' "$(git rev-parse HEAD)"
+publish "a /qa of less than the whole pull request is no second try" 3 \
+  "   The loop goes on: restore what failed" --merge
+qa_checked '[]' "" 0 "$(with_items "$passed_case, $ios_not_checked")"
+again_qa="qa-$qa_runs"
+publish "what a second /qa of the whole pull request still leaves open is the user's" 3 \
+  "M5: /qa of the whole pull request ran again and still left 0 unproven and 1 not checked in $again_qa: TC-001 on iOS (the simulator did not boot)" \
+  --merge
+says "it is beyond what was agreed, with the file their acceptance goes into" \
+  "   For the user, beyond what was agreed: merge without that checked, or not; their acceptance goes into .review/runs/$again_qa/open-answered.json, {\"by\": \"human\", \"answer\": \"accepted-as-is\"}" \
+  "$WORK/publish.log"
+never_says "no words of theirs are asked for beside a record of /qa either" "words" \
+  "$WORK/publish.log"
+never_says "nothing sends the loop round again then" "The loop goes on" "$WORK/publish.log"
+holds "the status of /qa waits with what the second /qa left" \
+  jq_true --arg sha "$(git rev-parse HEAD)" \
+  '[.[] | select(.sha == $sha and .context == "loop/qa")] | last
+   | .state == "pending" and (.description | startswith(
+       "/qa of the whole pull request ran again and still left 0 unproven and 1 not checked"))' \
+  "$GH_STATE/statuses.json"
+jq -n '{by: "agent", answer: "accepted-as-is"}' >".review/runs/$again_qa/open-answered.json"
+publish "an acceptance beside a record of /qa that is not the user's settles nothing" 3 \
+  "M5: /qa of the whole pull request ran again and still left" --merge
+jq -n '{by: "human", answer: "accepted-as-is"}' >".review/runs/$again_qa/open-answered.json"
 pr_post "the statuses after the user accepted an item not checked" 0 "statuses posted" statuses
+holds "their acceptance, which keeps no words, turns /qa green" status_is loop/qa success
 publish "their acceptance lets it merge" 0 "merged T-001" --merge
 never_says "a merge with nothing put off owes nothing" "OWED" "$WORK/publish.log"
+
+# "Again" is read of an item, by its id: one that an older record of the task also left
+# open, with no acceptance beside that record. An item that is open for the first time is
+# the loop's to restore and to check again, whatever else an older /qa left, and so is one
+# that the user accepted before. A record of counts alone names no item, so it is read by
+# its counts, as before.
+published_project origin
+reviewed_pull_request merge
+android_unproven='{"id": "TC-002 on Android", "verdict": "unproven",
+  "reason": "the emulator went away"}'
+android_passed='{"id": "TC-002 on Android", "verdict": "pass"}'
+ios_passed='{"id": "TC-001 on iOS", "verdict": "pass"}'
+tablet_not_checked='{"id": "TC-002 on a tablet", "verdict": "not_checked",
+  "reason": "no tablet was attached"}'
+loop_tries_again="   The loop goes on: $loop_restores"
+qa_checked '[]' "" 0 "$(with_items "$android_unproven")"
+qa_checked '[]' "" 0 "$(with_items "$android_passed, $ios_not_checked")"
+publish "an item open for the first time is the loop's, whatever an older /qa left open" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs: TC-001 on iOS (the simulator did not boot)" \
+  --merge
+says "the loop restores what failed and has /qa check it again" "$loop_tries_again" \
+  "$WORK/publish.log"
+never_says "the user is not asked about an item no /qa left open before" "For the user" \
+  "$WORK/publish.log"
+qa_checked '[]' "" 0 "$(with_items "$android_passed, $ios_passed, $tablet_not_checked")"
+accepted_qa="qa-$qa_runs"
+publish "after an item was restored and passed, another that fails once is the loop's too" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in $accepted_qa: TC-002 on a tablet (no tablet was attached)" \
+  --merge
+says "the loop tries that one again as well" "$loop_tries_again" "$WORK/publish.log"
+never_says "nor is the user asked about that one yet" "For the user" "$WORK/publish.log"
+jq -n '{by: "human", answer: "accepted-as-is"}' \
+  >".review/runs/$accepted_qa/open-answered.json"
+qa_checked '[]' "" 0 "$(with_items "$android_passed, $ios_passed, $tablet_not_checked")"
+publish "an item the user accepted in an older record is no second try in a newer one" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs: TC-002 on a tablet (no tablet was attached)" \
+  --merge
+never_says "the user is not asked for what they accepted as if /qa had tried again" \
+  "For the user" "$WORK/publish.log"
+qa_checked '[]' "" 0 "$(with_items "$android_passed, $ios_passed, $tablet_not_checked")"
+publish "the same item left open again by the next /qa of the whole pull request is the user's" 3 \
+  "M5: /qa of the whole pull request ran again and still left 0 unproven and 1 not checked in qa-$qa_runs: TC-002 on a tablet (no tablet was attached)" \
+  --merge
+says "and that stop is beyond what was agreed" "   For the user, beyond what was agreed: " \
+  "$WORK/publish.log"
+qa_checked '[]' "" 0 "$(with_items "$android_passed, $tablet_not_checked"',
+  {"id": "TC-001 on a foldable", "verdict": "unproven",
+   "reason": "the recording does not show the fold"}')"
+publish "one item left open again beside one open for the first time is still the loop's" 3 \
+  "M5: /qa left 1 unproven and 1 not checked in qa-$qa_runs: TC-002 on a tablet (no tablet was attached); TC-001 on a foldable (the recording does not show the fold)" \
+  --merge
+says "with an item unproven and one not checked the loop's line names both steps" \
+  "   The loop goes on: an unproven item goes back to the work; $loop_restores" \
+  "$WORK/publish.log"
+qa_checked '[]' "" 1
+publish "a record of counts alone is read by its counts: an older record left something open" 3 \
+  "M5: /qa of the whole pull request ran again and still left 1 unproven and 0 not checked in qa-$qa_runs" \
+  --merge
+qa_checked '[]' "" 0 "$(with_items '{"id": "TC-001 on a watch", "verdict": "not_checked",
+  "reason": "no watch was paired"}')"
+publish "and an item is read as left open before by an older record of counts alone" 3 \
+  "M5: /qa of the whole pull request ran again and still left 0 unproven and 1 not checked in qa-$qa_runs: TC-001 on a watch (no watch was paired)" \
+  --merge
 
 published_project origin
 printf 'fun util() = 1\n' >src/util.kt

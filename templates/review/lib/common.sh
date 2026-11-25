@@ -1826,34 +1826,89 @@ qa_checked_this_work() {
 
 # 7, /qa at the pull request levels, continued. No /qa since the newest complete one of the
 # whole pull request left anything unproven or not checked, or the user accepted what it
-# left, in <its folder>/open-answered.json: {"by": "human", "answer": "accepted-as-is",
-# "words": "<what they said>"}. A /qa after a fix checks only what the fix can reach, so
-# what an earlier one left open goes away only with a later /qa of the whole pull request or
-# with the user's acceptance. An item put off until after the merge is in neither count:
+# left, in <its folder>/open-answered.json: {"by": "human", "answer": "accepted-as-is"}. It
+# keeps no words; a record made before, which holds some, is read as it is
+# (qa_open_accepted). A /qa after a fix checks only what the fix can reach, so what an
+# earlier one left open goes away only with a later /qa of the whole pull request or with
+# the user's acceptance. An item put off until after the merge is in neither count:
 # the merge does not wait on it, and owes its check (owe_after_merge). A count of items put
 # off that no item backs is among those not checked (JQ_NOT_CHECKED), and the refusal says
 # how many of them are such.
+#
+# The refusal names the open items when the record lists them, and says whose turn it is.
+# It is the loop's first, and its line says what applies to what the record left: an
+# unproven item goes back to the work; what a tool or a device kept from being checked is
+# restored, and an item that can be checked only after the merge is one /qa records as put
+# off until then; a count of items put off that no item backs gets its items. Then /qa
+# checks the whole pull request again. It is the user's once the loop has tried again,
+# which is read of each item by its id: every item that the newest /qa of the whole pull
+# request left open was left open by a record of the task before it too, and the user
+# accepted nothing beside that record. An item that is open for the first time keeps the
+# stop the loop's. A record of counts alone names no item, so it is read by its counts:
+# such a record tried again when any record before it left something open, and an older
+# one of that form left open whatever a newer one lists.
+qa_open_accepted() {
+  jq -e '.by == "human" and .answer == "accepted-as-is"' "$1/open-answered.json" \
+    >/dev/null 2>&1
+}
 qa_left_nothing_open() {
-  local task_id="$1" merge_base="$2" records open run counts put_off_note
+  local task_id="$1" merge_base="$2" records landed_at accepted open run counts tried detail
+  local unproven unchecked unlisted next
   records="$(qa_records_of "$task_id")" || \
     refuse 7 "a qa.json is unreadable or not {task, failures: [{case: TC-nnn}]}, or its items "\
 "do not hold; the line before this one says what"
-  open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" "$JQ_NOT_CHECKED"'
+  landed_at="$(task_landed_at "$task_id")"
+  accepted="$(printf '%s' "$records" | jq -r '.[].run' | while IFS= read -r run; do
+      ! qa_open_accepted "$run" || printf '%s\n' "$run"
+    done | jq -R . | jq -sc .)"
+  open="$(printf '%s' "$records" | jq -r --arg since "$merge_base" \
+    --argjson after "${landed_at:-0}" --argjson accepted "${accepted:-[]}" \
+    "$JQ_NOT_CHECKED$JQ_LANDED_SINCE"'
+    def left: (.counts.unproven // 0) + not_checked;
+    def open_items: [.items[]? | select(.verdict == "unproven" or .verdict == "not_checked")];
+    def by_counts: (.items | type) != "array" or (open_items | length) == 0;
+    def left_before($id):
+      by_counts or ((.run as $run | all($accepted[]; . != $run))
+                    and any(open_items[]; .id == $id));
     ([to_entries[] | select(.value.since == $since and (.value.counts | type) == "object")
       | .key] | last // 0) as $from
-    | .[$from:][] | select(((.counts.unproven // 0) + not_checked) > 0)
-    | "\(.run)\t\(.counts.unproven // 0) unproven and \(not_checked) not checked\t"
-      + (if put_off_unlisted > 0
-         then " (\(put_off_unlisted) of them put off until after the merge by a count alone: "
-              + "no item says its check)"
-         else "" end)')"
-  while IFS=$'\t' read -r run counts put_off_note; do
+    | [.[:$from][] | select(landed_since($after) and left > 0)] as $older
+    | .[$from:] | to_entries[] | .key as $at | .value | select(left > 0)
+    | (if $at > 0 or ($older | length) == 0 then "first"
+       elif by_counts then "again"
+       elif all(open_items[]; .id as $id | any($older[]; left_before($id))) then "again"
+       else "first" end) as $tried
+    | "\(.run)\t\(.counts.unproven // 0) unproven and \(not_checked) not checked\t\($tried)\t"
+      + "\(.counts.unproven // 0) \(.counts.not_checked // 0) \(put_off_unlisted)\t"
+      + ((if put_off_unlisted > 0
+          then " (\(put_off_unlisted) of them put off until after the merge by a count alone: "
+               + "no item says its check)"
+          else "" end)
+         + (open_items | map("\(.id) (\(.reason))")
+            | if length > 0 then ": " + join("; ") else "" end)
+         | gsub("[\\t\\n\\r]+"; " "))')"
+  while IFS=$'\t' read -r run counts tried next detail; do
     [ -n "$run" ] || continue
-    jq -e '.by == "human" and .answer == "accepted-as-is" and ((.words // "") != "")' \
-      "$run/open-answered.json" >/dev/null 2>&1 || \
-      refuse 7 "/qa left $counts in $(basename "$run")$put_off_note — restore what failed and "\
-"run /qa of the whole pull request again, or the user accepts it: $run/open-answered.json, "\
-"{\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}"
+    ! qa_open_accepted "$run" || continue
+    [ "$tried" != again ] || \
+      refuse 7 "/qa of the whole pull request ran again and still left $counts in "\
+"$(basename "$run")$detail" user:beyond-agreed \
+"merge without that checked, or not; their acceptance goes into $run/open-answered.json, "\
+"{\"by\": \"human\", \"answer\": \"accepted-as-is\"}"
+    read -r unproven unchecked unlisted <<<"$next"
+    next=""
+    [ "$unproven" = 0 ] || next="an unproven item goes back to the work; "
+    [ "$unlisted" = 0 ] || \
+      next="${next}have /qa list each item it put off by a count alone, with its reason and "\
+"the check that will be made then (items), or check it now; "
+    if [ "$unchecked" = 0 ]; then
+      next="${next}then run /qa of the whole pull request again"
+    else
+      next="${next}restore what failed — boot or erase the simulator — and run /qa of the "\
+"whole pull request again; an item that can be checked only once the pull request is merged "\
+"is recorded by /qa as after_merge, with the check it will make, and does not hold the merge"
+    fi
+    refuse 7 "/qa left $counts in $(basename "$run")$detail" loop "$next"
   done <<<"$open"
 }
 
