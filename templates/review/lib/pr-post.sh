@@ -53,12 +53,18 @@
 #                        /qa left and whose turn each thing is (qa_left) — a failing case
 #                        with its words, its test and the loop's next step, what is
 #                        unproven or not checked, what is put off until after the
-#                        merge — an item not checked, which at pr and merge is the
-#                        user's to accept or not — and what the app does that nothing
-#                        written describes, the one question that holds nothing. Below
-#                        the pull request levels that is all. At pr and merge:
-#                        <qa-dir>/report.md as a comment, once; then the statuses and
-#                        the description
+#                        merge, with the check that is made then — it holds no merge —
+#                        and what the app does that nothing written describes, the one
+#                        question that holds nothing. Below the pull request levels
+#                        that is all. At pr and merge: <qa-dir>/report.md as a comment,
+#                        once; then the statuses and the description
+#   after-merge <folder> the report of the checks a merged task owed,
+#                        <folder>/report.md, as one comment on the pull request that
+#                        was merged, which <folder>/owed.json names (publish.sh writes
+#                        it after the merge); recorded in <folder>/pr-comment.json and
+#                        never posted twice. It asks neither for the task of HEAD nor
+#                        for an open pull request: HEAD is on the base branch by then.
+#                        publish.sh calls it before a later merge (M10)
 #   statuses             at HEAD: loop/<gate>, loop/e2e-<platform>, loop/review and
 #                        loop/qa, from the newest review run and /qa of the task if they
 #                        checked the work as it is now — by the same checks as the merge
@@ -104,12 +110,14 @@ done
 
 usage() {
   echo "usage: pr-post.sh run|answers <run-dir> | reply <comment-id> <answer> <text-file> | "\
-"qa <qa-dir> | statuses | comments | work | body [--to <file>] — [--task-file <task.json>]" >&2
+"qa <qa-dir> | after-merge <folder> | statuses | comments | work | body [--to <file>] — "\
+"[--task-file <task.json>]" >&2
   exit 1
 }
 
 case "$COMMAND:${#ARGUMENTS[@]}" in
-  run:1 | answers:1 | qa:1 | reply:3 | statuses:0 | comments:0 | work:0 | body:0) ;;
+  run:1 | answers:1 | qa:1 | after-merge:1 | reply:3) ;;
+  statuses:0 | comments:0 | work:0 | body:0) ;;
   *) usage ;;
 esac
 [ -z "$TO" ] || [ "$COMMAND" = body ] || usage
@@ -117,7 +125,7 @@ esac
 # Resolved before the cd below, as land.sh resolves its own arguments.
 ARGUMENT=""
 case "$COMMAND" in
-  run | answers | qa)
+  run | answers | qa | after-merge)
     [ -d "${ARGUMENTS[0]}" ] || { echo "no such folder: ${ARGUMENTS[0]}" >&2; exit 1; }
     ARGUMENT="$(abspath "${ARGUMENTS[0]}")" || exit 1 ;;
   reply)
@@ -188,39 +196,49 @@ landing_opens_pull_request "$LANDING" || \
 REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
 BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")" || refuse "$BASE"
 REPOSITORY="$(remote_repository "$REMOTE")" || refuse "the remote $REMOTE has no URL"
-BRANCH="$(current_branch)"
-[ -n "$BRANCH" ] || refuse "HEAD is detached — there is no pull request of it"
-HEAD_COMMIT="$(git rev-parse HEAD)"
-
-# The task is the one land.sh committed HEAD for, as publish.sh reads it.
-TASK_ID="$(task_id_of "$(git rev-list -1 --no-merges --first-parent HEAD)")"
-[ -n "$TASK_ID" ] || \
-  refuse "HEAD carries no Task-Id trailer — land.sh has committed no task on $BRANCH"
-
-if [ "$COMMAND" != reply ] && [ "$COMMAND" != comments ] && [ "$COMMAND" != work ]; then
-  if [ -z "$TASK_FILE" ]; then
-    case "$COMMAND" in
-      run | answers) TASK_FILE="$(jq -r '.task_file // ""' "$ARGUMENT/meta.json" 2>/dev/null)" ;;
-    esac
-  fi
-  if [ -z "$TASK_FILE" ]; then
-    NEWEST_RUN="$(review_runs_of "$TASK_ID" | tail -1)"
-    [ -z "$NEWEST_RUN" ] || TASK_FILE="$(jq -r '.task_file // ""' "$NEWEST_RUN/meta.json")"
-  fi
-  [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ] || \
-    refuse "no task file of $TASK_ID is known yet — name it with --task-file"
-  [ "$(jq -r '.id' "$TASK_FILE")" = "$TASK_ID" ] || \
-    refuse "$TASK_FILE is not the task HEAD was committed for, $TASK_ID"
-fi
-
+# The report of the checks a merged task owed goes on the pull request that was merged,
+# which the list names: HEAD is on the base branch by then and that pull request is closed,
+# so neither the branch, nor the task of HEAD, nor an open pull request is asked for.
+BRANCH=""
+HEAD_COMMIT=""
+TASK_ID=""
 PR_URL=""
 PR_NUMBER=""
-if [ -z "$TO" ]; then
-  OPEN="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE")" || \
-    fail "gh could not say whether $BRANCH has a pull request into $BASE"
-  PR_URL="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
-  PR_NUMBER="$(printf '%s' "$OPEN" | jq -r '.number // ""')"
-  [ -n "$PR_URL" ] || refuse "$BRANCH has no open pull request into $BASE — publish.sh opens it"
+if [ "$COMMAND" != after-merge ]; then
+  BRANCH="$(current_branch)"
+  [ -n "$BRANCH" ] || refuse "HEAD is detached — there is no pull request of it"
+  HEAD_COMMIT="$(git rev-parse HEAD)"
+
+  # The task is the one land.sh committed HEAD for, as publish.sh reads it.
+  TASK_ID="$(task_id_of "$(git rev-list -1 --no-merges --first-parent HEAD)")"
+  [ -n "$TASK_ID" ] || \
+    refuse "HEAD carries no Task-Id trailer — land.sh has committed no task on $BRANCH"
+
+  if [ "$COMMAND" != reply ] && [ "$COMMAND" != comments ] && [ "$COMMAND" != work ]; then
+    if [ -z "$TASK_FILE" ]; then
+      case "$COMMAND" in
+        run | answers)
+          TASK_FILE="$(jq -r '.task_file // ""' "$ARGUMENT/meta.json" 2>/dev/null)" ;;
+      esac
+    fi
+    if [ -z "$TASK_FILE" ]; then
+      NEWEST_RUN="$(review_runs_of "$TASK_ID" | tail -1)"
+      [ -z "$NEWEST_RUN" ] || TASK_FILE="$(jq -r '.task_file // ""' "$NEWEST_RUN/meta.json")"
+    fi
+    [ -n "$TASK_FILE" ] && [ -f "$TASK_FILE" ] || \
+      refuse "no task file of $TASK_ID is known yet — name it with --task-file"
+    [ "$(jq -r '.id' "$TASK_FILE")" = "$TASK_ID" ] || \
+      refuse "$TASK_FILE is not the task HEAD was committed for, $TASK_ID"
+  fi
+
+  if [ -z "$TO" ]; then
+    OPEN="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE")" || \
+      fail "gh could not say whether $BRANCH has a pull request into $BASE"
+    PR_URL="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
+    PR_NUMBER="$(printf '%s' "$OPEN" | jq -r '.number // ""')"
+    [ -n "$PR_URL" ] || \
+      refuse "$BRANCH has no open pull request into $BASE — publish.sh opens it"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -305,7 +323,7 @@ why_not() {
 # checked the work as it is now, so a commit of the loop's files alone keeps them, and
 # new work shows pending. A run of --dry-run, or of another level, is no review here.
 post_statuses() {
-  local fingerprint merge_base run reason state text platform result
+  local fingerprint merge_base run reason state text platform result later
   git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || \
     fail "could not read $BASE from $REMOTE; git says why above"
   merge_base="$(git merge-base "refs/remotes/$REMOTE/$BASE" HEAD)" || \
@@ -384,7 +402,8 @@ post_statuses() {
   # loop/qa: the /qa part of M5. Pending until /qa checked this work and, once, the whole
   # pull request, and while what it left unproven or unchecked waits for the user; failing
   # while a failure it found is not proven as condition 7 asks (qa_failures_proven), or a
-  # test is still skipped for the task.
+  # test is still skipped for the task. What the task puts off until after the merge holds
+  # nothing, and the green text counts it.
   reason="$(why_not qa_checked_this_work "$TASK_ID" "$fingerprint" "$merge_base")"
   [ -n "$reason" ] || reason="$(why_not qa_left_nothing_open "$TASK_ID" "$merge_base")"
   [ -n "$reason" ] || reason="$(why_not qa_reports_posted "$TASK_ID" "$merge_base" "$PR_URL")"
@@ -397,9 +416,12 @@ post_statuses() {
       state=failure; text="$reason"
     else
       state=success
-      text="$(qa_records_of "$TASK_ID" | jq -r "$JQ_NOT_CHECKED"'last
+      later="$(qa_after_merge_items "$TASK_ID" | jq 'length')"
+      text="$(qa_records_of "$TASK_ID" | jq -r --argjson later "${later:-0}" "$JQ_NOT_CHECKED"'
+        last
         | "\(.extent): \(.counts.pass) passed, \(.failures | length) failure(s) proven or "
-          + "answered, \(.counts.unproven) unproven, \(not_checked) not checked"')"
+          + "answered, \(.counts.unproven) unproven, \(not_checked) not checked"
+          + (if $later > 0 then ", \($later) after the merge" else "" end)')"
     fi
   fi
   post_status "$HEAD_COMMIT" loop/qa "$state" "$text" || return 1
@@ -411,7 +433,7 @@ post_statuses() {
 # ---------------------------------------------------------------------------
 
 write_body() {
-  local runs qa_records qa_asks
+  local runs qa_records qa_asks later
   runs="$( { if [ -n "$PR_URL" ]; then review_runs_on "$TASK_ID" "$PR_URL"
              else review_runs_of "$TASK_ID"; fi; } | while IFS= read -r run; do
       jq -c --arg run "$(basename "$run")" --arg result "$(run_result "$run")" \
@@ -428,9 +450,11 @@ write_body() {
     fail "a qa.json of $TASK_ID is unreadable or not {task, failures: [{case: TC-nnn}]}, or its "\
 "items do not hold; the line before this one says what"
   qa_asks="$(qa_questions "$TASK_ID")" || return 1
+  later="$(qa_after_merge_items "$TASK_ID")" || return 1
   squash_trailers "$TASK_FILE" "$PR_URL" >"$SCRATCH/trailers" || return 1
   jq -nr --slurpfile task "$TASK_FILE" --argjson runs "$runs" --argjson qa "$qa_records" \
          --argjson asks "$qa_asks" --arg asked "$(turn_words user:what-should-be)" \
+         --argjson later "$later" \
          --rawfile trailers "$SCRATCH/trailers" '
     def short: if . == "" then "—" else "`\(.[0:7])`" end;
     $task[0] as $task
@@ -458,8 +482,9 @@ write_body() {
             "|---|---|---|---|",
             ($qa[] | "| \(.run | split("/") | last) | \((.head // "") | short) "
                      + "| \(.extent // "—") | \(.failures | length) |") end),
-      (if $asks == [] then empty
-       else "", ($asks[] | "- \($asked): \(.what) (\(.where))" | gsub("\\s+"; " ")) end),
+      (if $later == [] and $asks == [] then empty
+       else "", ($later[] | "- After the merge: \(.id) — \(.check)" | gsub("\\s+"; " ")),
+            ($asks[] | "- \($asked): \(.what) (\(.where))" | gsub("\\s+"; " ")) end),
       "",
       ($trailers | rtrimstr("\n"))'
 }
@@ -855,8 +880,31 @@ post_qa() {
   echo "report of $(basename "$qa_dir") posted: $PR_URL"
 }
 
+# The report of the checks a merged task owed, as one comment on the pull request that was
+# merged, which the list in the folder names.
+post_after_merge() {
+  local folder="$1" owing comment_id
+  [ -f "$folder/owed.json" ] && [ -s "$folder/report.md" ] || \
+    refuse "$folder holds no checks owed after a merge, or no report.md yet"
+  owing="$(jq -r '.task // ""' "$folder/owed.json")"
+  PR_URL="$(jq -r '.pr_url // ""' "$folder/owed.json")"
+  PR_NUMBER="$(jq -r '.pr_number // ""' "$folder/owed.json")"
+  [ -n "$owing" ] && [ -n "$PR_URL" ] && [ -n "$PR_NUMBER" ] || \
+    refuse "$folder/owed.json does not name the task and its pull request"
+  if jq -e --arg url "$PR_URL" '.pr_url == $url' "$folder/pr-comment.json" >/dev/null 2>&1; then
+    echo "the report of the checks after the merge of $owing is on $PR_URL already: no second one"
+    return 0
+  fi
+  comment_id="$(post_comment "after-merge $owing" "$folder/report.md" "$folder/report.md")" || \
+    fail "gh could not post the report of the checks after the merge of $owing on $PR_URL"
+  jq -n --arg id "$comment_id" --arg url "$PR_URL" '{id: $id, pr_url: $url}' \
+    >"$folder/pr-comment.json"
+  echo "report of the checks after the merge of $owing posted: $PR_URL"
+}
+
 case "$COMMAND" in
   run)      post_run "$ARGUMENT" ;;
+  after-merge) post_after_merge "$ARGUMENT" ;;
   comments) show_comments ;;
   work)     git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || \
               fail "could not read $BASE from $REMOTE; git says why above"

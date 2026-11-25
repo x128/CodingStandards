@@ -25,6 +25,11 @@
 # merge alone, checks it and merges the pull request with a squash. See TASK_LOOP.md
 # § Publishing and § The contract at the pull request levels.
 #
+# Whenever it finds the pull request of the task merged — by its own --merge, or by a
+# person at pr — it writes down the checks /qa put off until after the merge
+# (.review/runs/after-merge-<task>/owed.json) and lists those that have no result yet.
+# No later task merges while one is missing (M10).
+#
 # Usage, from the project root:
 #   publish.sh --task-file <task.json> [--check | --merge]
 #
@@ -165,6 +170,37 @@ PR_NUMBER=""
 PR_STATE=""
 PR_HEAD=""
 
+# The pull request is merged: what /qa put off until then is owed from now on, and is
+# written down before anything else can fail (common.sh, owe_after_merge). <items> is what
+# was read before a merge made here.
+owe_checks() {
+  owe_after_merge "$TASK_ID" "$PR_URL" "$PR_NUMBER" "$BASE" "$@" || \
+    fail "$PR_URL is merged into $BASE, but the checks /qa put off until after the merge "\
+"could not be written down under .review/runs/after-merge-$TASK_ID; what is above says why" \
+      loop "run publish.sh again on this branch: it writes the list and merges nothing twice"
+}
+
+# What the merge of this pull request owes and has no result for yet, after every end that
+# finds it merged. The exit code stays what it was: the merge is done.
+say_owed() {
+  local list folder="" owed
+  for list in .review/runs/after-merge-*/owed.json; do
+    [ -f "$list" ] || continue
+    ! jq -e --arg url "$PR_URL" '.pr_url == $url' "$list" >/dev/null 2>&1 || \
+      folder="${list%/owed.json}"
+  done
+  [ -n "$folder" ] || return 0
+  owed="$(after_merge_unsettled | jq -sc --arg folder "$folder" \
+    'map(select(.folder == $folder and .kind != "list"))')" || return 0
+  [ "$(printf '%s' "$owed" | jq 'length')" -gt 0 ] || return 0
+  printf '%s' "$owed" | jq -r --arg task "$TASK_ID" '
+    "OWED AFTER THE MERGE — /qa put off \(length) check(s) of \($task) until now:",
+    (.[] | "  - \(.id): \(.check)")'
+  turn loop "make them now (/qa --after-merge $TASK_ID): the results go into "\
+"$folder/results.json, with a report.md beside it; no later task merges before each has its "\
+"result"
+}
+
 finish_on_base() {
   local merged_note="$PR_URL is merged into $BASE on $REMOTE"
   if [ "$(current_branch)" != "$BASE" ]; then
@@ -172,6 +208,7 @@ finish_on_base() {
       echo "merged $TASK_ID: $PR_URL into $BASE, which is checked out in another worktree, "\
 "so this one stays on $BRANCH"
       qa_asks "$TASK_ID"
+      say_owed
       exit 0
     fi
     git switch "$BASE" || \
@@ -188,6 +225,7 @@ finish_on_base() {
   fi
   echo "merged $TASK_ID: $PR_URL into $BASE"
   qa_asks "$TASK_ID"
+  say_owed
 }
 
 if landing_opens_pull_request "$LANDING"; then
@@ -205,10 +243,12 @@ if landing_opens_pull_request "$LANDING"; then
 "only a person reopens it. Nothing was pushed and no new pull request was opened" ;;
     MERGED)
       if [ "$PR_HEAD" = "$HEAD_COMMIT" ]; then
+        owe_checks
         if [ "$LANDING" = "merge" ] && [ "$MODE" != check ]; then
           finish_on_base
         else
           echo "already merged: $PR_URL"
+          say_owed
         fi
         exit 0
       fi
@@ -274,7 +314,8 @@ fi
 # ---------------------------------------------------------------------------
 # 4. The merge contract (--check, --merge): what can be checked only once the
 #    review, the end-to-end tests and /qa have run on the pull request. Each item
-#    that does not hold refuses (3), naming it; M8 and M9 wait (5).
+#    that does not hold refuses (3), naming it; M8 and M9 wait (5). M10, what the
+#    merges of earlier tasks still owe, is checked first.
 # ---------------------------------------------------------------------------
 
 [ -n "$PR_URL" ] || \
@@ -305,6 +346,62 @@ fi
 FINGERPRINT="$(tree_fingerprint)"
 MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE" HEAD)" || \
   fail "HEAD has no commit in common with $BASE of $REMOTE"
+
+# M10: no task merged before this one still owes a check that /qa put off until after its
+# merge (common.sh, after_merge_unsettled). What the loop can do itself is named first: a
+# result that is missing or does not say what was seen, then a failure that names no task
+# of the tracker; a check that could not be made is the user's to accept. Then the report
+# of each merged task is on its pull request: pr-post.sh after-merge posts it, once.
+OWED="$(after_merge_unsettled | jq -sc --arg url "$PR_URL" 'map(select(.pr_url != $url))')" || \
+  fail "what the merges of earlier tasks owe could not be read (.review/runs/after-merge-*)"
+# owed_first <kind> <jq>: of the first merged task that has items of the kind, as <jq> says.
+owed_first() {
+  printf '%s' "$OWED" | jq -r --arg kind "$1" \
+    'map(select(.kind == $kind)) | group_by(.folder) | first // empty | '"$2"
+}
+OWED_FIRST="$(owed_first list '.[0].folder')"
+[ -z "$OWED_FIRST" ] || \
+  refuse M10 "$OWED_FIRST/owed.json, the list of the checks a merged task owes, is not "\
+"readable" \
+    loop "repair it — {task, pr_url, pr_number, base, time, items: [{id, reason, check, from}]}, "\
+"as publish.sh wrote it after the merge"
+OWED_FIRST="$(owed_first result '[.[0].task, .[0].folder, (map(.id) | join("; "))] | @tsv')"
+if [ -n "$OWED_FIRST" ]; then
+  IFS=$'\t' read -r OWING OWED_FOLDER OWED_IDS <<<"$OWED_FIRST"
+  refuse M10 "$OWING was merged with checks put off until after its merge, and these have no "\
+"result that says what was seen: $OWED_IDS" \
+    loop "make them (/qa --after-merge $OWING): $OWED_FOLDER/results.json"
+fi
+OWED_FIRST="$(owed_first task '[.[0].task, (map(.id) | join("; "))] | @tsv')"
+if [ -n "$OWED_FIRST" ]; then
+  IFS=$'\t' read -r OWING OWED_IDS <<<"$OWED_FIRST"
+  refuse M10 "$OWING was merged, and these checks failed after it and name no task of the "\
+"tracker: $OWED_IDS" \
+    loop "a check that fails after the merge is a defect: write it into the tracker as a task, "\
+"and name the task in its result"
+fi
+OWED_FIRST="$(owed_first accepted '[.[0].task, .[0].folder, .[0].id, .[0].reason] | @tsv')"
+if [ -n "$OWED_FIRST" ]; then
+  IFS=$'\t' read -r OWING OWED_FOLDER OWED_IDS OWED_REASON <<<"$OWED_FIRST"
+  refuse M10 "$OWING is merged, and $OWED_IDS could not be checked after it ($OWED_REASON)" \
+    user:beyond-agreed "leave it unchecked, or say how to check it; their acceptance goes into "\
+"$OWED_FOLDER/open-answered.json, {\"by\": \"human\", \"answer\": \"accepted-as-is\"}"
+fi
+for OWED_LIST in .review/runs/after-merge-*/owed.json; do
+  [ -f "$OWED_LIST" ] || continue
+  OWED_FOLDER="${OWED_LIST%/owed.json}"
+  OWING="$(jq -r '.task' "$OWED_LIST")"
+  OWED_URL="$(jq -r '.pr_url // ""' "$OWED_LIST")"
+  [ "$OWED_URL" != "$PR_URL" ] || continue
+  ! jq -e --arg url "$OWED_URL" '.pr_url == $url' "$OWED_FOLDER/pr-comment.json" \
+      >/dev/null 2>&1 || continue
+  [ -s "$OWED_FOLDER/report.md" ] || \
+    refuse M10 "the report of the checks after the merge of $OWING is not written" \
+      loop "write $OWED_FOLDER/report.md"
+  "$LIB_DIR/pr-post.sh" after-merge "$OWED_FOLDER" || \
+    fail "the report of the checks after the merge of $OWING is not on $OWED_URL; "\
+"pr-post.sh says why above"
+done
 
 # M1 to M5: the newest review run of the task made on this pull request, by the time it
 # records, posted there, of the change since the merge base as it is now, with the
@@ -463,8 +560,15 @@ NOT_GREEN="$(jq -nr --argjson wanted "$LOOP_WANTED" --argjson seen "$LOOP_CHECKS
   waiting "a status of the loop at $HEAD_COMMIT is not green on $PR_URL — $NOT_GREEN; "\
 "pr-post.sh statuses posts them again"
 
+# What /qa put off until after the merge, read before it: the merge may leave this checkout
+# on the base branch.
+AFTER_MERGE="$(qa_after_merge_items "$TASK_ID")" || \
+  fail "the /qa records of $TASK_ID could not be read; the line before this one says which"
+
 if [ "$MODE" = check ]; then
   echo "ready to merge: $PR_URL — with squash; its description ends with the trailers"
+  printf '%s' "$AFTER_MERGE" | jq -r 'select(length > 0)
+    | "   after the merge /qa owes \(length) check(s): \(map(.id) | join("; "))"'
   qa_asks "$TASK_ID"
   exit 0
 fi
@@ -490,4 +594,5 @@ if ! MERGE_OUTPUT="$(gh pr merge "$PR_URL" "${MERGE_ARGUMENTS[@]}" 2>&1)"; then
 "so $BRANCH may be left on $REMOTE: $MERGE_OUTPUT"
 fi
 
+owe_checks "$AFTER_MERGE"
 finish_on_base

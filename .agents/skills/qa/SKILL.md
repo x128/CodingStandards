@@ -23,7 +23,10 @@ gets past it is a defect of this skill too, and the skill is corrected and repla
 
 It needs the project's requirements and tracker; a booted simulator, emulator or device for each
 platform the project ships; `ffmpeg`; and the platform's command-line tools (`xcrun simctl`, `adb`).
-A check whose tool or device is missing is reported as not checked, never as passed.
+A check whose tool or device is missing is reported as not checked, never as passed. A check that
+can be made only once the change is merged — a build of the base branch, a job that runs when the
+pull request closes — is reported as after the merge, with why and with the check that will be made
+then.
 
 ## Instructions
 
@@ -83,18 +86,23 @@ and the report says so.
 
 Each check is run by its own agent, on the model of the role `QA` in `.claude/agents.conf`. It
 gets the list and the standards, never the reasoning of whoever made the change, and returns a
-verdict per item — pass, fail, unproven or not checked — with its evidence: a test report, a log,
-a frame, a measurement, each by path. A pass with no evidence is not a pass. What the app does that
-no requirement, exit criterion or case describes is none of these: nothing says what should be, and
-`/qa` does not decide it. The check reports it apart, with what the user does and sees and where —
-unless it is a crash, a hang or lost data, which fail whatever is written — and `/qa` writes no case
-for it until the user has said what should be.
+verdict per item — pass, fail, unproven, not checked or after the merge — with its evidence: a test
+report, a log, a frame, a measurement, each by path. A pass with no evidence is not a pass. What the
+app does that no requirement, exit criterion or case describes is none of these: nothing says what
+should be, and `/qa` does not decide it. The check reports it apart, with what the user does and
+sees and where — unless it is a crash, a hang or lost data, which fail whatever is written — and
+`/qa` writes no case for it until the user has said what should be.
+
+An item is after the merge only when nothing can check it while the pull request is open. Its reason
+says why, and its `check` says what will be looked at then. An item that a tool or a device kept
+from being checked is not checked, never after the merge, and a case of `qa/test-cases.md` is never
+put off: it is what the user sees in the app.
 
 | Check | Fails when |
 |---|---|
 | **Build** — every target and configuration the project ships, debug and release | it does not build, or it has a warning the version to compare with does not have |
 | **Tests** — every test command of the project on every platform; each test the change adds is seen failing once with its code broken (TESTING.md, "Coverage Requirements"), in a copy of the tree | a test fails; a behaviour of the change has no test (TESTING.md); a test passes with its code broken |
-| **Criteria** — each exit criterion, shown by a named test or by a check repeated with its artefact | a criterion is not met, or is claimed without evidence; one that cannot be checked is reported as not checked, never as met |
+| **Criteria** — each exit criterion, shown by a named test or by a check repeated with its artefact | a criterion is not met, or is claimed without evidence; one that cannot be checked is reported as not checked, never as met; one that can be checked only once the change is merged, as after the merge |
 | **Motion** — the app run on each platform; every transition on the list recorded and read frame by frame (below) | any frame the user would see as a flash, a jump or a wrong state |
 | **States** — each state on the list driven on the device and captured | the app does what the requirements, an exit criterion or a case say it must not for that state, hangs, or loses data; what none of them describes is reported apart, as a question |
 | **Numbers** — each number of the list measured with the platform's tools, the same way on both versions | the measurement misses the number |
@@ -148,27 +156,30 @@ other evidence; recordings and frames stay until the task is in the base branch.
 
 A separate agent gets every pass with its evidence and tries to show it wrong: reads the frames
 again, repeats the check, tries the neighbouring input or state. A pass it breaks becomes a fail,
-or unproven when the evidence settles nothing.
+or unproven when the evidence settles nothing. It gets every item put off until after the merge too,
+and tries to check it now: one it can check is checked.
 
 ### 4. Report
 
 As EXECUTION_GUIDE.md, "Reporting to the user", says. The failures come first, each with what the
 user sees, how to reproduce it and the evidence by path, and with each the case of
 `qa/test-cases.md` that reproduces it; then what is unproven and why — it does not count as passed;
-then what passed, with its evidence; then what was not checked and why; then what the app does that
-nothing written describes — a question for the user, not a failure. Never "everything works":
-the report says what was checked.
+then what passed, with its evidence; then what was not checked and why; then what can be checked
+only after the merge, with the check that will be made then; then what the app does that nothing
+written describes — a question for the user, not a failure. Never "everything works": the report
+says what was checked.
 
 Each run, one where nothing failed too, is kept in a folder of its own, `.review/runs/qa-<time>/`:
 the report as `report.md`, and its record as `qa.json` — `task`; `time`, in seconds since 1970;
 `head`; `work`, the fingerprint of the work checked; `since`, the commit the change was checked
-from; `extent`, `reachable` or `full`, with its `reason`; `counts` of `pass`, `fail`, `unproven` and
-`not_checked`, the items of the list; `items`, one `{"id", "verdict", "reason"}` for each — the id
-of its case or the name of the item, an item of a case on one platform starting with the case id and
-then a blank, a colon or another character that is no letter, digit or dash (`TC-012 on iOS`);
-the verdict as `counts` names it, and the reason for every verdict but `pass`; `failures`,
-`[{"case": "TC-nnn"}]`; and `behaviour_without_requirement`, `[{"what", "where"}]`, what the app
-does that nothing written describes. At every level
+from; `extent`, `reachable` or `full`, with its `reason`; `counts` of `pass`, `fail`, `unproven`,
+`not_checked` and `after_merge`, the items of the list; `items`, one
+`{"id", "verdict", "reason", "check"}` for each — the id of its case or the name of the item, an
+item of a case on one platform starting with the case id and then a blank, a colon or another
+character that is no letter, digit or dash (`TC-012 on iOS`); the verdict as `counts` names it, the
+reason for every verdict but `pass`, and for `after_merge` the check that will be made then;
+`failures`, `[{"case": "TC-nnn"}]`; and `behaviour_without_requirement`, `[{"what", "where"}]`, what
+the app does that nothing written describes. At every level
 `CodingStandards/templates/review/lib/pr-post.sh work` prints `work` and `head` as they are, and at
 the pull request levels `merge_base` too: there a `/qa` of the whole pull request records
 `merge_base` as `since`, and one after a fix the `head` of the `qa.json` before it. Then, at every
@@ -178,7 +189,14 @@ report, in several comments when it is long. The merge waits while a `/qa` since
 the whole pull request left anything unproven or not checked: an unproven item goes back to whoever
 does the work, an item not checked because a tool or device failed is restored by the loop
 (`/maintain`, step 8), and what is still open after that is the user's to accept or not; the status
-lists the counts.
+lists the counts. What was put off until after the merge does not hold it.
+
+**After the merge.** `publish.sh --merge` lists what `/qa` put off once it has merged, in
+`.review/runs/after-merge-<task>/owed.json`, and `/qa --after-merge <task>` makes each check then:
+`results.json` beside the list gets one `{"id", "verdict", "evidence", "reason", "task"}` for each —
+`pass` with what was seen, `fail` with its reason and the task of the tracker that takes the defect,
+or `not_checked` with its reason — and `report.md` says what was looked at.
+`pr-post.sh after-merge <folder>` posts the report on the merged pull request.
 
 ### 5. When a defect got past
 
@@ -224,4 +242,5 @@ task — is a defect of this skill as well as of the code.
 /qa --base main        # the whole branch since main
 /qa --full             # every case of qa/test-cases.md: a full regression
 /qa --replay           # every case of qa/test-cases.md that got past /qa
+/qa --after-merge T-016   # the checks a merged task put off until then
 ```

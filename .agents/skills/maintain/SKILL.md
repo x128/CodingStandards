@@ -223,15 +223,20 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    `"<task>: <case>"` until that task lands. A defect the user finds later that `/qa` passed goes to
    `/qa` as a defect of that skill too. If `/qa` is not among the skills of the session, link it
    (.agents/skills/README.md, "Setup") and tell the user; the step is never skipped silently. At the
-   pull request levels the merge waits on what `/qa` left unproven or not checked. An item not
-   checked because a tool or device failed is the loop's: restore it — boot or erase the simulator —
-   and run `/qa` of the whole pull request again. What is still open after that goes to the user,
-   who decides: another `/qa`, or their acceptance in `open-answered.json` beside its `qa.json`,
-   written as `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`. A `/qa`
-   after a fix does not clear what an earlier one left open.
+   pull request levels the merge waits on what `/qa` left unproven or not checked, and not on what
+   it put off until after the merge: an item that can be checked only once the pull request is
+   merged — the build of the base branch, what happens when the pull request closes — is recorded by
+   `/qa` as `after_merge`, with the check it will make, and is made right after the merge (step 11).
+   An item not checked because a tool or device failed is the loop's: restore it — boot or erase the
+   simulator — and run `/qa` of the whole pull request again. What is still open after that goes to
+   the user, who decides: another `/qa`, or their acceptance in `open-answered.json` beside its
+   `qa.json`, written as `{"by": "human", "answer": "accepted-as-is", "words": "<what they said>"}`.
+   A `/qa` after a fix does not clear what an earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
-   that proves it, the `/qa` artefact, or `manual: <what you checked>`. Never claim a check you did
-   not do; what `/qa` left unproven is not verified.
+   that proves it, the `/qa` artefact, or `manual: <what you checked>`. A criterion that can be
+   checked only after the merge is claimed as `after the merge: <the id of the item /qa put off>`;
+   its result after the merge is the evidence. Never claim a check you did not do; what `/qa` left
+   unproven is not verified.
 10. **The tasks ahead.** Mark the task `✅ done` in the tracker and `[x]` in the plan. What it
     showed about a later one — what it hands it, what it leaves to it — goes into that task's exit
     criteria in the tracker. A choice about the product it raised is a question for the user, in the
@@ -285,26 +290,35 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    and land with `--past-limit --because "<what the cause was, and what was done about it>"` — and
    the user's when the limit comes again with those gates red that way in every landing since;
    anything else goes on with `--past-limit --because "<what was mended>"`. Then the merge contract,
-   M1–M9:
+   M1–M10:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json --merge
    ```
 
    at `merge`, or `--check` at `pr`. At `merge` it merges with squash once every item holds, which
-   can take `CHECKS_WAIT` seconds: give the command that long. At `pr`, `0` says the pull request is
-   ready for the user to merge. A refusal names its item: meet it — a review run, `/qa` again, an
-   answer to post — or tell the user. On `4` or `5`, read the pull request with `gh pr view`,
-   `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure: run `--check`
-   or `--merge` again, up to three runs in a row, then tell the user. Changes requested in a review
-   stand until the one who asked approves or dismisses it: once the fix is in, that wait goes to the
-   user, and so does a comment the loop did not fix. What needs fixing — a failing check, a person's
-   comment — goes through the loop on the same branch: the work (step 4), `land.sh`, a review run
-   (step 5). What no agent can do goes to the user: a conflict with the base branch, which they
-   merge in, and the loop then publishes, reviews and checks it again; a pull request closed without
-   a merge, which only they reopen; a base branch that could not fast-forward after a merge. The
-   same `4` or `5` for any other reason twice in a row goes to the user as in step 6; a merge
-   `publish.sh` refused is never done by hand.
+   can take `CHECKS_WAIT` seconds: give the command that long. After the merge it prints
+   `OWED AFTER THE MERGE` when `/qa` put checks off until then. Make them at once, with
+   `/qa --after-merge <task>`: the results go into `results.json` beside the list, with a report,
+   and into the report of step 13. A check that fails then is a defect like any other: write it into
+   the tracker as a task, and name the task in its result. One that still cannot be made is the
+   user's to accept, in `open-answered.json` beside the results, written as
+   `{"by": "human", "answer": "accepted-as-is"}`. No later task merges while a result is missing;
+   its review and its landing go on meanwhile, and `publish.sh` posts the report on the merged pull
+   request. At `pr`, `--check` lists these items with "ready to merge": once the user has merged,
+   run `publish.sh` on the task's branch, which lists them the same way. At `pr`, `0` says the pull
+   request is ready for the user to merge. A refusal names its item: meet it — a review run, `/qa`
+   again, an answer to post — or tell the user. On `4` or `5`, read the pull request with
+   `gh pr view`, `gh pr checks` and `pr-post.sh comments`. Checks still running are not a failure:
+   run `--check` or `--merge` again, up to three runs in a row, then tell the user. Changes
+   requested in a review stand until the one who asked approves or dismisses it: once the fix is in,
+   that wait goes to the user, and so does a comment the loop did not fix. What needs fixing — a
+   failing check, a person's comment — goes through the loop on the same branch: the work (step 4),
+   `land.sh`, a review run (step 5). What no agent can do goes to the user: a conflict with the base
+   branch, which they merge in, and the loop then publishes, reviews and checks it again; a pull
+   request closed without a merge, which only they reopen; a base branch that could not fast-forward
+   after a merge. The same `4` or `5` for any other reason twice in a row goes to the user as in
+   step 6; a merge `publish.sh` refused is never done by hand.
 12. **Log the task boundary:** one line in `.review/decisions/tasks.jsonl` — the signals, the
     decision, and what the user said (format:
     `templates/review/project/decisions/tasks.example.jsonl`) — written once the user has answered
@@ -331,11 +345,11 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
       new task on top of it, or a revert the user makes.
     - `ADVANCE=auto`, at any `LANDING` but `off` and `pr`: go on without waiting, with one line
       saying which task landed and which starts, only when `land.sh`, or the last `publish.sh` after
-      it — at `merge` with `--merge` — ended with `0`, the task's category is in
-      `ADVANCE_CATEGORIES`, nothing it touched is in `RISK_PATHS` and step 10 left no question that
-      the next unblocked task waits on; otherwise as `ask`. A question another task waits on stays
-      in that task, and the one line names it. At `pr` the next task waits for the user's merge
-      anyway (step 1).
+      it — at `merge` with `--merge` — ended with `0` and no check is owed after the merge (step
+      11), the task's category is in `ADVANCE_CATEGORIES`, nothing it touched is in `RISK_PATHS` and
+      step 10 left no question that the next unblocked task waits on; otherwise as `ask`. A question
+      another task waits on stays in that task, and the one line names it. At `pr` the next task
+      waits for the user's merge anyway (step 1).
 
 ### Rules
 
@@ -357,8 +371,8 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 - Read the requirements, the plan, the tracker, the diff, source files, `.review/**` and the
   standards
 - Run `gates.sh`, `review.sh`, `land.sh`, `publish.sh`, `pr-post.sh`, tests and linters
-- Start the `reviewer` and `maintainer` subagents; run `/qa`, `/groom`, and `/policy` for an
-  escalation answered the same way again (step 7)
+- Start the `reviewer` and `maintainer` subagents; run `/qa`, `/qa --after-merge` for what a merged
+  task owes, `/groom`, and `/policy` for an escalation answered the same way again (step 7)
 - Write `.review/runs/**`, `.review/current-task.json` and `.review/decisions/*.jsonl`; the task's
   status, proposed tasks and the exit criteria of later tasks in the tracker; the task's `[x]` in
   the plan; in `--init`, the files of setup steps 1 to 6

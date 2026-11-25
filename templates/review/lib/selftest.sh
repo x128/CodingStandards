@@ -1214,18 +1214,23 @@ qa_record T-029 later '{"counts": {"pass": 1, "after_merge": 1}, "failures": [],
             {"id": "the build of main", "verdict": "after_merge",
              "reason": "the workflow runs only on a push to the base branch",
              "check": "the run of the build workflow on main, at the merge commit"}]}'
-qa_says "an item put off until after the merge is listed with its reason" 0 \
-  "   1 put off until after the merge: the build of main (the workflow runs only on a push to the base branch)" \
-  .review/runs/0-qa-T-029-later
+qa_says "below the pull request levels pr-post.sh qa lists what is put off" 0 \
+  "   1 to check after the merge — they do not hold it:" .review/runs/0-qa-T-029-later
+says "an item put off until after the merge is listed with its reason" \
+  "      the build of main — the workflow runs only on a push to the base branch. Then: the run of the build workflow on main, at the merge commit"
 never_says "an item put off is not a thing that passed" "nothing: every item passed"
-# No script checks anything after a merge yet, so the line says what holds until one does:
-# such an item is an item not checked. Below the pull request levels nothing waits on it.
-says "the line of an item put off says that it holds the merge like an item not checked" \
-  "      no script checks an item after the merge yet: at the pull request levels it holds the merge like an item not checked"
 says "below the pull request levels nothing waits on an item put off" \
-  "   The loop goes on: nothing waits on it at LANDING=off, which makes no merge: the report of /qa says that it is not checked, and why"
+  "   The loop goes on: nothing merges at LANDING=off: what is put off stands in the report of the task (maintain, step 13)"
 never_says "and the user is not asked where the loop makes no merge" "For the user"
-never_says "nothing says that a merge goes on with an item put off" "not hold"
+# A count of items put off that no item backs says neither what is checked then nor why:
+# it is no item put off, and the merge reads it as not checked.
+qa_record T-029 counted '{"counts": {"pass": 1, "after_merge": 2}, "failures": []}'
+qa_says "a count of items put off with no item behind it is said to count as not checked" 0 \
+  "   2 put off until after the merge by a count alone: no item says its check, so they count as not checked" \
+  .review/runs/0-qa-T-029-counted
+says "and the loop has /qa list each with its check" \
+  "   The loop goes on: have /qa list each as an item, with its reason and the check that will be made then (items), or check it now"
+never_says "a count alone is not said to be free of the merge" "do not hold"
 
 new_task T-030
 qa_record T-030 asks "{\"failures\": [], $double_tap}"
@@ -3642,16 +3647,47 @@ pr_post "the statuses again" 0 "statuses posted" statuses
 holds "the user's answer turns /qa green" status_is loop/qa success
 publish "and the task merges" 0 "merged T-001" --merge
 
-# An item /qa put off until after the merge. No script checks anything after a merge yet,
-# so until one does such an item is an item not checked wherever a count decides: the merge
-# waits on it, by its items or by its count alone, until a /qa of the whole pull request
-# leaves none or the user accepts what the /qa left, as for an item not checked; pr-post.sh
-# qa says so right after the /qa, and the status counts it as not checked.
-put_off='{"counts": {"pass": 1, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": 1},
-  "items": [{"id": "TC-001", "verdict": "pass"},
-            {"id": "the build of main", "verdict": "after_merge",
-             "reason": "the workflow runs only on a push to the base branch",
-             "check": "the run of the build workflow on main, at the merge commit"}]}'
+# What can be checked only after the merge. /qa records such an item as after_merge, with
+# its reason and the check it will make. It is in no count the merge reads, so the merge
+# does not wait on it: the script that merges writes down what is owed
+# (.review/runs/after-merge-<task>/owed.json) and lists it, every later review and landing
+# says what is still owed, and no later task merges (M10) until each item has its result
+# in results.json beside the list — a pass with what was seen, a failure with the task of
+# the tracker that takes the defect, or a check that could not be made, with the user's
+# acceptance beside it — and the report is on the merged pull request. A count of items put
+# off that no item backs says no check, and stays among those not checked. with_items
+# <items> makes the <more> of qa_recorded from a list of items, the counts taken from them.
+with_items() {
+  jq -nc --argjson items "[$1]" '
+    {counts: (reduce ("pass", "fail", "unproven", "not_checked", "after_merge") as $verdict
+                ({}; .[$verdict] = ([$items[] | select(.verdict == $verdict)] | length))),
+     items: $items}'
+}
+passed_case='{"id": "TC-001", "verdict": "pass"}'
+build_of_main='{"id": "the build of main", "verdict": "after_merge",
+  "reason": "the workflow runs only on a push to the base branch",
+  "check": "the run of the build workflow on main, at the merge commit"}'
+put_off="$(with_items "$passed_case, $build_of_main")"
+owed=.review/runs/after-merge-T-001
+owed_block="OWED AFTER THE MERGE — /qa put off 1 check(s) of T-001 until now:"
+owed_next="   The loop goes on: make them now (/qa --after-merge T-001): the results go into "\
+"$owed/results.json, with a report.md beside it; no later task merges before each has its result"
+qa_status_ends() {
+  jq_true --arg sha "$(git rev-parse HEAD)" --arg state "$1" --arg ending "$2" \
+    '[.[] | select(.sha == $sha and .context == "loop/qa")] | last
+     | .state == $state and (.description | endswith($ending))' "$GH_STATE/statuses.json"
+}
+# A later task up to its merge: its landing, its review and its /qa, in $WORK/land.log
+# and $WORK/run.log.
+later_task() { task_with_id "$1" && reviewed_pull_request "${2:-merge}"; }
+# The tracker is one of the loop's files: a landing commits it, with nothing reviewed again.
+tracker_lands() {
+  printf '%s\n' "$1" >>TASK_TRACKER.md
+  step "the landing of the tracker" "$WORK/land.log" \
+    "$LIB_DIR/land.sh" --task-file .review/task.json
+}
+result_is() { printf '[%s]' "$1" >"$owed/results.json"; }
+
 published_project origin
 set_level merge
 pr_work
@@ -3659,55 +3695,339 @@ pr_land "a landing whose /qa puts an item off until after the merge" 0 \
   "pull request: https://example.test/pull/1"
 pr_review "the review of that landing" 0 "CLEAN — gates green"
 qa_checked '[]' "" 0 "$put_off"
-put_off_qa="qa-$qa_runs"
-says "at the pull request levels pr-post.sh qa lists an item put off until after the merge" \
-  "   1 put off until after the merge: the build of main (the workflow runs only on a push to the base branch)" \
+says "at the pull request levels pr-post.sh qa lists what is put off until after the merge" \
+  "   1 to check after the merge — they do not hold it:" "$WORK/qa.log"
+says "with its reason and the check that will be made then" \
+  "      the build of main — the workflow runs only on a push to the base branch. Then: the run of the build workflow on main, at the merge commit" \
   "$WORK/qa.log"
-says "its line says there too that it holds the merge like an item not checked" \
-  "      no script checks an item after the merge yet: at the pull request levels it holds the merge like an item not checked" \
+says "and the loop makes that check right after the merge" \
+  "   The loop goes on: they are checked right after the merge (/qa --after-merge T-001)" \
   "$WORK/qa.log"
-says "and it is the user's to accept or not" \
-  "   For the user, beyond what was agreed: to merge with it not checked, or not — unless a /qa of the whole pull request can check it before the merge; their acceptance goes into " \
-  "$WORK/qa.log"
-says "with the file their acceptance goes into, beside the record" \
-  ".review/runs/$put_off_qa/open-answered.json, {\"by\": \"human\", \"answer\": \"accepted-as-is\", \"words\": \"<what they said>\"}" \
-  "$WORK/qa.log"
-never_says "nothing says there that the merge goes on with it" "not hold" "$WORK/qa.log"
-holds "the status of /qa waits on an item put off" status_is loop/qa pending
-m5_put_off="M5: /qa left 0 unproven and 1 not checked in $put_off_qa (1 of them put off until "\
-"after the merge, which no script checks yet) — restore what failed"
-publish "--check refuses for an item put off until after the merge" 3 "$m5_put_off" --check
-publish "an item put off until after the merge holds the merge like an item not checked" 3 \
-  "$m5_put_off" --merge
-holds "nothing is merged with an item put off" not gh_called "pr merge"
+never_says "the user is not asked about an item put off" "For the user" "$WORK/qa.log"
+holds "the status of /qa says so" qa_status_ends success ", 0 not checked, 1 after the merge"
+publish "--check says what is owed after the merge" 0 \
+  "ready to merge: https://example.test/pull/1" --check
+says "and names each check" "   after the merge /qa owes 1 check(s): the build of main" \
+  "$WORK/publish.log"
+holds "the description lists it under the /qa runs" \
+  jq_true --arg line "- After the merge: the build of main — the run of the build workflow on main, at the merge commit" \
+  '.[0].body | contains($line)' "$GH_STATE/prs.json"
+holds "nothing is owed before the merge" not test -e "$owed"
+publish "an item put off until after the merge does not hold it" 0 "merged T-001" --merge
+says "the merge lists what is owed after it" "$owed_block" "$WORK/publish.log"
+says "each with the check to make" \
+  "  - the build of main: the run of the build workflow on main, at the merge commit" \
+  "$WORK/publish.log"
+holds "and ends with what the loop does now" \
+  test "$(tail -1 "$WORK/publish.log")" = "$owed_next"
+holds "it writes the list beside the runs" \
+  jq_true --arg from ".review/runs/qa-$qa_runs" \
+  '.task == "T-001" and .pr_url == "https://example.test/pull/1" and .pr_number == 1
+   and .base == "main" and (.time | type) == "number"
+   and .items == [{id: "the build of main",
+                   reason: "the workflow runs only on a push to the base branch",
+                   check: "the run of the build workflow on main, at the merge commit",
+                   from: $from}]' "$owed/owed.json"
+holds "the squash says how many checks are put off" \
+  remote_log_has main "QA: qa-$qa_runs (full; 1 to check after the merge)"
+pr_post "a report that is not written yet is not posted" 3 \
+  "$owed holds no checks owed after a merge, or no report.md yet" after-merge "$owed"
+later_task T-002
+says "the landing of a later task says what is owed, and runs" \
+  "OWED — T-001: the build of main, put off until after its merge: no result ($owed)" \
+  "$WORK/land.log"
+says "and so does its review" \
+  "OWED — T-001: the build of main, put off until after its merge: no result ($owed)" \
+  "$WORK/run.log"
+publish "a later task does not merge while a check owed after a merge has no result" 3 \
+  "M10: T-001 was merged with checks put off until after its merge, and these have no result that says what was seen: the build of main" \
+  --merge
+says "making the check is the loop's" \
+  "   The loop goes on: make them (/qa --after-merge T-001): $owed/results.json" \
+  "$WORK/publish.log"
+publish "--check of the later task refuses the same way" 3 \
+  "M10: T-001 was merged with checks put off until after its merge" --check
+printf 'not JSON' >"$owed/results.json"
+publish "results that cannot be read settle nothing" 3 \
+  "have no result that says what was seen: the build of main" --merge
+result_is '{"id": "the build of main", "verdict": "pass"}'
+publish "a pass says what was seen" 3 \
+  "have no result that says what was seen: the build of main" --merge
+result_is '{"id": "the build of main", "verdict": "fine", "evidence": "run 41"}'
+publish "a verdict that is none of the three is no result" 3 \
+  "have no result that says what was seen: the build of main" --merge
+result_is '{"id": "the build of main", "verdict": "not_checked"}'
+publish "a check that could not be made says why" 3 \
+  "have no result that says what was seen: the build of main" --merge
+result_is '{"id": "the build of main", "verdict": "fail", "reason": "the job ends red"}'
+publish "a result that failed names its task" 3 \
+  "M10: T-001 was merged, and these checks failed after it and name no task of the tracker: the build of main" \
+  --merge
+says "a check that fails after the merge is a defect, which the loop writes down" \
+  "   The loop goes on: a check that fails after the merge is a defect: write it into the tracker as a task, and name the task in its result" \
+  "$WORK/publish.log"
+result_is '{"id": "the build of main", "verdict": "fail", "reason": "the job ends red",
+  "task": "T-077"}'
+publish "a task that is not in the tracker settles nothing" 3 \
+  "these checks failed after it and name no task of the tracker: the build of main" --merge
+tracker_lands "### T-001: Answer 42"
+result_is '{"id": "the build of main", "verdict": "fail", "reason": "the job ends red",
+  "task": "T-001"}'
+publish "nor does the merged task itself" 3 \
+  "these checks failed after it and name no task of the tracker: the build of main" --merge
+tracker_lands "### T-077: The build of main ends red"
+result_is '{"id": "the build of main", "verdict": "fail", "reason": "the job ends red",
+  "task": "T-077"}'
+publish "a failed check that is a task of the tracker still waits for its report" 3 \
+  "M10: the report of the checks after the merge of T-001 is not written" --merge
+says "writing it is the loop's" "   The loop goes on: write $owed/report.md" "$WORK/publish.log"
+holds "nothing is merged while something is owed" gh_count_is "pr merge" 1
+printf '# After the merge of T-001\n\nThe build of main ends red: T-077.\n' >"$owed/report.md"
+publish "a failed check that is a task of the tracker lets the next task merge" 0 \
+  "merged T-002" --merge
+holds "and its report is on the pull request it belongs to" \
+  jq_true 'any(.[]; .pr == 1 and .kind == "issue"
+                    and (.body | startswith("<!-- loop:after-merge T-001 -->\n# After the merge of T-001")))' \
+  "$GH_STATE/comments.json"
+never_says "a merge with nothing owed lists nothing" "OWED" "$WORK/publish.log"
+pr_post "posted again, it is there once" 0 \
+  "the report of the checks after the merge of T-001 is on https://example.test/pull/1 already: no second one" \
+  after-merge "$owed"
+holds "its marker is on the pull request once" \
+  posted_count_is "<!-- loop:after-merge T-001 -->" 1
+
+published_project origin
+reviewed_pull_request merge
+qa_checked '[]' "$(git rev-parse HEAD)" 0 "$put_off"
+publish "a /qa after a fix that puts an item off does not hold the merge either" 0 \
+  "merged T-001" --merge
+says "and what it put off is owed too" "$owed_block" "$WORK/publish.log"
+result_is '{"id": "the build of main", "verdict": "pass",
+  "evidence": "run 41 of the build on main: success"}'
+later_task T-002
+never_says "a check that has its result is not said to be owed" "OWED" "$WORK/run.log"
+publish "settled results with no report do not merge" 3 \
+  "M10: the report of the checks after the merge of T-001 is not written" --merge
+printf '# After the merge of T-001\n\nRun 41 of the build on main: success.\n' >"$owed/report.md"
+publish "a result that passed settles it" 0 "merged T-002" --merge
+holds "the report of a check that passed is on the merged pull request" \
+  posted_count_is "<!-- loop:after-merge T-001 -->" 1
+holds "its post is recorded beside the list" \
+  jq_true '.pr_url == "https://example.test/pull/1" and (.id | tostring | length) > 0' \
+  "$owed/pr-comment.json"
+
+published_project origin
+reviewed_pull_request merge
+qa_checked '[]' "" 0 "$put_off"
+publish "a merge with a check put off" 0 "merged T-001" --merge
+result_is '{"id": "the build of main", "verdict": "not_checked",
+  "reason": "the host was down"}'
+printf '# After the merge of T-001\n\nThe host was down: nothing was seen.\n' >"$owed/report.md"
+pr_post "the report is posted from the base branch, on the pull request that was merged" 0 \
+  "report of the checks after the merge of T-001 posted: https://example.test/pull/1" \
+  after-merge "$owed"
+later_task T-002
+says "a check that could not be made is said so in the later runs" \
+  "OWED — T-001: the build of main, put off until after its merge: could not be checked and is not accepted ($owed)" \
+  "$WORK/run.log"
+publish "a check that could not be made after the merge is the user's" 3 \
+  "M10: T-001 is merged, and the build of main could not be checked after it (the host was down)" \
+  --merge
+says "it is beyond what was agreed, with the file their acceptance goes into" \
+  "   For the user, beyond what was agreed: leave it unchecked, or say how to check it; their acceptance goes into $owed/open-answered.json, {\"by\": \"human\", \"answer\": \"accepted-as-is\"}" \
+  "$WORK/publish.log"
+never_says "no words of theirs are asked for" "words" "$WORK/publish.log"
+jq -n '{by: "agent", answer: "accepted-as-is"}' >"$owed/open-answered.json"
+publish "an acceptance that is not the user's settles nothing" 3 \
+  "the build of main could not be checked after it" --merge
+jq -n '{by: "human", answer: "accepted-as-is"}' >"$owed/open-answered.json"
+publish "their acceptance settles it" 0 "merged T-002" --merge
+holds "the report posted before is not posted again" \
+  posted_count_is "<!-- loop:after-merge T-001 -->" 1
+
+published_project origin
+reviewed_pull_request merge
+qa_checked '[]' "" 0 "$put_off"
+# A lock on the index stops the checkout, and nothing before the merge writes the index.
+touch .git/index.lock
+publish "a merge whose checkout could not move still writes the list" 1 \
+  "could not move to main" --merge
+holds "the list is there all the same" jq_true '.items | length == 1' "$owed/owed.json"
+written="$(jq '.time' "$owed/owed.json")"
+rm .git/index.lock
+publish "run again, it lists what is owed" 0 "$owed_block" --merge
+holds "and the list is written once" \
+  jq_true --argjson written "$written" '.time == $written and (.items | length) == 1' \
+  "$owed/owed.json"
+
+published_project origin
+touch "$GH_STATE/moves-the-checkout"
+reviewed_pull_request merge
+qa_checked '[]' "" 0 "$put_off"
+publish "with a gh that moves the checkout itself the list is written too" 0 "$owed_block" \
+  --merge
+holds "that list holds the item" \
+  jq_true '.items | map(.id) == ["the build of main"]' "$owed/owed.json"
+
+published_project origin
+git worktree add -q -b task/T-001 "$repository-linked" || fail_setup "linked worktree"
+cp -R .review "$repository-linked/"
+cd "$repository-linked" || fail_setup "cd linked worktree"
+reviewed_pull_request merge
+qa_checked '[]' "" 0 "$put_off"
+publish "a merge from a linked worktree lists what is owed too" 0 "$owed_block" --merge
+holds "that merge ends with what the loop does now" \
+  test "$(tail -1 "$WORK/publish.log")" = "$owed_next"
+
+published_project origin
+reviewed_pull_request pr
+qa_checked '[]' "" 0 "$put_off"
+publish "at pr --check says what is owed after the merge" 0 \
+  "   after the merge /qa owes 1 check(s): the build of main" --check
+says "with the pull request ready to merge" "ready to merge: https://example.test/pull/1" \
+  "$WORK/publish.log"
+holds "at pr nothing is owed before the user merged" not test -e "$owed"
+merged_by_a_person https://example.test/pull/1
+publish "a pull request a person merged owes its checks too" 0 \
+  "already merged: https://example.test/pull/1"
+says "publish.sh on the task's branch lists them" "$owed_block" "$WORK/publish.log"
+holds "and writes the list" jq_true '.items | map(.id) == ["the build of main"]' "$owed/owed.json"
+publish "run again there, it lists them again" 0 "$owed_block"
+git fetch -q origin
+git switch -q main && git pull -q --ff-only origin main
+later_task T-002 pr
+publish "at pr --check of a later task waits for what is owed too" 3 \
+  "M10: T-001 was merged with checks put off until after its merge" --check
+
+# What the list holds: of each item /qa put off, by its id, what the newest record of the
+# task says. A count alone is no item; an item a later /qa checked is owed no more.
+published_project origin
+reviewed_pull_request merge
 qa_recorded '[]' "" 0 \
   '{"counts": {"pass": 3, "fail": 0, "unproven": 0, "not_checked": 1, "after_merge": 2}}'
 publish "a /qa with counts alone holds the merge by its count of items put off" 3 \
-  "M5: /qa left 0 unproven and 3 not checked in qa-$qa_runs (2 of them put off until after the merge" \
+  "M5: /qa left 0 unproven and 3 not checked in qa-$qa_runs (2 of them put off until after the merge by a count alone: no item says its check)" \
   --check
 qa_recorded '[]' "" 0 \
   '{"counts": {"pass": 3, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": "one"}}'
 publish "a count of items put off that is no number holds the merge too" 3 \
-  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs (1 of them put off until after the merge" \
+  "M5: /qa left 0 unproven and 1 not checked in qa-$qa_runs (1 of them put off until after the merge by a count alone" \
   --check
-qa_checked
-publish "a later /qa of the whole pull request that put nothing off clears it" 0 \
-  "ready to merge: https://example.test/pull/1" --check
-qa_checked '[]' "$(git rev-parse HEAD)" 0 "$put_off"
-put_off_qa="qa-$qa_runs"
-publish "a /qa after a fix that puts an item off holds the merge too" 3 \
-  "M5: /qa left 0 unproven and 1 not checked in $put_off_qa (1 of them put off until after the merge" \
+pr_post "the statuses with such a count" 0 "statuses posted" statuses
+holds "the status of /qa waits on such a count" status_is loop/qa pending
+qa_checked '[]' "" 0 "$put_off"
+publish "a later /qa of the whole pull request that lists what it puts off clears it" 0 \
+  "   after the merge /qa owes 1 check(s): the build of main" --check
+later_check="the run of the build workflow on main, and of the deploy that follows it"
+qa_checked '[]' "$(git rev-parse HEAD)" 0 "$(with_items '{"id": "the build of main",
+  "verdict": "after_merge", "reason": "the workflow runs only on a push to the base branch",
+  "check": "'"$later_check"'"}, {"id": "the release job", "verdict": "after_merge",
+  "reason": "it runs when the pull request closes", "check": "the release job of the merge"}')"
+publish "what a later /qa puts off is owed beside what an earlier one did" 0 \
+  "   after the merge /qa owes 2 check(s): the build of main; the release job" --check
+holds "of an item two records put off the newest says the check" \
+  jq_true --arg line "- After the merge: the build of main — $later_check" \
+  '.[0].body | contains($line)' "$GH_STATE/prs.json"
+holds "the status counts what the task puts off" \
+  qa_status_ends success ", 0 not checked, 2 after the merge"
+qa_checked '[]' "$(git rev-parse HEAD)" 0 \
+  "$(with_items '{"id": "the release job", "verdict": "pass"}')"
+publish "an item a later /qa checked is owed no more" 0 \
+  "   after the merge /qa owes 1 check(s): the build of main" --check
+never_says "and is not named among what is owed" "the release job" "$WORK/publish.log"
+criterion_is() {
+  jq --arg claim "$1" '.exit_criteria = [{text: "the build of main stays green",
+                                         verified_by: $claim}]' .review/task.json \
+    >"$WORK/task.json" && cp "$WORK/task.json" .review/task.json
+}
+criterion_is "after the merge: later"
+publish "a claim put off until after the merge that names no item is refused" 3 \
+  "M5: the criterion 'the build of main stays green' is put off until after the merge and names no item /qa put off until then (after the merge: <the item's id>)" \
   --merge
-holds "and nothing is merged then either" not gh_called "pr merge"
-jq -n '{by: "human", answer: "accepted-as-is", words: "The build of main is checked by hand."}' \
-  >".review/runs/$put_off_qa/open-answered.json"
-pr_post "the statuses after the user accepted an item put off" 0 "statuses posted" statuses
-holds "the user's acceptance of an item put off turns /qa green" status_is loop/qa success
-holds "and the status counts the item put off as not checked" \
-  jq_true --arg sha "$(git rev-parse HEAD)" \
-  '[.[] | select(.sha == $sha and .context == "loop/qa")] | last | .description
-   | endswith("0 unproven, 1 not checked")' "$GH_STATE/statuses.json"
-publish "with the user's acceptance beside the record the task merges" 0 "merged T-001" --merge
+says "the loop has /qa record the item, or claims what was checked" \
+  "   The loop goes on: have /qa record the item with its check, or claim what was checked" \
+  "$WORK/publish.log"
+criterion_is "after the merge: the release job"
+publish "nor is one that names an item a later /qa checked" 3 \
+  "names no item /qa put off until then" --merge
+holds "nothing is merged on such a claim" not gh_called "pr merge"
+criterion_is "after the merge:  the build of main "
+publish "an exit criterion that can be checked only after the merge is claimed by its item" 0 \
+  "merged T-001" --merge
+holds "the squash says that the criterion is checked after the merge" \
+  remote_log_has main "Exit-Criteria: 0 verified, 1 to check after the merge"
+says "what is owed is listed with the check the newest record gives" \
+  "  - the build of main: $later_check" "$WORK/publish.log"
+never_says "an item that was checked before the merge is not owed after it" \
+  "the release job" "$WORK/publish.log"
+
+# What keeps the list. A merge that cannot write it says so, and run again writes it and
+# merges nothing twice. A task whose id is used again reads the records made since the
+# landing of the earlier one, and its list goes beside the earlier one's. A list that
+# cannot be read holds a later merge like a check with no result.
+published_project origin
+reviewed_pull_request merge
+qa_checked '[]' "" 0 "$put_off"
+printf 'a file where the folder goes\n' >"$owed"
+publish "a merge that cannot write down what is owed says so" 1 \
+  "https://example.test/pull/1 is merged into main, but the checks /qa put off until after the merge could not be written down" \
+  --merge
+says "and says what the loop does about it" \
+  "   The loop goes on: run publish.sh again on this branch: it writes the list and merges nothing twice" \
+  "$WORK/publish.log"
+holds "that merge is in the base branch" remote_log_has main "Task-Id: T-001"
+rm "$owed"
+publish "run again, it writes the list and lists what is owed" 0 "$owed_block" --merge
+holds "and merges nothing twice" gh_count_is "pr merge" 1
+result_is '{"id": "the build of main", "verdict": "pass",
+  "evidence": "run 41 of the build on main: success"}'
+printf '# After the merge of T-001\n\nRun 41 of the build on main: success.\n' >"$owed/report.md"
+later_task T-001
+publish "a task that takes the id of one that merged is ready with its own /qa" 0 \
+  "ready to merge: https://example.test/pull/2" --check
+never_says "what the task that landed put off is not owed by the one that took its id" \
+  "after the merge /qa owes" "$WORK/publish.log"
+later_check="the run of the build workflow on main, at the second merge commit"
+qa_checked '[]' "" 0 "$(with_items "$passed_case, "'{"id": "the build of main",
+  "verdict": "after_merge", "reason": "the workflow runs only on a push to the base branch",
+  "check": "'"$later_check"'"}')"
+publish "a task whose id is used again merges with what it puts off itself" 0 \
+  "  - the build of main: $later_check" --merge
+says "the results of its checks go beside a list of its own" \
+  "the results go into $owed-pr2/results.json" "$WORK/publish.log"
+holds "that list is of its own pull request" \
+  jq_true --arg check "$later_check" \
+  '.task == "T-001" and .pr_number == 2 and (.items | map(.check)) == [$check]' \
+  "$owed-pr2/owed.json"
+holds "and the list of the earlier pull request stays as it was" \
+  jq_true '.pr_number == 1 and (.items | length) == 1' "$owed/owed.json"
+printf 'not JSON' >"$owed-pr2/owed.json"
+later_task T-002
+says "a list that cannot be read is said in the later runs" \
+  "OWED — $owed-pr2/owed.json, the list of the checks a merged task owes, is not readable" \
+  "$WORK/run.log"
+publish "a list of what is owed that cannot be read holds a later merge" 3 \
+  "M10: $owed-pr2/owed.json, the list of the checks a merged task owes, is not readable" --merge
+says "repairing it is the loop's" \
+  "   The loop goes on: repair it — {task, pr_url, pr_number, base, time, items: [{id, reason, check, from}]}, as publish.sh wrote it after the merge" \
+  "$WORK/publish.log"
+holds "nothing is merged past a list that cannot be read" gh_count_is "pr merge" 2
+
+# What /qa could not check is not put off: it holds the merge as before.
+published_project origin
+reviewed_pull_request merge
+ios_not_checked='{"id": "TC-001 on iOS", "verdict": "not_checked",
+  "reason": "the simulator did not boot"}'
+qa_checked '[]' "" 0 "$(with_items "$passed_case, $ios_not_checked")"
+open_qa="qa-$qa_runs"
+publish "an item not checked because a device failed holds the merge, as before" 3 \
+  "M5: /qa left 0 unproven and 1 not checked in $open_qa" --merge
+holds "nothing is merged with an item not checked" not gh_called "pr merge"
+jq -n '{by: "human", answer: "accepted-as-is", words: "The simulator is broken: fine."}' \
+  >".review/runs/$open_qa/open-answered.json"
+pr_post "the statuses after the user accepted an item not checked" 0 "statuses posted" statuses
+publish "their acceptance lets it merge" 0 "merged T-001" --merge
+never_says "a merge with nothing put off owes nothing" "OWED" "$WORK/publish.log"
 
 published_project origin
 printf 'fun util() = 1\n' >src/util.kt

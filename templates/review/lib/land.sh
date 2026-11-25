@@ -139,6 +139,10 @@ esac
 TASK_ID="$(jq -r '.id' "$TASK_FILE")"
 [ -n "$TASK_ID" ] && [ "$TASK_ID" != "null" ] || { echo "task file has no .id" >&2; exit 1; }
 
+# What the merges of earlier tasks still owe — checks that /qa put off until after them —
+# is said at every landing and stops none (common.sh).
+say_after_merge_unsettled
+
 # ---------------------------------------------------------------------------
 # 1 to 5. The run is a completed review run (1) of THIS tree (2); its end-to-end
 #    tests passed on every platform the tree ships, through the harness as it is now,
