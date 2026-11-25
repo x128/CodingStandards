@@ -187,8 +187,7 @@ say_owed() {
   local list folder="" owed
   for list in .review/runs/after-merge-*/owed.json; do
     [ -f "$list" ] || continue
-    ! jq -e --arg url "$PR_URL" '.pr_url == $url' "$list" >/dev/null 2>&1 || \
-      folder="${list%/owed.json}"
+    ! json_holds --arg url "$PR_URL" '.pr_url == $url' "$list" || folder="${list%/owed.json}"
   done
   [ -n "$folder" ] || return 0
   owed="$(after_merge_unsettled | jq -sc --arg folder "$folder" \
@@ -395,8 +394,7 @@ for OWED_LIST in .review/runs/after-merge-*/owed.json; do
   OWING="$(jq -r '.task' "$OWED_LIST")"
   OWED_URL="$(jq -r '.pr_url // ""' "$OWED_LIST")"
   [ "$OWED_URL" != "$PR_URL" ] || continue
-  ! jq -e --arg url "$OWED_URL" '.pr_url == $url' "$OWED_FOLDER/pr-comment.json" \
-      >/dev/null 2>&1 || continue
+  ! json_holds --arg url "$OWED_URL" '.pr_url == $url' "$OWED_FOLDER/pr-comment.json" || continue
   [ -s "$OWED_FOLDER/report.md" ] || \
     refuse M10 "the report of the checks after the merge of $OWING is not written" \
       loop "write $OWED_FOLDER/report.md"

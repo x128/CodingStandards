@@ -432,6 +432,15 @@ require_array_length() {
   printf '%s' "$length"
 }
 
+# Whether a file of JSON says what a filter asks: json_holds [<options of jq>] <filter>
+# <file>. What the filter gives is printed and compared with `true`. The exit code of
+# jq -e is not asked: jq 1.6 ends -e with 0 on a file that is there and empty, which would
+# read as yes — as an acceptance, a report that is posted, the list of this pull request.
+# A file that is missing, empty or no JSON says nothing.
+json_holds() {
+  [ "$(jq -r "$@" 2>/dev/null)" = "true" ]
+}
+
 # Whose turn it is after a stop. A script that stops for the user says so through
 # `turn user:<kind>`; <kind> is one of USER_DECIDES: what only the user decides, or only the
 # user can do. Every other stop is the loop's, and `turn loop` names its next step. No script
@@ -1851,8 +1860,7 @@ qa_checked_this_work() {
 # such a record tried again when any record before it left something open, and an older
 # one of that form left open whatever a newer one lists.
 qa_open_accepted() {
-  jq -e '.by == "human" and .answer == "accepted-as-is"' "$1/open-answered.json" \
-    >/dev/null 2>&1
+  json_holds '.by == "human" and .answer == "accepted-as-is"' "$1/open-answered.json"
 }
 qa_left_nothing_open() {
   local task_id="$1" merge_base="$2" records landed_at accepted open run counts tried detail
@@ -1987,7 +1995,7 @@ owe_after_merge() {
   local task_id="$1" pr_url="$2" pr_number="$3" base="$4" items="${5:-}" folder list count
   for list in .review/runs/after-merge-*/owed.json; do
     [ -f "$list" ] || continue
-    ! jq -e --arg url "$pr_url" '.pr_url == $url' "$list" >/dev/null 2>&1 || return 0
+    ! json_holds --arg url "$pr_url" '.pr_url == $url' "$list" || return 0
   done
   [ -n "$items" ] || items="$(qa_after_merge_items "$task_id")" || return 1
   count="$(printf '%s' "$items" | jq 'length')" || return 1
@@ -2026,8 +2034,8 @@ after_merge_unsettled() {
     results="$(jq -sc 'if length == 1 and (.[0] | type) == "array" then .[0] else empty end' \
       "$folder/results.json" 2>/dev/null)"
     accepted=false
-    ! jq -e '.by == "human" and .answer == "accepted-as-is"' "$folder/open-answered.json" \
-        >/dev/null 2>&1 || accepted=true
+    ! json_holds '.by == "human" and .answer == "accepted-as-is"' \
+        "$folder/open-answered.json" || accepted=true
     jq -c --arg folder "$folder" --argjson results "${results:-[]}" \
       --argjson tasks "${tasks:-[]}" --argjson accepted "$accepted" '
       def text: type == "string" and . != "";

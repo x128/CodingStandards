@@ -897,7 +897,7 @@ post_after_merge() {
   PR_NUMBER="$(jq -r '.pr_number // ""' "$folder/owed.json")"
   [ -n "$owing" ] && [ -n "$PR_URL" ] && [ -n "$PR_NUMBER" ] || \
     refuse "$folder/owed.json does not name the task and its pull request"
-  if jq -e --arg url "$PR_URL" '.pr_url == $url' "$folder/pr-comment.json" >/dev/null 2>&1; then
+  if json_holds --arg url "$PR_URL" '.pr_url == $url' "$folder/pr-comment.json"; then
     echo "the report of the checks after the merge of $owing is on $PR_URL already: no second one"
     return 0
   fi

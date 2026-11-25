@@ -4123,6 +4123,44 @@ says "repairing it is the loop's" \
   "$WORK/publish.log"
 holds "nothing is merged past a list that cannot be read" gh_count_is "pr merge" 2
 
+# A file that is there and empty says nothing: it is no list of this pull request, no
+# acceptance of the user and no record of a report that is posted. jq 1.6 ends -e with 0
+# on an input that is empty, so what a file says is printed and compared, never taken from
+# that exit code; with a newer jq these cases hold either way.
+published_project origin
+reviewed_pull_request pr
+qa_checked '[]' "" 0 "$put_off"
+merged_by_a_person https://example.test/pull/1
+mkdir -p "$owed" && : >"$owed/owed.json"
+publish "an empty file where the list goes is not read as the list of this pull request" 0 \
+  "$owed_block"
+holds "the list is written beside it" \
+  jq_true '.pr_number == 1 and (.items | map(.id)) == ["the build of main"]' \
+  "$owed-pr1/owed.json"
+says "and the merge says where the results go" \
+  "the results go into $owed-pr1/results.json" "$WORK/publish.log"
+rm -r "$owed"
+printf '[%s]' '{"id": "the build of main", "verdict": "not_checked",
+  "reason": "the host was down"}' >"$owed-pr1/results.json"
+printf '# After the merge of T-001\n\nThe host was down: nothing was seen.\n' \
+  >"$owed-pr1/report.md"
+: >"$owed-pr1/open-answered.json"
+: >"$owed-pr1/pr-comment.json"
+git fetch -q origin
+git switch -q main && git pull -q --ff-only origin main
+later_task T-002 pr
+publish "an empty file is no acceptance of a check that could not be made" 3 \
+  "M10: T-001 is merged, and the build of main could not be checked after it (the host was down)" \
+  --check
+jq -n '{by: "human", answer: "accepted-as-is"}' >"$owed-pr1/open-answered.json"
+publish "an empty record of a post does not keep the report off the pull request" 0 \
+  "ready to merge: https://example.test/pull/2" --check
+holds "the later merge posted that report" posted_count_is "<!-- loop:after-merge T-001 -->" 1
+: >"$owed-pr1/pr-comment.json"
+pr_post "nor does pr-post.sh after-merge read an empty record as a report that is posted" 0 \
+  "report of the checks after the merge of T-001 posted: https://example.test/pull/1" \
+  after-merge "$owed-pr1"
+
 # What /qa could not check is not put off: it holds the merge as before. The refusal names
 # the items and says whose turn it is: the loop's first — the work, or the tool or device,
 # then /qa of the whole pull request again — and the user's once a second /qa of the whole
@@ -4164,6 +4202,9 @@ holds "the status of /qa waits with what the second /qa left" \
    | .state == "pending" and (.description | startswith(
        "/qa of the whole pull request ran again and still left 0 unproven and 1 not checked"))' \
   "$GH_STATE/statuses.json"
+: >".review/runs/$again_qa/open-answered.json"
+publish "an empty file beside a record of /qa is no acceptance" 3 \
+  "M5: /qa of the whole pull request ran again and still left" --merge
 jq -n '{by: "agent", answer: "accepted-as-is"}' >".review/runs/$again_qa/open-answered.json"
 publish "an acceptance beside a record of /qa that is not the user's settles nothing" 3 \
   "M5: /qa of the whole pull request ran again and still left" --merge
