@@ -424,7 +424,12 @@ fi
 
 # The disk. Builds, simulators and recordings take gigabytes, and a disk that fills
 # up stops the user's own work too, which they learn only when they come back. Below
-# MIN_FREE_GB free, nothing runs; the run is not counted.
+# MIN_FREE_GB free, nothing runs; the run is not counted. Whose turn it is is read from
+# what the loop left under runs: where that is as much as is missing, the loop deletes
+# it; where it is less, only the user can free the disk. The measure is of all that is
+# under runs, and the loop may delete only a part of it (maintain, step 12): the script
+# cannot tell that part, so the loop's line ends with whose the stop is once nothing of it
+# is left — the user's, in the words of that kind (turn_words).
 MIN_FREE_GB="$(read_conf "$REVIEW_DIR/land.conf" MIN_FREE_GB 15)"
 case "$MIN_FREE_GB" in
   ''|*[!0-9]*|??????*)
@@ -435,9 +440,18 @@ esac
 FREE_GB=$(( $(df -Pk . | awk 'NR == 2 { print $4 }') / 1048576 ))
 if [ "$FREE_GB" -lt "$MIN_FREE_GB" ]; then
   echo "DISK LOW — $FREE_GB GB free, $MIN_FREE_GB needed (MIN_FREE_GB); nothing ran." >&2
-  echo "   Delete what the loop left behind (maintain, step 12): recordings, frames, copies" >&2
-  echo "   of the code and builds under $REVIEW_DIR/runs of tasks that landed. If that is" >&2
-  echo "   not enough, tell the user now." >&2
+  MISSING_GB=$((MIN_FREE_GB - FREE_GB))
+  LEFT_KB="$(du -sk "$REVIEW_DIR/runs" 2>/dev/null | awk 'NR == 1 { print $1 }')"
+  case "$LEFT_KB" in ''|*[!0-9]*) LEFT_KB=0 ;; esac
+  if [ "$LEFT_KB" -ge $((MISSING_GB * 1048576)) ]; then
+    turn loop "delete what the loop left behind (maintain, step 12) — recordings, frames, "\
+"copies of the code and builds under $REVIEW_DIR/runs of tasks that landed — and run again. "\
+"With nothing of that left to delete: $(turn_words user:only-theirs): free $MISSING_GB GB on "\
+"this disk"
+  else
+    turn user:only-theirs "free $MISSING_GB GB on this disk: what the loop left under "\
+"$REVIEW_DIR/runs takes only $((LEFT_KB / 1024)) MB"
+  fi
   exit 1
 fi
 
@@ -536,15 +550,17 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   PR_HEAD="$(printf '%s' "$PULL_REQUEST" | jq -r '.headRefOid // ""')"
   case "$(printf '%s' "$PULL_REQUEST" | jq -r '.state // ""')" in
     OPEN) ;;
-    CLOSED) pr_refuse "$PR_URL was closed without a merge — for the person: only they reopen it" ;;
-    *) pr_refuse "$BRANCH has no open pull request into $BASE_BRANCH — for the person; "\
-"if a landing stopped before opening it, publish.sh alone opens it" ;;
+    CLOSED) pr_refuse "$PR_URL was closed without a merge" \
+              user:only-theirs "reopen it, or say that the task ends here" ;;
+    *) pr_refuse "$BRANCH has no open pull request into $BASE_BRANCH" \
+         loop "run publish.sh alone: it opens the pull request, or says what stops it; then "\
+"review again" ;;
   esac
   if [ "$PR_HEAD" != "$(git rev-parse HEAD)" ]; then
     git merge-base --is-ancestor "$PR_HEAD" HEAD 2>/dev/null && \
       pr_refuse "the head of $PR_URL is behind HEAD — run publish.sh alone, then review again"
-    pr_refuse "the head of $PR_URL is $PR_HEAD, which HEAD does not contain: someone else "\
-"pushed to $BRANCH — for the person"
+    pr_refuse "the head of $PR_URL is $PR_HEAD, which HEAD does not contain" \
+      user:only-theirs "bring the two together: that commit was pushed to $BRANCH from elsewhere"
   fi
   MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE_BRANCH" HEAD)" || \
     pr_refuse "HEAD has no commit in common with $BASE_BRANCH of $REMOTE"

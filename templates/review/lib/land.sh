@@ -307,14 +307,15 @@ git ls-remote --heads "$REMOTE" refs/heads/task 2>/dev/null)"
 "$(git ls-remote --heads "$REMOTE" "refs/heads/$LANDING_BRANCH" 2>/dev/null | cut -f1)"
   if [ -n "$REMOTE_TIP" ] && \
     ! git merge-base --is-ancestor "$REMOTE_TIP" HEAD 2>/dev/null; then
-    refuse 8 "$LANDING_BRANCH on $REMOTE has moved past this one — "\
-"it is never forced, so a person brings the two together first"
+    refuse 8 "$LANDING_BRANCH on $REMOTE has moved past this one, and it is never forced" \
+      user:only-theirs "bring the two together"
   fi
 
   UNLANDED="$(commits_no_landing_made "$LANDING" "$REMOTE" "$BASE_BRANCH")"
   [ -z "$UNLANDED" ] || \
-    refuse 8 "LANDING=$LANDING would publish commits no landing made — "\
-"a person pushes or moves them first: $(printf '%s' "$UNLANDED" | tr '\n' ';')"
+    refuse 8 "LANDING=$LANDING would publish commits no landing made: "\
+"$(printf '%s' "$UNLANDED" | tr '\n' ';')" \
+      user:only-theirs "push or move them: the loop publishes only what its landings made"
 fi
 
 #    At pr and merge a task never stacks: the pull request is merged with a squash,

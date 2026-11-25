@@ -434,8 +434,10 @@ require_array_length() {
 
 # Whose turn it is after a stop. A script that stops for the user says so through
 # `turn user:<kind>`; <kind> is one of USER_DECIDES: what only the user decides, or only the
-# user can do. Every other stop is the loop's, and `turn loop` names its next step. A stop
-# that can name none of the kinds goes on. The line goes to stderr, after the script's own.
+# user can do. Every other stop is the loop's, and `turn loop` names its next step. No script
+# names the user anywhere else (selftest.sh, "the scripts send the user only what is
+# theirs"): a stop that can name none of the kinds goes on. The line goes to stderr, after
+# the script's own.
 USER_DECIDES="what-should-be beyond-agreed not-converging only-theirs a-person-said"
 
 turn_words() {
@@ -1144,7 +1146,8 @@ pull_request_of() {
 # such a post: the marker inside what a person wrote hides nothing and settles nothing. A
 # person outranks the loop: what they wrote is settled by a reply of the loop that names it
 # with the answer `fixed`, or with `user` — the user's own decision, from the chat or from what
-# they wrote. A reply of the loop that disagrees, or defers, leaves it to the person.
+# they wrote. A reply of the loop that disagrees, or defers, leaves it to the user; one that
+# says `unsettled` leaves it to the loop, to find out and answer again (publish.sh, M8).
 # Each of the three requests fails the call by its own exit code (gh_repo_api_list, under the
 # caller's pipefail); the text read is never searched for a failure: a comment may quote the
 # log of a build.

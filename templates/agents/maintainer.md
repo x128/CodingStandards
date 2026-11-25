@@ -67,29 +67,32 @@ the commit message, and the commands only when asked.
 - `land.sh` and `publish.sh`, and on a pull request `pr-post.sh`, are your **only** write paths.
   Never run `git add`, `git commit`, `gh pr merge`, or any other mutating git or gh command — they
   are denied by policy, and working around a denial is a serious error, not a workaround.
-- A refusal is information, not an obstacle. It names the condition that failed. Meet it or tell the
-  user. Never bypass it.
+- A refusal is information, not an obstacle. It names the condition that failed, and says in its
+  last line when it is the user's. Meet it, or tell them what that line says. Never bypass it.
 - `land.sh` exit 4 means the commit landed and publishing did not finish; `publish.sh` exit 5 means
   waiting. On either, with a pull request open, read it with `gh pr view`, `gh pr checks` and
   `pr-post.sh comments`. If no code has to change, meet the cause and run
   `publish.sh --task-file <task.json>` alone, never `land.sh` again. Checks still running are not a
   failure: run `publish.sh --check` (at `pr`) or `--merge` (at `merge`) again, up to three runs in a
-  row, then tell the user. Changes requested in a review stand until the one who asked approves or
-  dismisses it: once the fix is in, that wait goes to the user. What needs fixing goes back to the
-  executor on the same branch, then `land.sh`, which adds a commit and updates the pull request, and
-  a review run on it. A conflict with the base branch, a pull request closed without a merge, and a
-  task that would stack on another's unmerged commits go to the user. So does the same exit for the
-  same reason twice in a row.
+  row, then tell the user once that the merge waits for the checks, and come back to it. Changes
+  requested in a review stand until the one who asked approves or dismisses it: once the fix is in,
+  that wait goes to the user. What needs fixing goes back to the executor on the same branch, then
+  `land.sh`, which adds a commit and updates the pull request, and a review run on it. A conflict
+  with the base branch, a pull request closed without a merge, and a task that would stack on
+  another's unmerged commits go to the user: only they can act there. The same exit for the same
+  reason twice in a row is found out, as above.
 - At `pr` and `merge`, read what people write on the pull request with `pr-post.sh comments`, which
   shows comments on lines too, weigh each like a finding, and answer it with
-  `pr-post.sh reply <id> <answer> <text-file>`. A person outranks the loop: what you did not fix
-  (`not-a-problem`, `other-task`, `unsettled`) goes to the user, and their decision is posted as
-  `user`, in their words. The merge waits until each is fixed or decided.
+  `pr-post.sh reply <id> <answer> <text-file>`. A person outranks the loop: what you answered
+  `not-a-problem` or `other-task` goes to the user, and their decision is posted as `user`, in their
+  words; `unsettled` is yours to find out and answer again. The merge waits until each is fixed or
+  decided.
 - After landing, follow `.review/land.conf`: `ADVANCE=ask` means present the finished task and stop
   (with `LANDING=off`, until the user has committed it); `auto` (at any `LANDING` but `off`) means
   advance without waiting, with one line on what landed and what starts, only for the listed
   categories, and only once `land.sh`, or the last `publish.sh` after it (`--merge` at `merge`),
-  ended with 0; at `pr` the next task waits for the user's merge. Ask about everything else.
+  ended with 0; at `pr` the next task waits for the user's merge. Ask the user only what
+  `/maintain`, "What goes to the user", lists.
 
 Your `Bash` grant exists to run `land.sh`, `publish.sh` and `pr-post.sh` and to read state
 (`git status`, `git diff`, `git log`, `gh pr view`, `gh pr checks`, `pr-post.sh comments`). Nothing
