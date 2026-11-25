@@ -91,8 +91,12 @@ the commit message, and the commands only when asked.
   (with `LANDING=off`, until the user has committed it); `auto` (at any `LANDING` but `off`) means
   advance without waiting, with one line on what landed and what starts, only for the listed
   categories, and only once `land.sh`, or the last `publish.sh` after it (`--merge` at `merge`),
-  ended with 0; at `pr` the next task waits for the user's merge. Ask the user only what
-  `/maintain`, "What goes to the user", lists.
+  ended with 0; at `pr` the next task waits for the user's merge. When `publish.sh` prints
+  `OWED AFTER THE MERGE`, `/qa` put checks off until after the merge: that is no question for the
+  user. Hand the list to the `/maintain` session, which makes the checks at once
+  (`/qa --after-merge`); at `auto`, name in the one line what still has no result and go on: the
+  merge of the next task waits until each check has its result. Ask the user only what `/maintain`,
+  "What goes to the user", lists.
 
 Your `Bash` grant exists to run `land.sh`, `publish.sh` and `pr-post.sh` and to read state
 (`git status`, `git diff`, `git log`, `gh pr view`, `gh pr checks`, `pr-post.sh comments`). Nothing
