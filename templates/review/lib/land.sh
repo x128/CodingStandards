@@ -277,7 +277,12 @@ if landing_publishes "$LANDING"; then
     refuse 8 "task id $TASK_ID cannot name a branch — "\
 "it must match ^[A-Za-z0-9._-]+\$ and be a valid ref"
   REMOTE="$(resolve_remote "$CONFIG")" || refuse 8 "$REMOTE"
-  BASE_BRANCH="$(resolve_base_branch "$CONFIG" "$REMOTE")" || refuse 8 "$BASE_BRANCH"
+  BASE_BRANCH="$(resolve_base_branch "$CONFIG" "$REMOTE")"
+  case $? in
+    0) ;;
+    75) refuse 8 "$(remote_gives_no_answer "$REMOTE")" ;;
+    *) refuse 8 "$BASE_BRANCH" ;;
+  esac
   PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE_BRANCH")" || \
     refuse 8 "$PROBLEM"
 
@@ -344,6 +349,7 @@ if landing_opens_pull_request "$LANDING"; then
     OPEN="$(pull_request_of "$(remote_repository "$REMOTE")" "$BRANCH" "$BASE_BRANCH")" || \
       refuse 8 "gh could not say whether $BRANCH has a pull request into $BASE_BRANCH"
     OPEN="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
+    [ -z "$OPEN" ] || heard pull "$BRANCH" "$OPEN"
     [ "$LANDING_BRANCH" = "$BRANCH" ] && [ -n "$TASK_COMMITS" ] && [ -n "$OPEN" ] || \
       refuse 6 "the loop's own files alone are not a task: they land on the branch of $TASK_ID "\
 "while its pull request is open"

@@ -128,7 +128,12 @@ BRANCH="$(current_branch)"
 [ -n "$BRANCH" ] || refuse "HEAD is detached — there is no branch to push"
 
 REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
-BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")" || refuse "$BASE"
+BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")"
+case $? in
+  0) ;;
+  75) refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+  *) refuse "$BASE" ;;
+esac
 PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE")" || refuse "$PROBLEM"
 
 if branch_in_list "$BRANCH" "$(protected_branches "$CONFIG") $BASE"; then
@@ -243,6 +248,7 @@ if landing_opens_pull_request "$LANDING"; then
       waiting "$PR_URL was closed without a merge. Nothing was pushed and no new pull "\
 "request was opened" user:only-theirs "reopen it, or say that the task ends here" ;;
     MERGED)
+      heard pull "$BRANCH" ""
       if [ "$PR_HEAD" = "$HEAD_COMMIT" ]; then
         owe_checks
         if [ "$LANDING" = "merge" ] && [ "$MODE" != check ]; then
@@ -312,6 +318,7 @@ if [ "$MODE" = publish ]; then
     rm -f "$BODY_FILE"
     [ "$CREATE_EXIT" -eq 0 ] || fail "gh could not open a pull request of $BRANCH into $BASE"
   fi
+  heard pull "$BRANCH" "$PR_URL"
   echo "pull request: $PR_URL"
   "$LIB_DIR/pr-post.sh" statuses --task-file "$TASK_FILE" || \
     fail "$PR_URL is open, but the loop's statuses are not posted on it; pr-post.sh says why "\

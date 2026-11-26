@@ -234,20 +234,140 @@ resolve_remote() {
   return 1
 }
 
+# ---------------------------------------------------------------------------
+# A host that gives no answer. git exits 128 both when the remote refuses and when its
+# host cannot be reached, and gh exits 1 for both; their words decide nothing. So after
+# a call of either failed, one curl to the host tells the two apart by its exit code.
+# ---------------------------------------------------------------------------
+
+# The URL to ask for a remote, as its URL is written (`git remote get-url` gives it after
+# insteadOf): for http(s)://[user@]host[:port]/... the scheme, the host and the port; for
+# an ssh URL or [user@]host:path, https://<host>/; for a path, nothing.
+remote_host_url() {
+  local url host
+  url="$(git config --get "remote.$1.url" 2>/dev/null)" || return 0
+  case "$url" in
+    http://* | https://*)
+      host="${url#*://}"; host="${host%%/*}"; host="${host##*@}"
+      printf '%s://%s/' "${url%%://*}" "$host" ;;
+    ssh://* | git+ssh://* | ssh+git://*)
+      host="${url#*://}"; host="${host%%/*}"; host="${host##*@}"; host="${host%%:*}"
+      printf 'https://%s/' "$host" ;;
+    *://* | /* | ./* | ../*) ;;
+    *:*)
+      host="${url%%:*}"
+      case "$host" in
+        */*) ;;
+        *) printf 'https://%s/' "${host##*@}" ;;
+      esac ;;
+  esac
+}
+
+# The URL to ask for the GitHub of a repository as remote_repository names it: the API of
+# github.com, or the host in front of the name.
+github_api_url() {
+  case "$1" in
+    */*/*) printf 'https://%s/' "${1%%/*}" ;;
+    *) printf 'https://api.github.com/' ;;
+  esac
+}
+
+# Whether a host answers: 0 for an answer of any status, 75 when it gives none (no
+# proxy, no name, no connection, a timeout, no TLS, an empty reply, a connection that
+# broke), 1 when that cannot be told: an empty URL, no curl, any other failure.
+host_answers() {
+  local url="$1" status
+  [ -n "$url" ] || return 1
+  command -v curl >/dev/null 2>&1 || return 1
+  curl -s -o /dev/null --connect-timeout 10 --max-time 15 "$url" >/dev/null 2>&1
+  status=$?
+  case "$status" in
+    0) return 0 ;;
+    5 | 6 | 7 | 28 | 35 | 52 | 56) return 75 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Whether the host of a remote, or the GitHub of a repository, gives no answer at all.
+# Asked only after a call of git or gh failed: a host that answers, or of which nothing
+# can be told, leaves the refusal as it is.
+connection_lost() {
+  host_answers "$(remote_host_url "$1")"
+  [ $? -eq 75 ]
+}
+github_lost() {
+  host_answers "$(github_api_url "$1")"
+  [ $? -eq 75 ]
+}
+
+remote_gives_no_answer() {
+  printf 'the remote %s gives no answer' "$1"
+}
+
+# What this copy last heard from its remote, kept in .review/runs/.loop/last-heard.json:
+# {"base": <branch>, "pulls": {<branch>: <url of its open pull request>}, "time": <seconds>}.
+# The folder starts with a dot, so no `*` takes it for a run. heard base <branch>, heard
+# pull <branch> <url>; an empty url forgets the branch's pull request. A copy that cannot
+# write it has heard nothing, and nothing stops for that.
+LAST_HEARD=.review/runs/.loop/last-heard.json
+heard() {
+  local kept updated
+  mkdir -p "${LAST_HEARD%/*}" 2>/dev/null || return 0
+  kept="$(jq -c 'if type == "object" then . else {} end' "$LAST_HEARD" 2>/dev/null)"
+  [ -n "$kept" ] || kept='{}'
+  case "$1" in
+    base) updated="$(printf '%s' "$kept" | jq -c --arg base "$2" '.base = $base')" ;;
+    pull)
+      updated="$(printf '%s' "$kept" | jq -c --arg branch "$2" --arg url "$3" '
+        .pulls = (if (.pulls | type) == "object" then .pulls else {} end)
+        | if $url == "" then del(.pulls[$branch]) else .pulls[$branch] = $url end')" ;;
+    *) return 0 ;;
+  esac || return 0
+  printf '%s' "$updated" | jq -c '.time = (now | floor)' >"$LAST_HEARD.new" 2>/dev/null &&
+    mv "$LAST_HEARD.new" "$LAST_HEARD" 2>/dev/null
+  rm -f "$LAST_HEARD.new"
+  return 0
+}
+
+# The base branch this copy last heard of the remote: from last-heard.json, else the one
+# that the HEAD a clone recorded names; nothing when it heard none.
+last_heard_base() {
+  local base
+  base="$(jq -r '.base // empty | strings' "$LAST_HEARD" 2>/dev/null)"
+  if [ -z "$base" ]; then
+    base="$(git symbolic-ref -q "refs/remotes/$1/HEAD" 2>/dev/null)"
+    base="${base#refs/remotes/$1/}"
+  fi
+  printf '%s' "$base"
+}
+
 # The branch pull requests go to, which is also protected at the levels that
 # publish. Asked of the remote every time: the HEAD a clone recorded stays as it
 # was when the remote's default branch changes, and the real one would then be left
-# unprotected. A remote that cannot be asked is no answer, so nothing is guessed
-# here: the guesses are for a remote that answers and has no HEAD. Prints the
-# branch, or why it cannot be known and fails.
+# unprotected. A remote that answers and refuses is no answer, and neither is one of
+# which nothing can be told, so nothing is guessed here: the guesses are for a remote
+# that answers and has no HEAD. Prints the branch, or why it cannot be known and
+# fails. When the host of the remote gives no answer at all, prints the base branch
+# this copy last heard and returns 75; having heard none, says what to set and fails.
 resolve_base_branch() {
   local config_file="$1" remote="$2" base answer
   base="$(read_conf "$config_file" BASE_BRANCH "")"
   if [ -n "$base" ]; then
+    heard base "$base"
     printf '%s' "$base"
     return 0
   fi
   answer="$(git ls-remote --symref "$remote" HEAD 2>/dev/null)" || {
+    if connection_lost "$remote"; then
+      base="$(last_heard_base "$remote")"
+      if [ -n "$base" ]; then
+        printf '%s' "$base"
+        return 75
+      fi
+      printf '%s, and this copy never heard which branch is its base — set BASE_BRANCH in %s' \
+        "$(remote_gives_no_answer "$remote")" "$config_file"
+      return 1
+    fi
     printf 'the remote %s cannot be reached' "$remote"
     return 1
   }
@@ -261,6 +381,7 @@ sed -n 's|^ref:[[:space:]]*refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p')"
       base=master
     fi
   fi
+  heard base "$base"
   printf '%s' "$base"
 }
 
@@ -305,10 +426,15 @@ gh_repo_api_list() {
 # What stops this level from publishing, known before anything is done: land.sh
 # refuses on it before the commit, so that a landing never ends half done for a
 # reason it could have named, and publish.sh refuses on it when run alone.
-# Prints the reason and fails, or prints nothing.
+# Prints the reason and fails, or prints nothing. Returns 75 when the host of the remote,
+# or GitHub, gives no answer at all.
 publishing_problem() {
   local config_file="$1" level="$2" remote="$3" base="$4" base_on_remote repository checks_wait
   base_on_remote="$(git ls-remote --heads "$remote" "refs/heads/$base" 2>/dev/null)" || {
+    if connection_lost "$remote"; then
+      remote_gives_no_answer "$remote"
+      return 75
+    fi
     printf 'the remote %s cannot be reached' "$remote"
     return 1
   }
@@ -322,12 +448,20 @@ publishing_problem() {
     printf 'LANDING=%s needs gh, and gh is not installed' "$level"
     return 1
   }
+  repository="$(remote_repository "$remote")"
   gh auth status >/dev/null 2>&1 || {
+    if github_lost "$repository"; then
+      printf 'LANDING=%s needs gh, and GitHub gives no answer' "$level"
+      return 75
+    fi
     printf 'LANDING=%s needs gh, and gh is not logged in — run gh auth login' "$level"
     return 1
   }
-  repository="$(remote_repository "$remote")"
   gh repo view "$repository" --json name >/dev/null 2>&1 || {
+    if github_lost "$repository"; then
+      printf 'LANDING=%s needs gh, and GitHub gives no answer' "$level"
+      return 75
+    fi
     printf 'gh cannot see %s, the repository of the remote %s' "$repository" "$remote"
     return 1
   }
