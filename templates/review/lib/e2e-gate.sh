@@ -139,20 +139,9 @@ esac
 # HOLD_RENEW, the lease and how often a living run renews it, are of the environment, for
 # selftest.sh alone.
 CONF="$REVIEW_DIR/land.conf"
-E2E_LOCK="$(read_conf "$CONF" E2E_LOCK platform)"
-case "$E2E_LOCK" in
-  platform|off) ;;
-  *) echo "E2E_LOCK in $CONF must be platform or off, not '$E2E_LOCK'" >&2; exit 1 ;;
-esac
-E2E_WAIT="$(read_conf "$CONF" E2E_WAIT 1800)"
-E2E_TIMEOUT="$(read_conf "$CONF" E2E_TIMEOUT 0)"
-for setting in "E2E_WAIT=$E2E_WAIT" "E2E_TIMEOUT=$E2E_TIMEOUT"; do
-  case "${setting#*=}" in
-    ''|*[!0-9]*|??????????*)
-      echo "${setting%%=*} in $CONF must be a whole number of seconds, not '${setting#*=}'" >&2
-      exit 1 ;;
-  esac
-done
+E2E_LOCK="$(hold_lock_setting "$CONF")" || exit 1
+E2E_WAIT="$(hold_seconds "$CONF" E2E_WAIT 1800)" || exit 1
+E2E_TIMEOUT="$(hold_seconds "$CONF" E2E_TIMEOUT 0)" || exit 1
 HOLD_LEASE="${HOLD_LEASE:-120}"
 HOLD_RENEW="${HOLD_RENEW:-30}"
 for setting in "HOLD_LEASE=$HOLD_LEASE" "HOLD_RENEW=$HOLD_RENEW"; do

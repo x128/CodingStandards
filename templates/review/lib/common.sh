@@ -2212,14 +2212,16 @@ say_after_merge_unsettled() {
 # of every project of the user on this machine (e2e-gate.sh). A hold is a folder
 # <place>/<platform>.lock, and the one whose mkdir makes it holds the platform. Its file
 # `holder` is one JSON object: `pid` and `pid_started`, the process that holds and when it
-# started; `root`, the project; `who`, what holds — a run folder; `kind`, run; `since` and
-# `until`, in seconds since 1970. Its file `group`, {group, group_started}, is the process
-# group of the harness and when its leader started: a file of its own, since the holder's
-# renewal writes `holder` meanwhile. The hold is a lease: it holds until `until`, and only
+# started; `root`, the project; `who`, what holds — a run folder, or a check by hand
+# (device.sh); `kind`, run or agent; `since` and `until`, in seconds since 1970. Its file
+# `group`, {group, group_started}, is the process group of the harness and when its leader
+# started: a file of its own, since the holder's renewal writes `holder` meanwhile. The hold is a lease: it holds until `until`, and only
 # a holder that lives renews it, so a run that was killed frees the platform by itself, and
 # whoever takes it over stops the process group it left running. A run that still lives
-# keeps its hold when it renewed late, as after a machine that slept. HOLD_PLACE is the
-# place (device_lock_dir); HOLD_SAID says why a hold was not taken.
+# keeps its hold when it renewed late, as after a machine that slept. A check's hold (kind
+# agent) runs out by its lease alone: the check takes the platform again to keep it, and a
+# run of the same copy of the project takes it over at once. HOLD_PLACE is the place
+# (device_lock_dir); HOLD_SAID says why a hold was not taken.
 
 # The place where the runs meet: DEVICE_LOCK_DIR of the environment (selftest.sh alone sets
 # it), else of land.conf, else one folder of the user under /tmp, the same for every copy of
@@ -2228,6 +2230,28 @@ device_lock_dir() {
   local place="${DEVICE_LOCK_DIR:-}"
   [ -n "$place" ] || place="$(read_conf "$1" DEVICE_LOCK_DIR "")"
   printf '%s' "${place:-/tmp/review-devices-$(id -u)}"
+}
+
+# The settings of the hold in <config>, each with its default, or 1 with what is wrong on
+# stderr: hold_lock_setting prints E2E_LOCK, platform or off; hold_seconds <config> <key>
+# <default>, a setting of whole seconds.
+hold_lock_setting() {
+  local value
+  value="$(read_conf "$1" E2E_LOCK platform)"
+  case "$value" in
+    platform|off) printf '%s' "$value" ;;
+    *) echo "E2E_LOCK in $1 must be platform or off, not '$value'" >&2; return 1 ;;
+  esac
+}
+hold_seconds() {
+  local value
+  value="$(read_conf "$1" "$2" "$3")"
+  case "$value" in
+    ''|*[!0-9]*|??????????*)
+      echo "$2 in $1 must be a whole number of seconds, not '$value'" >&2
+      return 1 ;;
+  esac
+  printf '%s' "$value"
 }
 
 # When process <pid> started, as ps says it, or nothing when there is no such process.
@@ -2246,6 +2270,11 @@ hold_is_mine() {
   holder="$(hold_holder "$1")"
   [ -n "$holder" ] && json_holds --arg pid "$$" --arg started "$(process_started "$$")" \
     '(.pid | tostring) == $pid and (.pid_started // "") == $started' <<<"$holder"
+}
+
+# Whether the record <holder> is the hold of a check by hand of this copy of the project.
+hold_is_this_copys_check() {
+  [ -n "$1" ] && json_holds --arg root "$(pwd)" '.kind == "agent" and .root == $root' <<<"$1"
 }
 
 # Who holds, in words: `<who> of <root> since <time>`.
@@ -2277,11 +2306,13 @@ hold_ran_out() {
   return 0
 }
 
-# Takes over the hold <lock> of <platform> that ran out: moves it aside, so that one taker
-# alone does it, and stops the process group it recorded — unless another process has the
-# group's number now — then says so on stderr.
+# Takes over the hold <lock> of <platform> that ran out, or that a check of this copy held
+# (<why>: is this copy's own): moves it aside, so that one taker alone does it, and stops
+# the process group it recorded — unless another process has the group's number now — then
+# says so on stderr.
 hold_take_over() {
-  local platform="$1" lock="$2" holder="$3" aside="$2.taken.$$" group stopped="" leader whose
+  local platform="$1" lock="$2" holder="$3" why="${4:-ran out}" aside="$2.taken.$$"
+  local group stopped="" leader whose
   mv "$lock" "$aside" 2>/dev/null || return 0
   if [ -n "$holder" ]; then
     whose="the hold of $(printf '%s' "$holder" | jq -r '"\(.who // "?") of \(.root // "?")"')"
@@ -2294,7 +2325,7 @@ hold_take_over() {
         kill -TERM -- "-$group" 2>/dev/null && stopped="its tests, process group $group"
       fi
     fi
-    echo "── $platform: $whose ran out — taking over${stopped:+; stopped what it left running: $stopped}" >&2
+    echo "── $platform: $whose $why — taking over${stopped:+; stopped what it left running: $stopped}" >&2
   else
     echo "── $platform: the hold at $lock names no holder and is over a minute old — taking over" >&2
   fi
@@ -2304,7 +2335,8 @@ hold_take_over() {
 # hold_take <platform> <who> <kind> <lease> <wait>: holds the platform for <lease> seconds,
 # waiting while another holds it, up to <wait> seconds, and saying every minute whom it waits
 # for. 0, held; 75, still held by another after the wait; 1, the hold cannot be made at all.
-# On 75 and 1, HOLD_SAID says why, as a reason of e2e.json: `<platform>: …`.
+# On 75 and 1, HOLD_SAID says why, as a reason of e2e.json: `<platform>: …`. A check's hold
+# of this copy is taken over by a run (<kind> run), and made longer by a check (agent).
 hold_take() {
   local platform="$1" who="$2" kind="$3" lease="$4" wait="$5"
   local lock="$HOLD_PLACE/$1.lock" waited=0 holder held_by now
@@ -2327,6 +2359,15 @@ hold_take() {
     fi
     if [ -d "$lock" ]; then
       holder="$(hold_holder "$lock")"
+      if hold_is_this_copys_check "$holder"; then
+        if [ "$kind" = agent ]; then
+          hold_extend "$lock" "$lease" && return 0
+          HOLD_SAID="$platform: the hold cannot be made at $lock"
+          return 1
+        fi
+        hold_take_over "$platform" "$lock" "$holder" "is this copy's own"
+        continue
+      fi
       if hold_ran_out "$lock" "$holder"; then
         hold_take_over "$platform" "$lock" "$holder"
         continue
@@ -2350,6 +2391,13 @@ hold_renew() {
   jq --argjson lease "$2" '.until = (now | floor) + $lease' "$lock/holder" \
     >"$lock/holder.$$" 2>/dev/null && mv "$lock/holder.$$" "$lock/holder" \
     || { rm -f "$lock/holder.$$"; return 1; }
+}
+# hold_extend <lock> <lease>: a check's hold, taken again, holds <lease> seconds from now,
+# or as long as it held already when that is longer.
+hold_extend() {
+  jq --argjson lease "$2" '.until = ([(.until // 0), ((now | floor) + $lease)] | max)' \
+    "$1/holder" >"$1/holder.$$" 2>/dev/null && mv "$1/holder.$$" "$1/holder" \
+    || { rm -f "$1/holder.$$"; return 1; }
 }
 # hold_group <platform> <pgid>: the process group of the harness, which a taker stops.
 hold_group() {

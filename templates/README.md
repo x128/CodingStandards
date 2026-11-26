@@ -88,6 +88,7 @@ and needs no override.
 | `review/lib/pr-post.sh` | submodule | The only thing that writes on a pull request apart from opening and merging it: statuses, the review with its findings and verdicts, answers, replies to people, the `/qa` report, the description; and reads what people wrote that is not settled (`comments`) and the work as it is (`work`) |
 | `review/lib/common.sh` | submodule | Tree fingerprint, fail-closed counts, config read as data, branch, remote and base branch, the conditions `land.sh` and `publish.sh` share |
 | `review/lib/selftest.sh` | submodule | `review.sh`, `land.sh`, `publish.sh` and `pr-post.sh` on throwaway repositories with fixed answers; run after changing any of them, the schemas or the decision rules |
+| `review/lib/device.sh` | submodule | The hold on a platform for a check that drives a device by hand: take, switch a device off, release, and who holds each platform |
 | `review/lib/export-version.sh` | submodule | One version of the project into a folder of its own, by reading git only — for `/qa` replays and comparisons |
 | `review/lib/prompts/reviewer.md` | submodule | Reviewer contract: quote, evidence, confidence, silence-is-valid |
 | `review/lib/prompts/maintainer.md` | submodule | Triage decision rules and worked examples |

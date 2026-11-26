@@ -1195,6 +1195,197 @@ for setting in E2E_WAIT=soon E2E_TIMEOUT=-1 E2E_LOCK=yes; do
   check "an $setting fails closed" 1 "${setting%%=*} in .review/land.conf must be " $? \
     "$WORK/run.log"
 done
+# A check that drives a device by hand — /qa, the executor — takes the same hold with
+# device.sh, as a check of its copy of the project, for some minutes: it runs out by itself,
+# and the check takes the platform again to keep it. device <copy> <log> <arguments> runs
+# device.sh in a copy; the stand-ins adb and xcrun append what they are asked to
+# $WORK/device.log. held_until <platform> prints until when the platform is held.
+mkdir -p "$WORK/device-bin" || fail_setup "device-bin"
+for tool in adb xcrun; do
+  printf '#!/bin/sh\necho "%s $*" >>"$DEVICE_LOG"\n' "$tool" >"$WORK/device-bin/$tool" \
+    && chmod +x "$WORK/device-bin/$tool" || fail_setup "a stand-in $tool"
+done
+: >"$WORK/device.log"
+device() {
+  local copy="$1" log="$2"
+  shift 2
+  (cd "$copy" && DEVICE_LOG="$WORK/device.log" PATH="$WORK/device-bin:$PATH" \
+    exec "$LIB_DIR/device.sh" "$@") >"$log" 2>&1
+}
+held_until() { jq -r '.until' "$holds/$1.lock/holder" 2>/dev/null; }
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+rm -f "$WORK/reviewer-ran"
+: >"$WORK/stamps"
+E2E_SLEEP=3 E2E_STAMPS="$WORK/stamps" held_start "$repository" "$WORK/run.log" --again
+stamped "android start" || fail_setup "the tests of the run a check waits for did not start"
+device "$repository" "$WORK/device-take.log" take android
+take_exit=$?
+grep -q "android end" "$WORK/stamps" && after_the_run=yes || after_the_run=no
+wait "$held_pid"
+if [ "$take_exit" -eq 0 ] && [ "$after_the_run" = yes ] && [ -d "$holds/android.lock" ]; then
+  echo "ok    device.sh take waits while a run holds the platform"
+else
+  echo "FAIL  device.sh take waits while a run holds the platform: exit $take_exit; after the"\
+" run's tests: $after_the_run — the stamps, then its log, follow"
+  sed 's/^/      /' "$WORK/stamps" "$WORK/device-take.log"
+  FAILURES=$((FAILURES + 1))
+fi
+says "and says whom it waits for" "── android: waiting — held by .review/runs/" \
+  "$WORK/device-take.log"
+held_review "$repository" "$WORK/run.log" --again
+check "a run takes over the hold of its own copy's check" 0 \
+  "is this copy's own — taking over" $? "$WORK/run.log"
+device "$copy" "$WORK/device-take.log" take android
+check "device.sh take holds a free platform at once" 0 \
+  "── android: held for this copy of the project until " $? "$WORK/device-take.log"
+printf 'E2E_WAIT=1\n' >>.review/land.conf
+held_review "$repository" "$WORK/run.log" --again
+check "while a check of another copy holds the platform a run waits" 75 \
+  "android: busy — held by a check by hand of " $? "$WORK/run.log"
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nE2E_WAIT=60\n' >.review/land.conf
+held_start "$repository" "$WORK/run.log" --again
+tenths=0
+until grep -q "waiting — held by a check by hand of " "$WORK/run.log" 2>/dev/null; do
+  tenths=$((tenths + 1))
+  [ "$tenths" -lt 300 ] || break
+  sleep 0.1
+done
+device "$copy" "$WORK/device-release.log" release android
+release_exit=$?
+wait "$held_pid"
+check "its release lets the run go" 0 "── e2e: pass on android" $? "$WORK/run.log"
+check "device.sh release gives the platform back" 0 "── android: given back" "$release_exit" \
+  "$WORK/device-release.log"
+device "$repository" "$WORK/device-take.log" take ios android
+check "device.sh take holds several platforms" 0 "── ios: held for this copy" $? \
+  "$WORK/device-take.log"
+device "$repository" "$WORK/device-off.log" off android android emulator-5558
+check "device.sh off switches a device off while this copy holds its platform" 0 \
+  "── android: switched off emulator-5558" $? "$WORK/device-off.log"
+says "with adb" "adb -s emulator-5558 emu kill" "$WORK/device.log"
+device "$repository" "$WORK/device-off.log" off ios ios UDID-1
+check "and a simulator" 0 "── ios: switched off UDID-1" $? "$WORK/device-off.log"
+says "with simctl" "xcrun simctl shutdown UDID-1" "$WORK/device.log"
+held_before="$(held_until android)"
+device "$repository" "$WORK/device-take.log" take android --minutes 90
+held_after="$(held_until android)"
+if [ $(( ${held_after:-0} - ${held_before:-0} )) -ge 3000 ]; then
+  echo "ok    taken again, the hold is made longer"
+else
+  echo "FAIL  taken again, the hold is made longer: until $held_before, then $held_after — the"\
+" log follows"
+  sed 's/^/      /' "$WORK/device-take.log"
+  FAILURES=$((FAILURES + 1))
+fi
+device "$repository" "$WORK/status.log" status
+check "device.sh status says who holds each platform, and until when" 0 \
+  "android: held by a check by hand of " $? "$WORK/status.log"
+says "and of every platform held" "ios: held by a check by hand of " "$WORK/status.log"
+device "$repository" "$WORK/device-release.log" release android ios
+release_exit=$?
+if [ "$release_exit" -eq 0 ] && [ ! -e "$holds/android.lock" ] && [ ! -e "$holds/ios.lock" ]
+then
+  echo "ok    device.sh release gives every platform it names back"
+else
+  echo "FAIL  device.sh release gives every platform it names back: exit $release_exit — the"\
+" log follows"
+  sed 's/^/      /' "$WORK/device-release.log"
+  FAILURES=$((FAILURES + 1))
+fi
+sleep 300 &
+holder_pid=$!
+hold_by_another 600 "$holder_pid"
+cp "$WORK/device.log" "$WORK/device.log.before"
+device "$repository" "$WORK/device-off.log" off android android emulator-5554
+check "off refuses while another holds the platform" 1 \
+  "android is held by .review/runs/elsewhere of /elsewhere/project since " $? \
+  "$WORK/device-off.log"
+says "taking the platform first is the loop's" "   The loop goes on: take the platform first" \
+  "$WORK/device-off.log"
+device "$repository" "$WORK/device-release.log" release android
+check "release refuses while another holds the platform" 1 \
+  "android is held by .review/runs/elsewhere of /elsewhere/project since " $? \
+  "$WORK/device-release.log"
+if cmp -s "$WORK/device.log" "$WORK/device.log.before" && \
+   [ "$(jq -r '.root' "$holds/android.lock/holder" 2>/dev/null)" = /elsewhere/project ]; then
+  echo "ok    and neither switches a device off nor touches the other's hold"
+else
+  echo "FAIL  and neither switches a device off nor touches the other's hold: the stand-ins"\
+" were asked, or the hold changed — what they were asked follows"
+  sed 's/^/      /' "$WORK/device.log"
+  FAILURES=$((FAILURES + 1))
+fi
+printf 'E2E_WAIT=1\n' >>.review/land.conf
+device "$repository" "$WORK/device-take.log" take android
+check "a platform still held by another after E2E_WAIT is not taken" 75 \
+  "android: busy — held by .review/runs/elsewhere of /elsewhere/project since " $? \
+  "$WORK/device-take.log"
+says "and taking it later is the loop's" "   The loop goes on: " "$WORK/device-take.log"
+device "$repository" "$WORK/status.log" status
+check "device.sh status names a run of another copy" 0 \
+  "android: held by .review/runs/elsewhere of /elsewhere/project since " $? "$WORK/status.log"
+mkdir -p "$holds/ios.lock" && cp "$holds/android.lock/holder" "$holds/ios.lock/holder" \
+  && rm -rf "$holds/android.lock" || fail_setup "a hold of another copy on ios"
+device "$repository" "$WORK/device-take.log" take ios android
+check "a take that cannot hold every platform it names" 75 "ios: busy — held by " $? \
+  "$WORK/device-take.log"
+if [ ! -e "$holds/android.lock" ]; then
+  echo "ok    holds none of them"
+else
+  echo "FAIL  holds none of them: $holds/android.lock is there"
+  FAILURES=$((FAILURES + 1))
+fi
+kill "$holder_pid" 2>/dev/null
+wait "$holder_pid" 2>/dev/null
+rm -rf "$holds/ios.lock" "$holds/android.lock"
+mkdir -p "$holds/android.lock" && \
+  jq -n --argjson until "$(( $(date +%s) - 5 ))" \
+    '{pid: 1, pid_started: "", root: "/elsewhere/project", who: "a check by hand",
+      kind: "agent", since: ($until - 1800), until: $until}' >"$holds/android.lock/holder" \
+  || fail_setup "a check's hold that ran out"
+device "$repository" "$WORK/device-take.log" take android
+check "a check's hold that ran out is taken over" 0 \
+  "── android: the hold of a check by hand of /elsewhere/project ran out — taking over" $? \
+  "$WORK/device-take.log"
+device "$repository" "$WORK/device-release.log" release android
+cp "$WORK/device.log" "$WORK/device.log.before"
+device "$repository" "$WORK/device-off.log" off android android emulator-5554
+check "off refuses where this copy does not hold the platform" 1 \
+  "android is not held by this copy" $? "$WORK/device-off.log"
+if cmp -s "$WORK/device.log" "$WORK/device.log.before"; then
+  echo "ok    and switches nothing off"
+else
+  echo "FAIL  and switches nothing off: the stand-ins were asked — it follows"
+  sed 's/^/      /' "$WORK/device.log"
+  FAILURES=$((FAILURES + 1))
+fi
+DEVICE_LOCK_DIR="$WORK/a-file/devices" device "$repository" "$WORK/device-take.log" take android
+check "a place where device.sh can make no hold is said" 1 \
+  "android: the hold cannot be made at $WORK/a-file/devices/android.lock" $? \
+  "$WORK/device-take.log"
+says "and where the runs meet is the user's to say" \
+  "   For the user, only they can: let the runs meet" "$WORK/device-take.log"
+device "$repository" "$WORK/device-take.log" take android --minutes soon
+check "a hold of no whole number of minutes is refused" 1 \
+  "--minutes must be a whole number of minutes from 1, not 'soon'" $? "$WORK/device-take.log"
+device "$repository" "$WORK/device-take.log" take app
+check "device.sh holds android and ios alone" 1 "device.sh holds android and ios, not 'app'" $? \
+  "$WORK/device-take.log"
+printf 'E2E_LOCK=off\n' >>.review/land.conf
+device "$repository" "$WORK/device-take.log" take android
+check "with E2E_LOCK=off device.sh holds nothing" 0 \
+  "E2E_LOCK=off in .review/land.conf: each copy has devices of its own" $? \
+  "$WORK/device-take.log"
+if [ ! -e "$holds/android.lock" ]; then
+  echo "ok    and makes no hold"
+else
+  echo "FAIL  and makes no hold: $holds/android.lock is there"
+  FAILURES=$((FAILURES + 1))
+fi
+device "$repository" "$WORK/device-off.log" off android android emulator-5560
+check "and switches a device off with no hold" 0 "── android: switched off emulator-5560" $? \
+  "$WORK/device-off.log"
+rm -f "$WORK/device.log.before" "$WORK/reviewer-ran"
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 sleep 300 &
 holder_pid=$!
@@ -6375,7 +6566,7 @@ says "and one whose kind is not of the list" "/no-kind.sh:1:" "$WORK/names.log"
 never_says "a comment that names them is none" "/comment.sh" "$WORK/names.log"
 never_says "nor is a line that says the kind" "/kind.sh" "$WORK/names.log"
 named="$(cd "$LIB_DIR" && \
-  names_a_person review.sh land.sh publish.sh pr-post.sh e2e-gate.sh common.sh)"
+  names_a_person review.sh land.sh publish.sh pr-post.sh e2e-gate.sh device.sh common.sh)"
 if [ -z "$named" ]; then
   echo "ok    the scripts send the user only what is theirs"
 else
