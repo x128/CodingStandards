@@ -116,23 +116,24 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 
    Below `pr`, no `--base` inside the loop: by default it reviews the uncommitted work, which is
    what `land.sh` will commit; `--base <ref>` is for a final pass over a finished branch. Exit
-   codes: `0` clean, `2` checks red — the gates, with no review, or the end-to-end tests, with one
-   —, `3` accepted findings remain, `4` escalations, `5` review unusable (re-run; not clean), `75`
-   the environment, not the work: the end-to-end tests could not run — the review is made, and the
-   next run on the same work repeats only the tests, `6` nothing ran: the script stopped the task
-   and says what it read in its runs, `1` pipeline error. Note the run directory it prints; landing
-   needs the last one. On `6` do what its last line says. On `75` bring the device back if you can —
-   `device.sh status` says who holds it — and run again: it is no failure of the work and counts no
-   review. With `3` or `4` the run also says when its end-to-end tests did not pass: fix both in one
-   round. `review.sh` stops at `ASK_AFTER_RUNS` reviews of the task (5 unless `.review/land.conf`
-   says otherwise) — reviews: a run that ended before its review is not counted, and as many of
-   those in a row stop the task too — and at any count when it reads a circle: a finding accepted at
-   the same place in three reviews in a row, each after a change of the work, a case that failed in
-   three `/qa`, each on other work, or three runs in a row that ended the same way. At the count it
-   prints how many findings each review accepted and whether one came back after its fix.
-   `The loop goes on`: reviews that found different things, each fixed, are no question — run again
-   with `--past-limit`, which runs once more and starts the count again; where the line asks for it,
-   with `--because "<what moves toward the goal>"`, which is kept in the run and shown on the pull
+   codes: `0` clean, `2` checks red (the gates, with no review, or the end-to-end tests, with one),
+   `3` accepted findings remain, `4` escalations, `5` review unusable (re-run; not clean), `75` the
+   environment, not the work: the end-to-end tests could not run — the review is made, and the next
+   run on the same work repeats only the tests, `6` nothing ran: the script stopped the task and
+   says what it read in its runs, `1` pipeline error, or no end-to-end test that ran, with the
+   review made. Note the run directory it prints; landing needs the last one. On `6` do what its
+   last line says. On `75` bring the device back if you can — `device.sh status` says who holds it —
+   and run again: it repeats only the tests and counts no review. With `3` or `4` the run also says
+   when its end-to-end tests did not pass: fix both in one round. `review.sh` stops at
+   `ASK_AFTER_RUNS` reviews of the task (5 unless `.review/land.conf` says otherwise) — reviews: a
+   run that ended before its review is not counted, and as many of those in a row stop the task
+   too — and at any count when it reads a circle: a finding accepted at the same place in three
+   reviews in a row, each after a change of the work, a case that failed in three `/qa`, each on
+   other work, or three runs in a row that ended the same way. At the count it prints how many
+   findings each review accepted and whether one came back after its fix. `The loop goes on`:
+   reviews that found different things, each fixed, are no question — run again with `--past-limit`,
+   which runs once more and starts the count again; where the line asks for it, with
+   `--because "<what moves toward the goal>"`, which is kept in the run and shown on the pull
    request. Where the findings do not get fewer and you cannot tell whether the work moves, that
    line makes it a question: ask it with what the script printed, and when the user decides to go
    on, `--past-limit --user-decided` passes that stop too. Three runs in a row that ended the same
@@ -237,11 +238,12 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    `/qa` as `after_merge`, with the check it will make, and is made right after the merge (step 11).
    An unproven item goes back to whoever does the work. An item not checked because a tool or device
    failed is the loop's: restore it — take its platform with `device.sh take`, boot or erase the
-   simulator — and run `/qa` of the whole pull request again. What a second `/qa` of the whole pull
-   request still leaves open is the user's — beyond what was agreed: merge without that check, or
-   not — recorded as their acceptance in `open-answered.json` beside its `qa.json`, written as
-   `{"by": "human", "answer": "accepted-as-is"}`. A `/qa` after a fix does not clear what an
-   earlier one left open.
+   simulator (one that is up is switched off first with `device.sh off`), and give the platform back
+   with `device.sh release` — and run `/qa` of the whole pull request again. What a second `/qa` of
+   the whole pull request still leaves open is the user's — beyond what was agreed: merge without
+   that check, or not — recorded as their acceptance in `open-answered.json` beside its `qa.json`,
+   written as `{"by": "human", "answer": "accepted-as-is"}`. A `/qa` after a fix does not clear what
+   an earlier one left open.
 9. **Evidence:** each exit criterion in `.review/current-task.json` gets a `verified_by` — the test
    that proves it, the `/qa` artefact, or `manual: <what you checked>`. A criterion that can be
    checked only after the merge is claimed as `after the merge: <the id of the item /qa put off>`;
@@ -348,8 +350,9 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
     task stops being shown. Once the task is in the base branch — at `pr`, once the user has merged
     it — delete what its checks left: under `.review/runs`, the recordings, frames, copies of the
     code and builds — the reports, logs and JSON stay — and erase the simulators the checks created,
-    each while holding its platform (`device.sh take`); one that another run holds is left for
-    later.
+    each while holding its platform (`device.sh take`) and switched off first with `device.sh off`
+    where it is up, then give the platform back with `device.sh release`; one that another run holds
+    is left for later.
 13. **Advance or stop**, as `.review/land.conf` says:
     - `ADVANCE=ask`: show the finished task, at the pull request levels starting with the link of
       its pull request, then what the user has to do — accept or object; with `LANDING=off`, commit;

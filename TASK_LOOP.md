@@ -215,11 +215,12 @@ reviewer never runs — send the executor back with the compiler output. The end
 check beside the review, not a condition of it: after the review `review.sh` runs them through
 `.review/e2e.sh` on every platform the tree ships and counts them in its JUnit reports. Whatever
 they come to, the review is made and stays, and the run's exit code and its last lines say both.
-Red, the run ends as on a red gate. With no test that ran, or none that a case of `qa/test-cases.md`
-names once the file has a case, it has no working harness; only a tree with no harness file at all
-stops there before the review. A harness that ends with exit 75 says the device or a tool was not
-there: nothing is known of the code, the run exits 75, and the next run on the same work repeats
-only the tests and counts no review. The task lands only once they pass (condition 3).
+Red, the run exits 2, as on a red gate, with its review made. With no test that ran, or none that a
+case of `qa/test-cases.md` names once the file has a case, it has no working harness; only a tree
+with no harness file at all stops there before the review. A harness that ends with exit 75 says the
+device or a tool was not there: nothing is known of the code, the run exits 75, and the next run on
+the same work repeats only the tests and counts no review. The task lands only once they pass
+(condition 3).
 
 **Gates must not modify the tree.** Use check modes (`--check`, `lint`), not
 formatters that rewrite files. `review.sh` compares the fingerprint immediately
@@ -1046,7 +1047,8 @@ my-project/
 │       │   ├── land.sh                # the only thing that commits
 │       │   ├── publish.sh             # the only thing that pushes, opens or merges a pull request
 │       │   ├── pr-post.sh             # what the loop writes on a pull request: statuses, replies
-│       │   ├── device.sh              # the hold on a platform for a check that drives a device by hand
+│       │   ├── device.sh              # the hold on a platform for a check that drives a
+│       │   │                          # device by hand
 │       │   ├── selftest.sh            # review.sh and the scripts that write, on throwaway repos
 │       │   ├── export-version.sh      # one version of the project into a folder of its own
 │       │   ├── triage.py              # you answer findings — terminal or browser
