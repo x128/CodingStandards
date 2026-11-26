@@ -748,12 +748,12 @@ a pull request that was not opened, without another commit. It merges only with 
    the title `<id>: <title>`, the description from `pr-post.sh body`. If one is open it opens none,
    so a rerun never opens a second one, and it prints the URL. Then `pr-post.sh owed` sends what the
    records show is not on it yet — each review run not posted, at the commit it reviewed, the
-   answers and the reports of `/qa` — and gives the new head the statuses of the newest review on
-   this pull request and the newest `/qa`, if their fingerprint is the work now: a commit of the
-   loop's files alone carries them over, and a commit of new work shows `loop/review` pending, "not
-   checked by the loop yet", and `loop/qa` pending with its reason, "/qa has not checked this work".
-   `pr-post.sh answers` and `pr-post.sh qa` post them again, so an escalation answered turns
-   `loop/review` green without a commit. It exits `0`.
+   answers, the reports of `/qa` and the replies kept without GitHub — and gives the new head the
+   statuses of the newest review on this pull request and the newest `/qa`, if their fingerprint is
+   the work now: a commit of the loop's files alone carries them over, and a commit of new work
+   shows `loop/review` pending, "not checked by the loop yet", and `loop/qa` pending with its
+   reason, "/qa has not checked this work". `pr-post.sh answers` and `pr-post.sh qa` post them
+   again, so an escalation answered turns `loop/review` green without a commit. It exits `0`.
 5. **With `--merge`, at `merge` only, merges** once the merge contract holds
    ([above](#the-contract-at-the-pull-request-levels)); otherwise it says which item failed, with
    the URL. A cancelled check is a failing one. Up to `CHECKS_WAIT` seconds (30 unless `land.conf`
@@ -806,11 +806,13 @@ last fetched. `review.sh` reviews the commit from that base, runs the end-to-end
 run. `/qa` checks, and keeps its report. Each says what it owes, and a script that could send
 nothing exits 75. `publish.sh` alone, when the host answers, sends it in order: the push, never
 forced; the pull request; each review run, at the commit it reviewed, one made where no pull request
-was heard on the one it opens; the answers; the reports of `/qa` and of the checks after a merge.
-Nothing computed meanwhile is kept. The statuses and the description are made again from the
-records, for the work as it is then, and the merge is never kept: `publish.sh --merge` checks the
-whole contract against GitHub as it is. So the merge is checked on the base as it is then (M1),
-never on what was last heard. A host that answers and refuses is a refusal, as before.
+was heard on the one it opens; the answers; the reports of `/qa` and of the checks after a merge;
+the replies to people. Nothing computed meanwhile is kept. The statuses and the description are made
+again from the records, for the work as it is then, and the merge is never kept:
+`publish.sh --merge` checks the whole contract against GitHub as it is. So the merge is checked on
+the base as it is then (M1), never on what was last heard, and a reply is sent only when the comment
+it answers is still as it was read, and its text file still holds what it held. A host that answers
+and refuses is a refusal, as before.
 
 ### What landing cannot do
 

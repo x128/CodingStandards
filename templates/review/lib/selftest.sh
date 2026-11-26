@@ -3453,6 +3453,13 @@ esac
 # gh api names the repository in its path, repos/<owner>/<repository>/..., and has no
 # --repo; the rest of the path says what is asked.
 if [ "$1" = api ]; then
+  # down-at-api: GitHub gives no answer from the first gh api call on.
+  if [ -e "$GH_STATE/down-at-api" ]; then
+    rm "$GH_STATE/down-at-api"
+    touch "$GH_STATE/offline"
+    echo "error connecting to api.github.com" >&2
+    exit 1
+  fi
   if [ -e "$GH_STATE/api-fails" ] &&
      printf '%s' "$2" | grep -Eq -- "$(cat "$GH_STATE/api-fails")"; then
     echo "error connecting to api.github.com" >&2
@@ -6923,6 +6930,113 @@ never_says "and no pull request" "the pull request of" "$WORK/land.log"
 go_online
 publish "at push, back online, publish.sh sends the push" 0 "published T-001"
 holds "the remote has the commit" remote_is task/T-001 "$(git rev-parse HEAD)"
+
+# ---- a reply to a person is kept, and sent only for the comment as it was read ------------
+# Online, pr-post.sh comments keeps a digest of each comment it showed. Without GitHub a reply
+# to such a comment is kept: which comment, as it was read, the answer, and the text file it
+# names with a digest of that file — never the words of either. publish.sh alone sends it
+# when the host answers, and only while the comment and the text file are as they were.
+offline_project
+reviewed_pull_request merge
+seen=.review/runs/.loop/comments-seen.json
+kept=.review/runs/.loop/replies-owed
+a_person_comments "$(printf 'Why 42?\nThe tracker says 41.')"
+asked="$(person_id)"
+pr_post "pr-post.sh comments shows what a person wrote" 0 "The tracker says 41." comments
+holds "and keeps a digest of each comment it showed" \
+  jq_true --arg id "$asked" '.[$id] | test("^[0-9a-f]{64}$")' "$seen"
+go_offline
+printf 'The requirements ask for 42: REQUIREMENTS.md, "Answer".\n' >.review/runs/reply-42.md
+pr_post "a reply without GitHub is kept" 75 \
+  "owed to GitHub: the reply to $asked (not-a-problem) — publish.sh alone sends it" \
+  reply "$asked" not-a-problem .review/runs/reply-42.md
+holds "its record names the comment as it was read, the answer and the text file" \
+  jq_true --arg id "$asked" --slurpfile seen "$seen" --arg file "$PWD/.review/runs/reply-42.md" \
+  '.id == $id and .answer == "not-a-problem" and .seen == $seen[0][$id] and .file == $file' \
+  "$kept/$asked.json"
+holds "and keeps no words of the comment or of the reply" \
+  not grep -rqE 'tracker says 41|ask for 42' .review/runs/.loop
+publish "publish.sh lists the reply among what is owed" 75 "PUBLISHING WAITS FOR GITHUB"
+owed_listed "after the reports and before the statuses" "$WORK/publish.log" \
+  "   Owed, and sent in this order by publish.sh alone when it answers:" \
+  "     the reply to $asked (not-a-problem)" \
+  "     the statuses and the description, made again when they are sent"
+pr_post "a reply to a comment never read here is refused" 3 \
+  "POSTING REFUSED — 4242 was never read here: pr-post.sh comments shows what people wrote, "\
+"when GitHub answers" reply 4242 fixed .review/runs/reply-42.md
+holds "and is not kept" not test -e "$kept/4242.json"
+go_online
+publish "a reply that was kept is sent when the comment is as it was read" 0 \
+  "nothing more is owed to https://example.test/pull/1"
+says "it says it sent it" "sent: the reply to $asked (not-a-problem)" "$WORK/publish.log"
+holds "the reply is posted" posted "<!-- loop:reply $asked not-a-problem -->"
+holds "and is kept no longer" not test -e "$kept/$asked.json"
+publish "sent again, the reply is not posted twice" 0 "nothing more is owed to"
+holds "it is there once" posted_count_is "<!-- loop:reply $asked not-a-problem -->" 1
+
+a_person_comments "And the button is red where the plan says blue."
+second="$(jq -r '.[-1].id' "$GH_STATE/comments.json")"
+pr_post "pr-post.sh comments shows the second comment" 0 "where the plan says blue" comments
+go_offline
+printf 'The button is blue now.\n' >.review/runs/reply-blue.md
+pr_post "a reply to the second is kept" 75 "owed to GitHub: the reply to $second (fixed)" \
+  reply "$second" fixed .review/runs/reply-blue.md
+updated="$(jq --arg id "$second" 'map(if (.id | tostring) == $id
+  then .body = "And the button is red where the plan says green." else . end)' \
+  "$GH_STATE/comments.json")" && printf '%s' "$updated" >"$GH_STATE/comments.json"
+go_online
+publish "and not when the comment changed meanwhile" 0 \
+  "the reply to $second is not sent: the comment changed since it was read — read it again "\
+"with pr-post.sh comments, and answer what it says now"
+holds "no reply to it is posted" not posted "<!-- loop:reply $second fixed -->"
+holds "and it is kept no longer" not test -e "$kept/$second.json"
+publish "the merge waits on that comment" 5 \
+  "the first that is the loop's $second by  on the pull request, not answered" --check
+
+# A text file used again for another reply: the reply it was named for is not sent. A reply
+# posted at once, once GitHub answers, takes the place of the one kept for the same comment.
+pr_post "pr-post.sh comments shows it again" 0 "where the plan says green" comments
+a_person_comments "The label says Answer, not answer."
+third="$(jq -r '.[-1].id' "$GH_STATE/comments.json")"
+pr_post "and a third" 0 "The label says Answer" comments
+go_offline
+printf 'Green it is now.\n' >.review/runs/reply.md
+pr_post "a reply to the second, kept" 75 "the reply to $second (fixed)" \
+  reply "$second" fixed .review/runs/reply.md
+printf 'The label reads Answer now.\n' >.review/runs/reply.md
+pr_post "a reply to the third in the same file, kept" 75 "the reply to $third (fixed)" \
+  reply "$third" fixed .review/runs/reply.md
+go_online
+publish "a reply whose text file changed since it was kept is not sent" 0 \
+  "the reply to $second is not sent: its text file $PWD/.review/runs/reply.md changed since "\
+"the reply was kept — answer it again with pr-post.sh reply"
+holds "no reply to it is posted" not posted "<!-- loop:reply $second fixed -->"
+holds "and the reply the file now holds is sent" posted "<!-- loop:reply $third fixed -->"
+go_offline
+printf 'Which green the plan means is not found out yet.\n' >.review/runs/reply-green.md
+pr_post "a reply kept" 75 "the reply to $second (unsettled)" \
+  reply "$second" unsettled .review/runs/reply-green.md
+go_online
+printf 'The button is the green of the plan now.\n' >.review/runs/reply-green-2.md
+pr_post "a reply posted at once once GitHub answers" 0 "reply to $second (fixed) posted" \
+  reply "$second" fixed .review/runs/reply-green-2.md
+holds "takes the place of the one kept for the same comment" not test -e "$kept/$second.json"
+publish "which is never sent after it" 0 "nothing more is owed to"
+holds "so the comment stays answered fixed" not posted "<!-- loop:reply $second unsettled -->"
+
+# GitHub goes while a reply is on its way: the reply is kept.
+a_person_comments "One more: the title is cut."
+fourth="$(jq -r '.[-1].id' "$GH_STATE/comments.json")"
+pr_post "pr-post.sh comments shows a fourth" 0 "the title is cut" comments
+printf 'The title is whole now.\n' >.review/runs/reply-title.md
+touch "$GH_STATE/down-at-api"
+pr_post "a reply whose post loses GitHub on the way is kept" 75 \
+  "owed to GitHub: the reply to $fourth (fixed) — publish.sh alone sends it" \
+  reply "$fourth" fixed .review/runs/reply-title.md
+holds "its record is there" test -f "$kept/$fourth.json"
+go_online
+publish "and is sent when GitHub answers" 0 "sent: the reply to $fourth (fixed)"
+holds "once" posted_count_is "<!-- loop:reply $fourth fixed -->" 1
 
 
 published_project github

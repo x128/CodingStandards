@@ -38,10 +38,15 @@
 #                        not-a-problem, other-task, unsettled, or user, the user's own
 #                        decision in their words. Only fixed and user settle it for the
 #                        merge (common.sh, people_comments_open). Never posted twice.
-#   comments             reads only: what people wrote that is not settled, whole, with
-#                        its id, author and place — the line of a file, a review, or the
-#                        pull request — and whose turn it is: the loop's while it is not
-#                        answered or answered unsettled; reply answers it in its thread
+#                        Without GitHub it is kept, for publish.sh alone to send (owed),
+#                        when pr-post.sh comments showed that comment here: which comment,
+#                        as it was read, the answer and the text file — never their words
+#   comments             reads what people wrote that is not settled and shows it whole,
+#                        with its id, author and place — the line of a file, a review, or
+#                        the pull request — and whose turn it is: the loop's while it is
+#                        not answered or answered unsettled; reply answers it in its
+#                        thread. It keeps a digest of each comment it showed, and nothing
+#                        else (common.sh, COMMENTS_SEEN)
 #   work                 reads only, at every level: {work, head} — the fingerprint of
 #                        the work now and HEAD, for /qa to record in qa.json; below the
 #                        pull request levels that is all, and nothing is asked of the
@@ -82,9 +87,12 @@
 #                        where no pull request was heard is taken in, and the pull request
 #                        is written into its meta.json; a run whose commit is not on the
 #                        remote branch is refused, its push is owed first — then the
-#                        answers, the reports of /qa and of the checks after a merge, and
-#                        the statuses and the description, made now. publish.sh calls it
-#                        after the push and the pull request
+#                        answers, the reports of /qa and of the checks after a merge, the
+#                        replies kept — each only while the comment it answers and its
+#                        text file are as they were when it was kept; else it is not
+#                        sent, and the loop answers again — and the statuses and the
+#                        description, made now. publish.sh calls it after the push and
+#                        the pull request
 #
 # Usage, from the project root:
 #   pr-post.sh <command> [arguments] [--task-file <task.json>]
@@ -94,8 +102,9 @@
 # When the host of the remote, or GitHub, gives no answer at all (exit 75 of
 # resolve_base_branch, or a question about the pull request that failed for it), nothing is
 # posted: each command but work says what it owes and exits 75, and publish.sh alone sends
-# it when GitHub answers. comments cannot read what people wrote then. A request that
-# fails on the way while GitHub gives no answer ends the same way, with exit 75.
+# it when GitHub answers. comments cannot read what people wrote then, and reply keeps
+# only a reply to a comment that comments showed here. A request that fails on the way
+# while GitHub gives no answer ends the same way, with exit 75.
 #
 # Exit codes:
 #   0  posted, or nothing was left to post; qa below the pull request levels, once it
@@ -179,6 +188,7 @@ refuse() {
 fail() {
   if [ -n "${REPOSITORY:-}" ] && \
      { github_lost "$REPOSITORY" || connection_lost "${REMOTE:-}"; }; then
+    [ "$COMMAND" != reply ] || keep_reply
     echo "POSTING WAITS FOR GITHUB — $1: GitHub gives no answer, and nothing more was posted" >&2
     owed_by_command
     exit 75
@@ -295,8 +305,7 @@ owed_by_command() {
     after-merge) owed "the report of the checks after the merge in $FOLDER" ;;
     statuses) owed "the statuses at HEAD" them ;;
     body) [ -n "$TO" ] || owed "the description of the pull request of $BRANCH" ;;
-    reply) echo "owed to GitHub: the reply to ${ARGUMENTS[0]} (${ARGUMENTS[1]}) — pr-post.sh "\
-"reply posts it when GitHub answers" >&2 ;;
+    reply) owed "the reply to ${ARGUMENTS[0]} (${ARGUMENTS[1]})" ;;
     owed)
       echo "owed to GitHub, and sent in this order by publish.sh alone when it answers:" >&2
       owed_to_github "$TASK_ID" "$REMOTE" "$BASE" "$BRANCH" "$PR_URL" "$LANDING" \
@@ -306,7 +315,34 @@ owed_by_command() {
 "GitHub: ${OFFLINE:-GitHub} gives no answer" >&2 ;;
   esac
 }
+# The digest of the text of comment <id> in <comments>, a JSON array of {id, text}.
+comment_digest() {
+  printf '%s' "$1" | jq -j --arg id "$2" 'first(.[] | select(.id == $id) | .text) // ""' \
+    | sha256_stdin
+}
+
+# A reply made without GitHub is kept (common.sh, REPLIES_OWED), in the place of one kept
+# for the same comment before: only to a comment that pr-post.sh comments showed here, so
+# that it is sent only while that comment is as it was read.
+keep_reply() {
+  local id="${ARGUMENTS[0]}" seen record
+  seen="$(jq -r --arg id "$id" '.[$id] // empty | strings' "$COMMENTS_SEEN" 2>/dev/null)"
+  [ -n "$seen" ] || refuse "$id was never read here: pr-post.sh comments shows what people "\
+"wrote, when GitHub answers"
+  record="$REPLIES_OWED/$id.json"
+  if ! { mkdir -p "$REPLIES_OWED" &&
+         jq -n --arg id "$id" --arg answer "${ARGUMENTS[1]}" --arg seen "$seen" \
+           --arg file "$ARGUMENT" --arg written "$(sha256_stdin <"$ARGUMENT")" \
+           '{id: $id, answer: $answer, seen: $seen, file: $file, written: $written,
+             time: (now | floor)}' >"$record.new" && mv "$record.new" "$record"; }; then
+    rm -f "$record.new"
+    echo "POSTING FAILED — the reply to $id could not be kept in $record" >&2
+    exit 1
+  fi
+}
+
 if [ -n "$OFFLINE" ] && [ "$COMMAND" != work ] && [ -n "$(owed_by_command 2>&1)" ]; then
+  [ "$COMMAND" != reply ] || keep_reply
   owed_by_command
   exit 75
 fi
@@ -935,12 +971,30 @@ post_person_reply() {
   echo "reply to $comment_id ($answer) posted: $PR_URL"
 }
 
+# The digest of each comment in <comments>, kept with those of comments shown before; a copy
+# that cannot write it has seen nothing, and a reply without GitHub is refused then.
+keep_seen() {
+  local id seen
+  seen="$(jq -c 'if type == "object" then . else {} end' "$COMMENTS_SEEN" 2>/dev/null)"
+  [ -n "$seen" ] || seen='{}'
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    seen="$(printf '%s' "$seen" | jq -c --arg id "$id" --arg digest "$(comment_digest "$1" "$id")" \
+      '.[$id] = $digest')" || return 0
+  done < <(printf '%s' "$1" | jq -r '.[].id')
+  mkdir -p "${COMMENTS_SEEN%/*}" 2>/dev/null && printf '%s' "$seen" >"$COMMENTS_SEEN.new" \
+    2>/dev/null && mv "$COMMENTS_SEEN.new" "$COMMENTS_SEEN" 2>/dev/null
+  rm -f "$COMMENTS_SEEN.new"
+  return 0
+}
+
 # What people wrote that is not settled, whole, for the loop to read before it answers,
 # each with whose turn it is, as publish.sh says it (M8).
 show_comments() {
   local open
   open="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
     fail "gh could not read the comments of $PR_URL"
+  keep_seen "$open"
   printf '%s' "$open" | jq -r --arg url "$PR_URL" \
     --arg theirs "$(turn_words user:a-person-said)" '
     if length == 0 then "nothing people wrote on \($url) waits for the loop"
@@ -1004,11 +1058,53 @@ post_after_merge() {
 # owed
 # ---------------------------------------------------------------------------
 
+# Everything on the pull request as it is now, as [{id, text}]: what people wrote, and the
+# loop's own posts, which a comment id kept here never names.
+comments_now() {
+  local issue_comments reviews line_comments
+  issue_comments="$(gh_repo_api_list "$REPOSITORY" "issues/$PR_NUMBER/comments")" || return 1
+  reviews="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/reviews")" || return 1
+  line_comments="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/comments")" || return 1
+  printf '%s\n' "$issue_comments" "$reviews" "$line_comments" \
+    | jq -sc 'add | map({id: (.id | tostring), text: (.body // "")})'
+}
+
+# send_reply <record> <comments>: the reply kept, sent only while the comment it answers is
+# as it was read and its text file holds what it held then. Otherwise it is not sent, it is
+# kept no longer, and the line says what the loop does: read the comment again and answer.
+send_reply() {
+  local record="$1" id answer seen file written
+  id="$(jq -r '.id // ""' "$record")"
+  answer="$(jq -r '.answer // ""' "$record")"
+  seen="$(jq -r '.seen // ""' "$record")"
+  file="$(jq -r '.file // ""' "$record")"
+  written="$(jq -r '.written // ""' "$record")"
+  if [ "$(printf '%s' "$2" | jq -r --arg id "$id" 'any(.[]; .id == $id)')" != true ]; then
+    echo "the reply to $id is not sent: the comment is no longer on $PR_URL — read what is "\
+"there with pr-post.sh comments, and answer what it says now" >&2
+  elif [ "$(comment_digest "$2" "$id")" != "$seen" ]; then
+    echo "the reply to $id is not sent: the comment changed since it was read — read it again "\
+"with pr-post.sh comments, and answer what it says now" >&2
+  elif [ ! -f "$file" ]; then
+    echo "the reply to $id is not sent: its text file $file is gone — answer it again with "\
+"pr-post.sh reply" >&2
+  elif [ "$(sha256_stdin <"$file")" != "$written" ]; then
+    echo "the reply to $id is not sent: its text file $file changed since the reply was kept "\
+"— answer it again with pr-post.sh reply" >&2
+  else
+    post_person_reply "$id" "$answer" "$file"
+    rm -f "$record"
+    echo "sent: the reply to $id ($answer)"
+    return 0
+  fi
+  rm -f "$record"
+}
+
 # Everything the records show is not on GitHub, in the order of owed_to_github, each part
 # as its own command posts it; a step that fails ends the command. Nothing that was computed
 # while GitHub gave no answer is sent: the statuses and the description are made now.
 send_owed() {
-  local run head folder count
+  local run head folder count record comments=""
   while IFS= read -r run; do
     [ -n "$run" ] || continue
     head="$(jq -r '.head // ""' "$run/meta.json")"
@@ -1040,6 +1136,12 @@ send_owed() {
     ( post_after_merge "$folder" ) || exit $?
     echo "sent: the report of the checks after the merge in $folder"
   done < <(owed_after_merge_reports)
+  while IFS= read -r record; do
+    [ -n "$record" ] || continue
+    [ -n "$comments" ] || comments="$(comments_now)" || \
+      fail "gh could not read the comments of $PR_URL"
+    send_reply "$record" "$comments"
+  done < <(owed_replies)
   post_statuses || fail "the statuses could not be posted on $PR_URL"
   post_body
   echo "sent: the statuses and the description, made now"
@@ -1069,7 +1171,9 @@ case "$COMMAND" in
   answers)  post_answers "$ARGUMENT"
             post_statuses || fail "the statuses could not be posted on $PR_URL"
             post_body ;;
-  reply)    post_person_reply "${ARGUMENTS[0]}" "${ARGUMENTS[1]}" "$ARGUMENT" ;;
+  reply)    post_person_reply "${ARGUMENTS[0]}" "${ARGUMENTS[1]}" "$ARGUMENT"
+            # A reply posted now takes the place of one kept for the same comment.
+            rm -f "$REPLIES_OWED/${ARGUMENTS[0]}.json" ;;
   qa)       post_qa "$ARGUMENT"
             post_statuses || fail "the statuses could not be posted on $PR_URL"
             post_body ;;
