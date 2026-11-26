@@ -2203,3 +2203,164 @@ say_after_merge_unsettled() {
     then "OWED — \(.folder)/owed.json, the list of the checks a merged task owes, is not readable"
     else "OWED — \(.task): \(.id), put off until after its merge: \(.why) (\(.folder))" end' >&2
 }
+
+# ---------------------------------------------------------------------------
+# The hold on a platform
+# ---------------------------------------------------------------------------
+
+# One run of the end-to-end tests uses a platform — android, ios — at a time, in every copy
+# of every project of the user on this machine (e2e-gate.sh). A hold is a folder
+# <place>/<platform>.lock, and the one whose mkdir makes it holds the platform. Its file
+# `holder` is one JSON object: `pid` and `pid_started`, the process that holds and when it
+# started; `root`, the project; `who`, what holds — a run folder; `kind`, run; `since` and
+# `until`, in seconds since 1970. Its file `group`, {group, group_started}, is the process
+# group of the harness and when its leader started: a file of its own, since the holder's
+# renewal writes `holder` meanwhile. The hold is a lease: it holds until `until`, and only
+# a holder that lives renews it, so a run that was killed frees the platform by itself, and
+# whoever takes it over stops the process group it left running. A run that still lives
+# keeps its hold when it renewed late, as after a machine that slept. HOLD_PLACE is the
+# place (device_lock_dir); HOLD_SAID says why a hold was not taken.
+
+# The place where the runs meet: DEVICE_LOCK_DIR of the environment (selftest.sh alone sets
+# it), else of land.conf, else one folder of the user under /tmp, the same for every copy of
+# every project: /tmp is shared by every process on macOS and Linux, TMPDIR is not.
+device_lock_dir() {
+  local place="${DEVICE_LOCK_DIR:-}"
+  [ -n "$place" ] || place="$(read_conf "$1" DEVICE_LOCK_DIR "")"
+  printf '%s' "${place:-/tmp/review-devices-$(id -u)}"
+}
+
+# When process <pid> started, as ps says it, or nothing when there is no such process.
+process_started() {
+  LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# The record of the hold <lock>, as one line of JSON, or nothing when it has none that reads.
+hold_holder() {
+  jq -c 'select(type == "object")' "$1/holder" 2>/dev/null
+}
+
+# Whether this process holds <lock>: its record names this process and when it started.
+hold_is_mine() {
+  local holder
+  holder="$(hold_holder "$1")"
+  [ -n "$holder" ] && json_holds --arg pid "$$" --arg started "$(process_started "$$")" \
+    '(.pid | tostring) == $pid and (.pid_started // "") == $started' <<<"$holder"
+}
+
+# Who holds, in words: `<who> of <root> since <time>`.
+hold_named() {
+  if [ -z "$1" ]; then
+    printf 'a holder that has not written who it is yet'
+  else
+    printf '%s' "$1" | jq -r '"\(.who // "?") of \(.root // "?") since "
+      + (if (.since | type) == "number" then (.since | floor | todate) else "?" end)'
+  fi
+}
+
+# Whether the hold <lock> with the record <holder> ran out: its lease ended and the run that
+# holds it is gone, or it has no record and was made over a minute ago.
+hold_ran_out() {
+  local lock="$1" holder="$2" until pid started
+  if [ -z "$holder" ]; then
+    [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]
+    return
+  fi
+  until="$(printf '%s' "$holder" | jq -r 'if (.until | type) == "number" then .until | floor
+    else 0 end')"
+  [ "${until:-0}" -lt "$(date +%s)" ] || return 1
+  pid="$(printf '%s' "$holder" | jq -r 'if .kind == "run" then .pid // "" else "" end')"
+  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  started="$(process_started "$pid")"
+  [ -n "$started" ] && [ "$started" = "$(printf '%s' "$holder" | jq -r '.pid_started // ""')" ] \
+    && return 1
+  return 0
+}
+
+# Takes over the hold <lock> of <platform> that ran out: moves it aside, so that one taker
+# alone does it, and stops the process group it recorded — unless another process has the
+# group's number now — then says so on stderr.
+hold_take_over() {
+  local platform="$1" lock="$2" holder="$3" aside="$2.taken.$$" group stopped="" leader whose
+  mv "$lock" "$aside" 2>/dev/null || return 0
+  if [ -n "$holder" ]; then
+    whose="the hold of $(printf '%s' "$holder" | jq -r '"\(.who // "?") of \(.root // "?")"')"
+    group="$(jq -r '.group // "" | tostring' "$aside/group" 2>/dev/null)"
+    case "$group" in ''|*[!0-9]*) group="" ;; esac
+    if [ -n "$group" ] && kill -0 -- "-$group" 2>/dev/null; then
+      leader="$(process_started "$group")"
+      if [ -z "$leader" ] || \
+         [ "$leader" = "$(jq -r '.group_started // ""' "$aside/group" 2>/dev/null)" ]; then
+        kill -TERM -- "-$group" 2>/dev/null && stopped="its tests, process group $group"
+      fi
+    fi
+    echo "── $platform: $whose ran out — taking over${stopped:+; stopped what it left running: $stopped}" >&2
+  else
+    echo "── $platform: the hold at $lock names no holder and is over a minute old — taking over" >&2
+  fi
+  rm -rf "$aside"
+}
+
+# hold_take <platform> <who> <kind> <lease> <wait>: holds the platform for <lease> seconds,
+# waiting while another holds it, up to <wait> seconds, and saying every minute whom it waits
+# for. 0, held; 75, still held by another after the wait; 1, the hold cannot be made at all.
+# On 75 and 1, HOLD_SAID says why, as a reason of e2e.json: `<platform>: …`.
+hold_take() {
+  local platform="$1" who="$2" kind="$3" lease="$4" wait="$5"
+  local lock="$HOLD_PLACE/$1.lock" waited=0 holder held_by now
+  HOLD_SAID=""
+  mkdir -p "$HOLD_PLACE" 2>/dev/null
+  while :; do
+    if mkdir "$lock" 2>/dev/null; then
+      now="$(date +%s)"
+      jq -n --argjson pid "$$" --arg started "$(process_started "$$")" --arg root "$(pwd)" \
+        --arg who "$who" --arg kind "$kind" --argjson since "$now" \
+        --argjson until "$((now + lease))" \
+        '{pid: $pid, pid_started: $started, root: $root, who: $who, kind: $kind,
+          since: $since, until: $until}' \
+        >"$lock/holder" 2>/dev/null && return 0
+      rm -rf "$lock"
+    fi
+    if [ ! -d "$lock" ] && { [ ! -d "$HOLD_PLACE" ] || [ ! -w "$HOLD_PLACE" ]; }; then
+      HOLD_SAID="$platform: the hold cannot be made at $lock"
+      return 1
+    fi
+    if [ -d "$lock" ]; then
+      holder="$(hold_holder "$lock")"
+      if hold_ran_out "$lock" "$holder"; then
+        hold_take_over "$platform" "$lock" "$holder"
+        continue
+      fi
+      held_by="$(hold_named "$holder")"
+      if [ "$waited" -ge "$wait" ]; then
+        HOLD_SAID="$platform: busy — held by $held_by; waited $waited s (E2E_WAIT)"
+        return 75
+      fi
+      [ $((waited % 60)) -ne 0 ] || echo "── $platform: waiting — held by $held_by" >&2
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
+# hold_renew <platform> <lease>: holds it <lease> seconds more from now, only by its holder.
+hold_renew() {
+  local lock="$HOLD_PLACE/$1.lock"
+  hold_is_mine "$lock" || return 1
+  jq --argjson lease "$2" '.until = (now | floor) + $lease' "$lock/holder" \
+    >"$lock/holder.$$" 2>/dev/null && mv "$lock/holder.$$" "$lock/holder" \
+    || { rm -f "$lock/holder.$$"; return 1; }
+}
+# hold_group <platform> <pgid>: the process group of the harness, which a taker stops.
+hold_group() {
+  local lock="$HOLD_PLACE/$1.lock"
+  hold_is_mine "$lock" || return 1
+  jq -n --argjson group "$2" --arg started "$(process_started "$2")" \
+    '{group: $group, group_started: $started}' >"$lock/group.$$" 2>/dev/null \
+    && mv "$lock/group.$$" "$lock/group" || { rm -f "$lock/group.$$"; return 1; }
+}
+# hold_release <platform>: gives the platform back, only by its holder.
+hold_release() {
+  hold_is_mine "$HOLD_PLACE/$1.lock" || return 1
+  rm -rf "$HOLD_PLACE/$1.lock"
+}

@@ -22,12 +22,19 @@
 # 75 is the environment's: its reports are not read, since nothing is known of
 # the code.
 #
+# Android and iOS are held while their harness runs: one run of the tests on a
+# platform at a time, in every copy of every project of the user on this machine
+# (E2E_LOCK, E2E_WAIT and E2E_TIMEOUT of land.conf; common.sh, "The hold on a
+# platform"). A run waits while another holds the platform, and a run that was
+# killed frees it by itself.
+#
 # Exit codes, run:
 #   0  pass — no test failed, and every test a case names passed on every
 #      platform that runs it
 #   2  red — a test failed, e2e.sh failed, or a named test did not pass or run
-#   75 the environment — the harness said so with exit 75, twice; nothing is
-#      known of the code
+#   75 the environment — the harness said so with exit 75, twice, another run
+#      held the platform past E2E_WAIT, no hold on it could be made, or it did not
+#      end in E2E_TIMEOUT and left no failed test; nothing is known of the code
 #   1  no working harness, no test that ran, or a pipeline error
 # Exit codes, check:
 #   0  the newest e2e.json had a harness on every platform the tree ships now,
@@ -123,6 +130,124 @@ case "$REPEAT_PAUSE" in
   ''|*[!0-9]*) echo "E2E_REPEAT_PAUSE must be a whole number of seconds, not '$REPEAT_PAUSE'" >&2
                exit 1 ;;
 esac
+
+# The hold on a platform (common.sh). With E2E_LOCK=platform the run holds android and ios
+# while their harness runs, so that no other run of the loop, in any copy of any project
+# of the user on this machine, uses their devices meanwhile; off, where each copy has
+# devices of its own. E2E_WAIT is how long a busy platform is waited for, E2E_TIMEOUT how
+# long one platform's tests may take before they are stopped (0, no limit). HOLD_LEASE and
+# HOLD_RENEW, the lease and how often a living run renews it, are of the environment, for
+# selftest.sh alone.
+CONF="$REVIEW_DIR/land.conf"
+E2E_LOCK="$(read_conf "$CONF" E2E_LOCK platform)"
+case "$E2E_LOCK" in
+  platform|off) ;;
+  *) echo "E2E_LOCK in $CONF must be platform or off, not '$E2E_LOCK'" >&2; exit 1 ;;
+esac
+E2E_WAIT="$(read_conf "$CONF" E2E_WAIT 1800)"
+E2E_TIMEOUT="$(read_conf "$CONF" E2E_TIMEOUT 0)"
+for setting in "E2E_WAIT=$E2E_WAIT" "E2E_TIMEOUT=$E2E_TIMEOUT"; do
+  case "${setting#*=}" in
+    ''|*[!0-9]*|??????????*)
+      echo "${setting%%=*} in $CONF must be a whole number of seconds, not '${setting#*=}'" >&2
+      exit 1 ;;
+  esac
+done
+HOLD_LEASE="${HOLD_LEASE:-120}"
+HOLD_RENEW="${HOLD_RENEW:-30}"
+for setting in "HOLD_LEASE=$HOLD_LEASE" "HOLD_RENEW=$HOLD_RENEW"; do
+  case "${setting#*=}" in
+    ''|*[!0-9]*|0|??????????*)
+      echo "${setting%%=*} must be a whole number of seconds from 1, not '${setting#*=}'" >&2
+      exit 1 ;;
+  esac
+done
+HOLD_PLACE="$(device_lock_dir "$CONF")"
+HOLDER="${RUN_DIR#"$PROJECT_ROOT"/}"
+GATE_STARTED="$(process_started "$$")"
+HELD=""
+RENEWER=""
+HARNESS_PID=""
+
+# While the gate holds a platform, a child renews the lease every HOLD_RENEW seconds, and
+# only while the gate lives: a gate that is killed stops renewing, and the platform is free
+# again once the lease has run out.
+renew_hold() {
+  local ticks=0
+  while sleep 1; do
+    kill -0 "$$" 2>/dev/null || exit 0
+    ticks=$((ticks + 1))
+    [ "$ticks" -ge "$HOLD_RENEW" ] || continue
+    ticks=0
+    [ "$(process_started "$$")" = "$GATE_STARTED" ] && hold_renew "$1" "$HOLD_LEASE" || exit 0
+  done
+}
+release_platform() {
+  [ -z "$RENEWER" ] || kill "$RENEWER" 2>/dev/null
+  RENEWER=""
+  [ -z "$HELD" ] || hold_release "$HELD"
+  HELD=""
+}
+# A gate that is stopped stops the harness it runs — the whole process group of it — and
+# gives the platform back at once.
+stop_gate() {
+  trap '' TERM INT
+  [ -z "$HARNESS_PID" ] || kill -TERM -- "-$HARNESS_PID" 2>/dev/null
+  release_platform
+  exit "$1"
+}
+trap 'stop_gate 143' TERM
+trap 'stop_gate 130' INT
+trap release_platform EXIT
+
+# One call of the harness, in a process group of its own, so that a stop of the gate, the
+# taker of a hold that ran out and E2E_TIMEOUT reach every process it started. Sets
+# exit_code; a harness that E2E_TIMEOUT stopped leaves the file <platform>.timed-out. The
+# harness starts only once its group is recorded with the hold, and never once the gate is
+# gone: a gate killed at any moment leaves no harness, or one whose group the taker stops.
+# 1, the group could not be recorded, and no harness ran.
+call_harness() {
+  local platform="$1" directory="$2" watcher="" go="$RUN_DIR/e2e/$platform.go"
+  rm -f "$RUN_DIR/e2e/$platform.timed-out" "$go"
+  set -m
+  (
+    set +m
+    until [ -e "$go" ]; do
+      kill -0 "$$" 2>/dev/null || exit 1
+      sleep 0.1
+    done
+    exec "$HARNESS" "$platform" "$directory"
+  ) </dev/null >"$RUN_DIR/e2e/$platform.log" 2>&1 &
+  HARNESS_PID=$!
+  set +m
+  if [ -n "$HELD" ] && ! hold_group "$HELD" "$HARNESS_PID"; then
+    kill -TERM -- "-$HARNESS_PID" 2>/dev/null
+    wait "$HARNESS_PID" 2>/dev/null
+    HARNESS_PID=""
+    exit_code=1
+    return 1
+  fi
+  : >"$go"
+  if [ "$E2E_TIMEOUT" -gt 0 ]; then
+    (
+      elapsed=0
+      while [ "$elapsed" -lt "$E2E_TIMEOUT" ]; do
+        sleep 1
+        elapsed=$((elapsed + 1))
+        kill -0 "$HARNESS_PID" 2>/dev/null || exit 0
+      done
+      : >"$RUN_DIR/e2e/$platform.timed-out"
+      kill -TERM -- "-$HARNESS_PID" 2>/dev/null
+    ) </dev/null >/dev/null 2>&1 &
+    watcher=$!
+  fi
+  wait "$HARNESS_PID" 2>/dev/null
+  exit_code=$?
+  HARNESS_PID=""
+  rm -f "$go"
+  [ -z "$watcher" ] || { kill "$watcher" 2>/dev/null; wait "$watcher" 2>/dev/null; }
+  return 0
+}
 START="$(date +%s)"
 FINGERPRINT="$(tree_fingerprint)"
 # The loop's own files are outside the fingerprint, and qa/test-cases.md is one of
@@ -211,30 +336,62 @@ junit_rows() {
 # Each platform's tests, into <run-dir>/e2e/<platform>/, emptied first and read
 # as soon as its run ends: a report another platform's run wrote there is not
 # this platform's. The log and the rows go next to that folder. A platform whose
-# harness said twice that its device or a tool was not there is in ENVIRONMENT,
-# with no report read.
+# harness said twice that its device or a tool was not there, that another run
+# held past E2E_WAIT (BUSY) or whose hold cannot be made (UNMADE) is in
+# ENVIRONMENT, with the reason, and no report is read.
 PRESET_REASONS="[]"
 RESULTS="{}"
-ENVIRONMENT="[]"
+ENVIRONMENT="{}"
+BUSY="[]"
+UNMADE="[]"
+TIMED_OUT="{}"
+add_platform() { jq -c --arg platform "$platform" '. + [$platform]' <<<"$1"; }
 if [ ! -x "$HARNESS" ]; then
   PRESET_REASONS="$(jq -nc --arg reason "$HARNESS is missing or not executable" '[$reason]')"
 else
   for platform in $PLATFORMS; do
     directory="$RUN_DIR/e2e/$platform"
-    for try in first second; do
-      rm -rf "$directory" && mkdir -p "$directory" || exit 1
-      echo "── e2e $platform" >&2
-      "$HARNESS" "$platform" "$directory" >"$RUN_DIR/e2e/$platform.log" 2>&1
-      exit_code=$?
-      [ "$exit_code" -eq 75 ] && [ "$try" = first ] || break
-      echo "   .review/e2e.sh says the device or a tool was not there (exit 75): "\
+    rm -rf "$directory" && mkdir -p "$directory" || exit 1
+    rm -f "$RUN_DIR/e2e/$platform.log"
+    absent=""
+    if [ "$E2E_LOCK" = platform ] && [ "$platform" != app ]; then
+      hold_take "$platform" "$HOLDER" run "$HOLD_LEASE" "$E2E_WAIT"
+      case $? in
+        0)  HELD="$platform"
+            renew_hold "$platform" </dev/null >/dev/null 2>&1 &
+            RENEWER=$! ;;
+        75) absent="$HOLD_SAID"; BUSY="$(add_platform "$BUSY")" || exit 1 ;;
+        *)  absent="$HOLD_SAID"; UNMADE="$(add_platform "$UNMADE")" || exit 1 ;;
+      esac
+    fi
+    exit_code=75
+    if [ -z "$absent" ]; then
+      for try in first second; do
+        rm -rf "$directory" && mkdir -p "$directory" || exit 1
+        echo "── e2e $platform" >&2
+        call_harness "$platform" "$directory" || {
+          absent="$platform: the hold cannot be made at $HOLD_PLACE/$platform.lock"
+          UNMADE="$(add_platform "$UNMADE")" || exit 1
+          break
+        }
+        [ "$exit_code" -eq 75 ] && [ "$try" = first ] || break
+        echo "   .review/e2e.sh says the device or a tool was not there (exit 75): "\
 "$platform runs once more in $REPEAT_PAUSE s" >&2
-      sleep "$REPEAT_PAUSE"
-    done
+        sleep "$REPEAT_PAUSE"
+      done
+      release_platform
+      [ "$exit_code" -ne 75 ] || \
+        absent="$platform: .review/e2e.sh says the device or a tool was not there (exit 75), twice"
+      if [ -f "$RUN_DIR/e2e/$platform.timed-out" ]; then
+        TIMED_OUT="$(jq -c --arg platform "$platform" --arg reason "$platform: .review/e2e.sh "\
+"did not end in $E2E_TIMEOUT s (E2E_TIMEOUT) and was stopped" '. + {($platform): $reason}' \
+          <<<"$TIMED_OUT")" || exit 1
+      fi
+    fi
     reports=()
-    if [ "$exit_code" -eq 75 ]; then
-      ENVIRONMENT="$(jq -c --arg platform "$platform" '. + [$platform]' <<<"$ENVIRONMENT")" \
-        || exit 1
+    if [ -n "$absent" ]; then
+      ENVIRONMENT="$(jq -c --arg platform "$platform" --arg reason "$absent" \
+        '. + {($platform): $reason}' <<<"$ENVIRONMENT")" || exit 1
     else
       while IFS= read -r -d '' report; do
         reports+=("$report")
@@ -299,20 +456,26 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
       --argjson platforms "$(printf '%s\n' "$PLATFORMS" | as_json_array)" \
       --argjson results "$RESULTS" --argjson named "$NAMED" --argjson required "$REQUIRED" \
       --argjson marks "$MARKED" --argjson words "$CASE_DIGESTS" \
-      --argjson preset "$PRESET_REASONS" --argjson absent "$ENVIRONMENT" "$JQ_HIT"'
+      --argjson preset "$PRESET_REASONS" --argjson unrun "$ENVIRONMENT" --argjson busy "$BUSY" \
+      --argjson stopped "$TIMED_OUT" "$JQ_HIT"'
   def class: base | if test("\\.") then sub("\\.[^.]*$"; "") else null end;
   def rows: .passed + .failed + .skipped;
   def ran: .passed + .failed;
   def stamp: .[0:19] | try (strptime("%Y-%m-%dT%H:%M:%S") | mktime) catch null;
   def once: reduce .[] as $item ([]; if any(.[]; . == $item) then . else . + [$item] end);
   def prefixed($platform): startswith($platform + ": ");
-  # A platform of the environment says nothing of the code: only the others are read.
-  [$results | to_entries[] | select(.key as $platform | $absent | index($platform) | not)]
+  # A platform of the environment says nothing of the code: only the others are read. One
+  # that E2E_TIMEOUT stopped is read from what it left: red where a test failed, otherwise
+  # its tests could not be finished, as on a platform of the environment.
+  (($unrun | keys_unsorted)
+   + [$stopped | keys_unsorted[] | select(($results[.].failed | length) == 0)]) as $absent
+  | [$results | to_entries[] | select(.key as $platform | $absent | index($platform) | not)]
     as $all
-  | [$absent[] | "\(.): .review/e2e.sh says the device or a tool was not there (exit 75), twice"]
+  | ([$unrun[]] + [$stopped | to_entries[] | select(.key as $platform | $absent
+                                                     | index($platform)) | .value])
     as $environment
   | ([$preset[] | {kind: "no-harness", reason: .}]
-     + [$all[] | .key as $platform | .value
+     + [$all[] | .key as $platform | select($stopped | has($platform) | not) | .value
         | if (ran | length) == 0
             then {kind: "no-test", reason: "\($platform): the e2e run ran no test (exit \(.exit))"}
           elif .exit >= 126
@@ -336,7 +499,8 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
     ) as $faults
   | [$faults[].reason] as $no_harness
   | ([$all[] | .key as $platform | .value
-      | (if .exit != 0 then "\($platform): .review/e2e.sh exited \(.exit)" else empty end),
+      | (if $stopped | has($platform) then $stopped[$platform]
+         elif .exit != 0 then "\($platform): .review/e2e.sh exited \(.exit)" else empty end),
         (.failed[] | "\($platform): failed: \(.)")]
      + [$required[] | . as $mark
         | ([$all[].value | rows[] | select(hit($mark.test)) | class | select(. != null)]
@@ -371,7 +535,7 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
      reasons: (if $status == "no-harness" or $status == "no-test" then $no_harness
                elif $status == "red" then $red
                elif $status == "environment" then $environment else [] end),
-     environment: $environment,
+     environment: $environment, busy: $busy,
      results: ($results | with_entries(.key as $platform
        | .value.outcome = (if $absent | index($platform) then "environment"
                            elif any($faults[]; .kind == "no-harness"
@@ -388,6 +552,7 @@ show_failures() {
   for platform in $(jq -r '.results | to_entries[]
       | select(.value.exit != 0 or (.value.failed | length) > 0 or (.value.passed | length) == 0)
       | .key' "$RUN_DIR/e2e.json"); do
+    [ -f "$RUN_DIR/e2e/$platform.log" ] || continue
     echo "  ── the end of $RUN_DIR/e2e/$platform.log"
     tail -n 20 "$RUN_DIR/e2e/$platform.log" | sed 's/^/     /'
   done
@@ -414,8 +579,18 @@ case "$STATUS" in
     echo
     echo "E2E COULD NOT RUN — the environment, not the code:"
     show_failures
-    turn loop "restore it, then run review.sh again: it repeats only these tests, in this run, "\
-"and counts no review"
+    if [ "$UNMADE" != "[]" ]; then
+      turn user:only-theirs "let the runs meet somewhere they can write: DEVICE_LOCK_DIR in "\
+".review/land.conf, the same folder in every copy of the project, or E2E_LOCK=off where each "\
+"copy has devices of its own — an edit of that file is theirs"
+    elif json_holds --argjson busy "$BUSY" '[.results | to_entries[]
+           | select(.value.outcome == "environment") | .key] - $busy == []' "$RUN_DIR/e2e.json"
+    then
+      turn loop "run review.sh again later: it repeats only these tests"
+    else
+      turn loop "restore it, then run review.sh again: it repeats only these tests, in this "\
+"run, and counts no review"
+    fi
     exit 75 ;;
   *)
     echo

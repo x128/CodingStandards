@@ -40,6 +40,9 @@ printf "%%s\\t%%s\\n" "${DU_KB:-0}" .review/runs
   >"$WORK/df-bin/du" && chmod +x "$WORK/df-bin/du" || { echo "setup failed: du"; exit 1; }
 export PATH="$WORK/df-bin:$PATH"
 export E2E_REPEAT_PAUSE=0
+# The runs of the end-to-end tests meet in DEVICE_LOCK_DIR to hold a platform (e2e-gate.sh):
+# here a folder of this test, so that nothing is written outside it.
+export DEVICE_LOCK_DIR="$WORK/devices"
 
 fail_setup() { echo "setup failed: $1"; exit 1; }
 
@@ -57,8 +60,12 @@ printf 'fun answer() = 41\n' >src/answer.kt
 # second place it is copied to (E2E_ALSO), another exit code (E2E_EXIT), the one
 # platform it runs on (E2E_ONLY) or a file it appends to (E2E_TOUCH). E2E_ENV_TIMES names a
 # file that holds a number: while it is above zero the harness takes one off and exits 75,
-# as a harness does whose device is not there. Each published project below commits the
-# same harness. The gate tries a platform once more after an exit 75 with no pause here.
+# as a harness does whose device is not there. E2E_SLEEP is how many seconds the harness
+# takes before it writes its report, E2E_HANG how many after, and E2E_STAMPS a file it
+# appends `<platform> start <pid>` to when it begins and `<platform> end <pid>` when it ends.
+# Each published project
+# below commits the same harness. The gate tries a platform once more after an exit 75 with
+# no pause here.
 cat >qa/test-cases.md <<'EOF'
 # Test cases
 
@@ -73,6 +80,8 @@ cat >.review/e2e.sh <<'EOF'
 report="$2/${E2E_NAME:-r.xml}"
 mkdir -p "$(dirname "$report")"
 [ -z "${E2E_TOUCH:-}" ] || printf 'touched\n' >>"$E2E_TOUCH"
+[ -z "${E2E_STAMPS:-}" ] || echo "$1 start $$" >>"$E2E_STAMPS"
+[ -z "${E2E_SLEEP:-}" ] || sleep "$E2E_SLEEP"
 if [ -n "${E2E_ENV_TIMES:-}" ] && [ "$(cat "$E2E_ENV_TIMES")" -gt 0 ]; then
   echo "$(($(cat "$E2E_ENV_TIMES") - 1))" >"$E2E_ENV_TIMES"
   exit 75
@@ -88,6 +97,8 @@ fi
 if [ -n "${E2E_ALSO:-}" ] && [ -f "$report" ]; then
   mkdir -p "$(dirname "$2/$E2E_ALSO")" && cp "$report" "$2/$E2E_ALSO"
 fi
+[ -z "${E2E_HANG:-}" ] || sleep "$E2E_HANG"
+[ -z "${E2E_STAMPS:-}" ] || echo "$1 end $$" >>"$E2E_STAMPS"
 exit "${E2E_EXIT:-0}"
 EOF
 chmod +x .review/e2e.sh
@@ -894,6 +905,311 @@ e2e_land "a red repeat of another task proves nothing" 3 \
   "a /qa failure without an end-to-end test seen red, then green: TC-001" \
   .review/T-107.json "$(newest_run)"
 cp "$WORK/answer.kt" src/answer.kt
+rm -f "$WORK/reviewer-ran"
+
+# The hold on a platform. One run of the end-to-end tests uses android or ios at a time, in
+# every copy of every project on the machine: e2e-gate.sh holds the platform with a folder in
+# DEVICE_LOCK_DIR ($WORK/devices here) while it runs the harness, waits while another holds
+# it, and gives it back. A second copy of the project, a clone with the files of .review/
+# that are not committed, shares the platform with the first. hold_by_another <seconds from
+# now> <pid> makes a hold by hand, as a run of another copy, elsewhere, would: it holds until
+# then, and its run is the process <pid>. held_start <copy> <log> [flags] starts review.sh
+# there in the background, as e2e_review does, and $held_pid is its process; held_review
+# waits for it. stamped <line> waits until the harness has stamped the line, arrives <file>
+# until the file is there.
+printf '{"id": "T-102", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' >.review/T-102.json
+holds="$DEVICE_LOCK_DIR"
+copy="$WORK/copy"
+git clone -q "$repository" "$copy" || fail_setup "the second copy"
+cp .review/gates.sh .review/REVIEW_POLICY.md .review/land.conf .review/T-102.json \
+  "$copy/.review/" && cp src/answer.kt "$copy/src/answer.kt" || fail_setup "the second copy"
+on_android() {
+  mkdir -p "$1/app/src/main" && printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
+    >"$1/app/src/main/AndroidManifest.xml" || fail_setup "an Android app in $1"
+}
+on_android "$repository"
+on_android "$copy"
+hold_by_another() {
+  local started
+  started="$(. "$LIB_DIR/common.sh" && process_started "$2")"
+  mkdir -p "$holds/android.lock" && \
+    jq -n --argjson until "$(( $(date +%s) + $1 ))" --argjson pid "$2" --arg started "$started" \
+      '{pid: $pid, pid_started: $started, root: "/elsewhere/project",
+        who: ".review/runs/elsewhere", kind: "run", since: ($until - 600), until: $until}' \
+      >"$holds/android.lock/holder" \
+    || fail_setup "a hold of another copy"
+}
+held_start() {
+  local copy="$1" log="$2"
+  shift 2
+  (cd "$copy" && REVIEWER_CMD="touch $WORK/reviewer-ran; cat $WORK/reviewer.json #" \
+    MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    exec "$LIB_DIR/review.sh" --task-file .review/T-102.json "$@") >"$log" 2>&1 &
+  held_pid=$!
+}
+held_review() {
+  held_start "$@"
+  wait "$held_pid"
+}
+stamped() {
+  local tenths=0
+  until grep -q "$1" "$WORK/stamps" 2>/dev/null; do
+    tenths=$((tenths + 1))
+    [ "$tenths" -lt 600 ] || return 1
+    sleep 0.1
+  done
+}
+arrives() {
+  local tenths=0
+  until [ -e "$1" ]; do
+    tenths=$((tenths + 1))
+    [ "$tenths" -lt 600 ] || return 1
+    sleep 0.1
+  done
+}
+: >"$WORK/stamps"
+E2E_SLEEP=3 E2E_STAMPS="$WORK/stamps" held_start "$repository" "$WORK/first.log" --again
+first_pid="$held_pid"
+stamped "android start" || fail_setup "the first run's tests did not start"
+E2E_SLEEP=3 E2E_STAMPS="$WORK/stamps" held_review "$copy" "$WORK/second.log" --again
+second_exit=$?
+wait "$first_pid"
+first_exit=$?
+overlap="$(awk '$2 == "start" { if (open != "") { print "overlap"; exit } open = $3 }
+  $2 == "end" && $3 == open { open = "" }' "$WORK/stamps")"
+if [ "$first_exit" -eq 0 ] && [ "$second_exit" -eq 0 ] && [ -z "$overlap" ] \
+   && [ "$(grep -c ' start ' "$WORK/stamps")" -eq 2 ]; then
+  echo "ok    two runs of the tests on one platform never overlap"
+else
+  echo "FAIL  two runs of the tests on one platform never overlap: exit $first_exit and"\
+" $second_exit; the stamps, then the two logs, follow"
+  sed 's/^/      /' "$WORK/stamps" "$WORK/first.log" "$WORK/second.log"
+  FAILURES=$((FAILURES + 1))
+fi
+says "the second says what it waits for" "── android: waiting — held by .review/runs/" \
+  "$WORK/second.log"
+if [ ! -e "$holds/android.lock" ]; then
+  echo "ok    and the platform is given back after both"
+else
+  echo "FAIL  and the platform is given back after both: $holds/android.lock is there"
+  FAILURES=$((FAILURES + 1))
+fi
+rm -f "$WORK/reviewer-ran"
+sleep 300 &
+holder_pid=$!
+hold_by_another 600 "$holder_pid"
+printf 'E2E_WAIT=1\nE2E_TRIES=1\n' >>.review/land.conf
+held_review "$repository" "$WORK/run.log" --again
+check "a platform still busy after E2E_WAIT is the environment's, and the review is made" 75 \
+  "android: busy — held by .review/runs/elsewhere of /elsewhere/project since " $? \
+  "$WORK/run.log"
+reviewer_ran "its review is made"
+says "and running it again later is the loop's" \
+  "   The loop goes on: run review.sh again later: it repeats only these tests" "$WORK/run.log"
+e2e_repeat "a wait for a busy platform is no try with a device that was not there" 75 \
+  "── this work is reviewed already" .review/T-102.json
+hold_by_another -5 "$holder_pid"
+e2e_repeat "a run whose hold ran out while it still lives keeps the platform" 75 \
+  "android: busy — held by .review/runs/elsewhere of /elsewhere/project" .review/T-102.json
+kill "$holder_pid" 2>/dev/null
+wait "$holder_pid" 2>/dev/null
+e2e_repeat "a hold that ran out is taken over" 0 "── android: the hold of .review/runs/elsewhere "\
+"of /elsewhere/project ran out — taking over" .review/T-102.json
+says "and the repeat it let through ran the tests" "REPEATED — only the end-to-end tests" \
+  "$WORK/run.log"
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+mkdir -p "$holds/android.lock" && touch -t 202001010000 "$holds/android.lock" \
+  || fail_setup "a hold with no record"
+held_review "$repository" "$WORK/run.log" --again
+check "a hold that never said who holds it is taken over after a minute" 0 \
+  "names no holder and is over a minute old — taking over" $? "$WORK/run.log"
+rm -f "$WORK/reviewer-ran"
+: >"$WORK/stamps"
+HOLD_LEASE=3 HOLD_RENEW=1 E2E_SLEEP=30 E2E_STAMPS="$WORK/stamps" \
+  held_start "$repository" "$WORK/first.log" --again
+first_pid="$held_pid"
+stamped "android start" || fail_setup "the tests of the run to be killed did not start"
+arrives "$holds/android.lock/group" || fail_setup "the run to be killed recorded no group"
+harness_pid="$(awk '$2 == "start" { print $3; exit }' "$WORK/stamps")"
+gate_pid="$(jq -r '.pid' "$holds/android.lock/holder" 2>/dev/null)"
+case "$gate_pid" in ''|*[!0-9]*) gate_pid="" ;; esac
+[ -z "$gate_pid" ] || kill -9 "$gate_pid"
+HOLD_LEASE=3 HOLD_RENEW=1 held_review "$copy" "$WORK/second.log" --again
+check "a gate killed while its tests run gives the platform back" 0 \
+  "ran out — taking over" $? "$WORK/second.log"
+says "and whoever takes it over stops the tests it left running" \
+  "; stopped what it left running: " "$WORK/second.log"
+# The harness, whose gate is gone, is no child of this test: once stopped it may stay a
+# zombie until the system reaps it.
+runs_still() {
+  case "$(ps -o stat= -p "$1" 2>/dev/null)" in
+    '' | *Z*) return 1 ;;
+  esac
+}
+sleep 1
+if runs_still "$harness_pid"; then
+  echo "FAIL  the first harness is gone: process $harness_pid still runs"
+  kill "$harness_pid" 2>/dev/null
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok    the first harness is gone"
+fi
+wait "$first_pid" 2>/dev/null
+# The harness starts only once its process group is recorded with the hold. Here jq, on the
+# one call that records it, writes $WORK/recording and takes two seconds, or fails (JQ_GROUP).
+mkdir -p "$WORK/group-jq" && printf '#!/bin/sh
+case "$*" in *group_started:*) : >"%s"
+  [ -z "$JQ_GROUP" ] || exit "$JQ_GROUP"; sleep 2 ;; esac
+exec "%s" "$@"
+' \
+  "$WORK/recording" "$(command -v jq)" >"$WORK/group-jq/jq" && chmod +x "$WORK/group-jq/jq" \
+  || fail_setup "a jq that records the group slowly"
+rm -f "$WORK/reviewer-ran" "$WORK/recording"
+: >"$WORK/stamps"
+JQ_GROUP="" PATH="$WORK/group-jq:$PATH" HOLD_LEASE=3 HOLD_RENEW=1 E2E_SLEEP=30 \
+  E2E_STAMPS="$WORK/stamps" held_start "$repository" "$WORK/first.log" --again
+first_pid="$held_pid"
+arrives "$WORK/recording" || fail_setup "the run to be killed did not record its group"
+gate_pid="$(jq -r '.pid' "$holds/android.lock/holder" 2>/dev/null)"
+case "$gate_pid" in ''|*[!0-9]*) gate_pid="" ;; esac
+[ -z "$gate_pid" ] || kill -9 "$gate_pid"
+HOLD_LEASE=3 HOLD_RENEW=1 E2E_STAMPS="$WORK/stamps" held_review "$copy" "$WORK/second.log" --again
+check "a gate killed while it records the group of its harness gives the platform back" 0 \
+  "ran out — taking over" $? "$WORK/second.log"
+sleep 1
+left=""
+for pid in $(awk '$2 == "start" { print $3 }' "$WORK/stamps"); do
+  runs_still "$pid" && { left="$left $pid"; kill -- "-$pid" 2>/dev/null || kill "$pid"; }
+done
+if [ -z "$left" ] && [ "$(grep -c ' start ' "$WORK/stamps")" -eq 1 ]; then
+  echo "ok    and leaves no harness: its own never started"
+else
+  echo "FAIL  and leaves no harness: its own never started: still running:${left:- none} — the"\
+" stamps follow"
+  sed 's/^/      /' "$WORK/stamps"
+  FAILURES=$((FAILURES + 1))
+fi
+wait "$first_pid" 2>/dev/null
+rm -f "$WORK/reviewer-ran"
+: >"$WORK/stamps"
+JQ_GROUP=5 PATH="$WORK/group-jq:$PATH" E2E_STAMPS="$WORK/stamps" \
+  held_review "$repository" "$WORK/run.log" --again
+check "a harness whose group cannot be recorded with the hold is not started" 75 \
+  "android: the hold cannot be made at $holds/android.lock" $? "$WORK/run.log"
+if [ ! -s "$WORK/stamps" ] && [ ! -e "$holds/android.lock" ]; then
+  echo "ok    no test of it ran, and the platform is given back"
+else
+  echo "FAIL  no test of it ran, and the platform is given back: the hold is"\
+" $([ -e "$holds/android.lock" ] && echo "still there" || echo gone) — the stamps follow"
+  sed 's/^/      /' "$WORK/stamps"
+  FAILURES=$((FAILURES + 1))
+fi
+rm -f "$WORK/reviewer-ran"
+: >"$WORK/stamps"
+E2E_SLEEP=30 E2E_STAMPS="$WORK/stamps" held_start "$repository" "$WORK/run.log" --again
+stamped "android start" || fail_setup "the tests of the run to be stopped did not start"
+harness_pid="$(awk '$2 == "start" { print $3; exit }' "$WORK/stamps")"
+[ -d "$holds/android.lock" ] && held_while_running=yes || held_while_running=no
+kill -TERM "$held_pid"
+stopped_at="$(date +%s)"
+wait "$held_pid"
+stopped_in=$(( $(date +%s) - stopped_at ))
+if [ "$held_while_running" = yes ] && [ ! -e "$holds/android.lock" ] && [ "$stopped_in" -lt 10 ]
+then
+  echo "ok    a run that is stopped releases at once"
+else
+  echo "FAIL  a run that is stopped releases at once: held while it ran: $held_while_running;"\
+" ended $stopped_in s after the stop; the hold is"\
+" $([ -e "$holds/android.lock" ] && echo "still there" || echo gone) — the log follows"
+  sed 's/^/      /' "$WORK/run.log"
+  FAILURES=$((FAILURES + 1))
+fi
+if runs_still "$harness_pid"; then
+  echo "FAIL  and stops its tests: process $harness_pid still runs"
+  kill "$harness_pid" 2>/dev/null
+  FAILURES=$((FAILURES + 1))
+else
+  echo "ok    and stops its tests"
+fi
+rm -f "$WORK/reviewer-ran"
+: >"$WORK/a-file"
+DEVICE_LOCK_DIR="$WORK/a-file/devices" held_review "$repository" "$WORK/run.log" --again
+check "a place where no hold can be made is said, never passed over" 75 \
+  "android: the hold cannot be made at $WORK/a-file/devices/android.lock" $? "$WORK/run.log"
+says "where the runs meet is the user's to say" "   For the user, only they can: let the runs meet" \
+  "$WORK/run.log"
+reviewer_ran "and the review is made"
+printf 'E2E_LOCK=off\n' >>.review/land.conf
+DEVICE_LOCK_DIR="$WORK/a-file/devices" held_review "$repository" "$WORK/run.log" --again
+check "E2E_LOCK=off runs without a hold" 0 "── e2e: pass on android" $? "$WORK/run.log"
+# A harness that ends by itself within E2E_TIMEOUT is read by what it left, held or not.
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nE2E_TIMEOUT=30\n' >.review/land.conf
+held_review "$repository" "$WORK/run.log" --again
+check "a harness that ends within E2E_TIMEOUT passes" 0 "── e2e: pass on android" $? \
+  "$WORK/run.log"
+never_says "and its platform is not one whose hold cannot be made" "the hold cannot be made" \
+  "$WORK/run.log"
+E2E_XML="$(xml shows42=failed starts)" held_review "$repository" "$WORK/run.log" --again
+check "one whose test failed within E2E_TIMEOUT is red, the test named" 2 \
+  "android: failed: AnswerE2E.shows42" $? "$WORK/run.log"
+printf 'E2E_LOCK=off\n' >>.review/land.conf
+held_review "$repository" "$WORK/run.log" --again
+check "and with E2E_LOCK=off one that ends within E2E_TIMEOUT passes" 0 \
+  "── e2e: pass on android" $? "$WORK/run.log"
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nE2E_TIMEOUT=2\n' >.review/land.conf
+started_at="$(date +%s)"
+E2E_SLEEP=60 held_review "$repository" "$WORK/run.log" --again
+check "a harness that does not end is stopped" 75 \
+  "android: .review/e2e.sh did not end in 2 s (E2E_TIMEOUT) and was stopped" $? "$WORK/run.log"
+if [ $(( $(date +%s) - started_at )) -lt 20 ] && [ ! -e "$holds/android.lock" ]; then
+  echo "ok    the run then ends, and gives the platform back"
+else
+  echo "FAIL  the run then ends, and gives the platform back: it took"\
+" $(( $(date +%s) - started_at )) s; the hold is"\
+" $([ -e "$holds/android.lock" ] && echo "still there" || echo gone)"
+  FAILURES=$((FAILURES + 1))
+fi
+# What a platform that E2E_TIMEOUT stopped comes to is read from what its harness left.
+says "one that left nothing could not finish its tests: the environment" \
+  "E2E COULD NOT RUN — the environment, not the code:" "$WORK/run.log"
+never_says "and is no missing harness" "NO E2E HARNESS" "$WORK/run.log"
+never_says "nor a harness that ran no test" "NO END-TO-END TEST RAN" "$WORK/run.log"
+E2E_HANG=60 held_review "$repository" "$WORK/run.log" --again
+check "one stopped after its tests passed could not finish them either" 75 \
+  "android: .review/e2e.sh did not end in 2 s (E2E_TIMEOUT) and was stopped" $? "$WORK/run.log"
+record_holds "and never passes" "$(newest_run)/e2e.json" \
+  '.status == "environment" and .results.android.outcome == "environment"'
+never_says "and is no missing harness either" "NO E2E HARNESS" "$WORK/run.log"
+E2E_HANG=60 E2E_XML="$(xml shows42=failed starts)" held_review "$repository" "$WORK/run.log" \
+  --again
+check "one stopped after a test failed is red, the test named" 2 \
+  "android: failed: AnswerE2E.shows42" $? "$WORK/run.log"
+says "and the stop said" \
+  "android: .review/e2e.sh did not end in 2 s (E2E_TIMEOUT) and was stopped" "$WORK/run.log"
+never_says "and it is no missing harness" "NO E2E HARNESS" "$WORK/run.log"
+never_says "nor one that ran no test" "NO END-TO-END TEST RAN" "$WORK/run.log"
+for setting in E2E_WAIT=soon E2E_TIMEOUT=-1 E2E_LOCK=yes; do
+  printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n%s\n' "$setting" >.review/land.conf
+  held_review "$repository" "$WORK/run.log" --again
+  check "an $setting fails closed" 1 "${setting%%=*} in .review/land.conf must be " $? \
+    "$WORK/run.log"
+done
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+sleep 300 &
+holder_pid=$!
+hold_by_another 600 "$holder_pid"
+rm -rf "$copy/app"
+mkdir -p "$copy/app/App.xcodeproj" && \
+  printf 'SDKROOT = iphoneos;\nproductType = "com.apple.product-type.application";\n' \
+  >"$copy/app/App.xcodeproj/project.pbxproj" || fail_setup "an iOS app in the second copy"
+printf 'E2E_WAIT=5\n' >>"$copy/.review/land.conf"
+held_review "$copy" "$WORK/run.log" --again
+check "another platform does not wait" 0 "── e2e: pass on ios" $? "$WORK/run.log"
+never_says "nor says that it waits" "waiting — held by" "$WORK/run.log"
+kill "$holder_pid" 2>/dev/null
+wait "$holder_pid" 2>/dev/null
+rm -rf "$holds/android.lock" "$copy" app "$WORK/a-file"
 rm -f "$WORK/reviewer-ran"
 mkdir -p app/src/main app/App.xcodeproj
 printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \

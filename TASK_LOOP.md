@@ -227,6 +227,12 @@ after the gates and stops there, naming the gate as the cause; landing re-checks
 it again before committing. A mutating gate cannot slip through, and it is
 reported as what it is rather than as the reviewer having written to the tree.
 
+**One run on a platform at a time.** `e2e-gate.sh` takes the platform — `android`, `ios` — before it
+calls `.review/e2e.sh` and gives it back after: a folder under `DEVICE_LOCK_DIR` at which every copy
+of every project on the machine meets. The hold is a lease that only a living run renews, so a run
+that was killed frees the platform by itself. A second run waits, up to `E2E_WAIT` seconds, and says
+whom it waits for.
+
 **A gate runner that cannot run is not a red gate.** A non-executable
 `gates.sh`, or one that writes no usable `gates.json`, is a pipeline error —
 both scripts say so and stop. Reporting it as "gates red" with an empty failure

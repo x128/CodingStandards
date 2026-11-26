@@ -40,8 +40,10 @@
 #      circle in its runs or in its /qa records, or the end-to-end tests of
 #      reviewed work ended the same way in E2E_TRIES tries in a row — its last line
 #      says whose turn it is (--past-limit runs once more)
-#   75 the environment, not the work: the end-to-end tests could not run — the review
-#      is made; run again when the device is back, and only the tests are repeated
+#   75 the environment, not the work: the end-to-end tests could not run — the device
+#      or a tool was not there, or another run held the platform past E2E_WAIT — the
+#      review is made; run again when the device is back or free, and only the tests
+#      are repeated
 #   1  pipeline error, including any malformed agent output (fails closed); no
 #      end-to-end test that ran, or no working harness — the review is made — or no
 #      harness file at all, before the review; at LANDING=pr and merge also work that
@@ -615,6 +617,27 @@ THRESHOLD="$(read_conf "$REVIEW_DIR/land.conf" THRESHOLD major)"
 # stop that was passed the reading of the runs takes for a review run's. The row starts
 # again at that try; E2E_TRIES more that end the same way show that the reason did not
 # hold, and then the stop is the user's, which --past-limit --user-decided passes once.
+# The end-to-end tests run in the background of this script, so that a run that is stopped
+# stops them at once: a TERM or an INT here is passed on to e2e-gate.sh, which stops its
+# harness and gives back the platform it holds (common.sh, "The hold on a platform").
+# e2e_gate <dir> runs them into <dir> and ends with the gate's exit code.
+e2e_gate() {
+  "$LIB_DIR/e2e-gate.sh" run "$1" "$TASK_ID" &
+  GATE_PID=$!
+  trap 'stop_e2e_gate 143' TERM
+  trap 'stop_e2e_gate 130' INT
+  wait "$GATE_PID"
+  set -- $?
+  trap - TERM INT
+  return "$1"
+}
+stop_e2e_gate() {
+  trap '' TERM INT
+  kill -TERM "$GATE_PID" 2>/dev/null
+  wait "$GATE_PID" 2>/dev/null
+  exit "$1"
+}
+
 E2E_TRIES="$(read_conf "$REVIEW_DIR/land.conf" E2E_TRIES 3)"
 case "$E2E_TRIES" in
   ''|*[!0-9]*|0*|??????????*)
@@ -643,19 +666,25 @@ fi
 # The tries of the run's tests, newest first, as far as they end the same way: `kind` red,
 # or absent for tests that could not run; `row`, how many; `passed`, the try that passed this
 # stop with the loop's reason, where the row starts at one. A try that passed it on the
-# user's decision starts nothing again.
+# user's decision starts nothing again. A try that ended only because another run held its
+# platform past E2E_WAIT (`busy` of its e2e.json) is passed over: it says nothing of the
+# code, nor of a device, unless it passed a stop.
 e2e_tries_read() {
   local record passed
   run_e2e_tries "$1" | while IFS= read -r record; do
     passed="$(dirname "$record")/past-limit.json"
     [ -f "$passed" ] || passed=/dev/null
     jq -c --slurpfile passed "$passed" \
-      '{status: (.status // ""), reasons: [.reasons[]?], passed: ($passed[0] // null)}' "$record" \
+      '{status: (.status // ""), reasons: [.reasons[]?], passed: ($passed[0] // null),
+        busy: (.status == "environment" and ((.busy // []) | length) > 0
+               and ([.results // {} | to_entries[] | select(.value.outcome == "environment")
+                     | .key] - .busy) == [])}' "$record" \
       || exit 1
   done | jq -sc '
     def kind_of: if .status == "red" then "red" elif .status == "pass" then "pass"
                  else "absent" end;
-    reverse as $back
+    map(select((.busy and .passed == null) | not))
+    | reverse as $back
     | ($back[0] // {} | kind_of) as $kind
     | (reduce $back[] as $attempt ({row: 0, open: true, passed: null};
          if (.open | not) or ($attempt | kind_of) != $kind then .open = false
@@ -758,7 +787,7 @@ if [ -n "$REPEAT" ]; then
         user_decided: (if $user_decided then true else null end)}' \
       >"$TRY_DIR/past-limit.json" || exit 1
   fi
-  "$LIB_DIR/e2e-gate.sh" run "$TRY_DIR" "$TASK_ID"
+  e2e_gate "$TRY_DIR"
   E2E_EXIT=$?
   [ -f "$TRY_DIR/e2e.json" ] || {
     echo "   the end-to-end tests of $REPEAT left no record; nothing of them is known" >&2
@@ -1276,7 +1305,7 @@ fi
 # there with 1. E2E_END is what the tests came to, empty on a pass.
 run_end_to_end() {
   STAGE=e2e
-  "$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID"
+  e2e_gate "$RUN_DIR"
   E2E_EXIT=$?
   [ -f "$RUN_DIR/e2e.json" ] || exit 1
   case "$E2E_EXIT" in
