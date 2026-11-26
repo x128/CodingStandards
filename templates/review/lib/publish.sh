@@ -16,8 +16,9 @@
 #
 # land.sh calls it after a commit at LANDING=push, pr and merge: it pushes, and at pr
 # and merge opens the pull request and sends what the records show is owed to it — the
-# review runs, the answers and the reports not posted yet, then the loop's statuses on its
-# head and the description (pr-post.sh owed); it never merges then. Run it alone to finish what stopped, a push that
+# review runs, the answers and the reports not posted yet, the replies kept without
+# GitHub, then the loop's statuses on its head and the description (pr-post.sh owed); it
+# never merges then. Run it alone to finish what stopped, a push that
 # failed or a pull request that could not be opened, without another commit. Run
 # again, it does nothing twice: an open pull request is left as it is, a merged one
 # is not pushed back, and a closed one is not replaced.
@@ -353,7 +354,7 @@ if [ "$MODE" = publish ]; then
   # 3. One pull request, never a draft, with the task as its title and the loop's
   #    description (pr-post.sh body); then what the records show is owed to it
   #    (pr-post.sh owed): the review runs, the answers and the reports not posted
-  #    yet, then the loop's statuses on the head just pushed — those of the newest
+  #    yet, the replies kept without GitHub, then the loop's statuses on the head just pushed — those of the newest
   #    review and /qa if they checked the work as it is, which a commit of the loop's
   #    files alone keeps, and otherwise pending — and the description. Never a merge:
   #    that is --merge, once the review, /qa and the answers allow it.

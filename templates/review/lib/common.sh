@@ -357,6 +357,24 @@ last_heard_pull() {
   printf '%s' "$url"
 }
 
+# A reply to what a person wrote, made while GitHub gave no answer, is kept in
+# .review/runs/.loop/replies-owed/<comment id>.json, to be sent by publish.sh alone: {id,
+# answer, seen, file, written, time} — the comment, by the digest of its text as
+# pr-post.sh comments showed it (comments-seen.json beside it: comment id → digest), the
+# answer, and the text file the reply names, by its path and the digest of what it held.
+# Neither keeps any words.
+REPLIES_OWED=.review/runs/.loop/replies-owed
+COMMENTS_SEEN=.review/runs/.loop/comments-seen.json
+
+# owed_replies: the records of the replies kept, oldest first.
+owed_replies() {
+  local record
+  for record in "$REPLIES_OWED"/*.json; do
+    [ -f "$record" ] || continue
+    jq -c --arg record "$record" '{time: (.time // 0), record: $record}' "$record" 2>/dev/null
+  done | jq -sr 'sort_by(.time) | .[].record'
+}
+
 # What is owed to GitHub is read from the records, never queued: what a record says is not
 # there yet. publish.sh alone sends it, in the order owed_to_github lists it (pr-post.sh
 # owed), and lists it when it cannot.
@@ -428,9 +446,11 @@ owed_after_merge_reports() {
 # those the remote branch as last heard does not have, or, where the remote never had the
 # branch, all of it since the base. At pr and merge: the pull request, when none was heard;
 # each review run that is owed; the answers; the reports of /qa and of the checks after a
-# merge; and the statuses and the description, which are made again when they are sent.
+# merge; the replies kept; and the statuses and the description, which are made again when
+# they are sent.
 owed_to_github() {
   local task_id="$1" remote="$2" base="$3" branch="$4" pr_url="$5" level="$6" since count run
+  local record
   since="refs/remotes/$remote/$branch"
   git show-ref --verify --quiet "$since" || since="refs/remotes/$remote/$base"
   if git show-ref --verify --quiet "$since"; then
@@ -450,6 +470,9 @@ owed_to_github() {
   done
   owed_reports "$task_id" | sed 's/^/the report of /'
   owed_after_merge_reports | sed 's/^/the report of the checks after the merge in /'
+  owed_replies | while IFS= read -r record; do
+    jq -r '"the reply to \(.id) (\(.answer))"' "$record" 2>/dev/null
+  done
   printf 'the statuses and the description, made again when they are sent\n'
 }
 
