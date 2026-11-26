@@ -716,8 +716,11 @@ ends on the base branch, so the next one starts there; at `pr`, once you have me
 **Remote:** `REMOTE` in `land.conf`, else `origin` if it exists, else the only remote, else a
 refusal. **Base branch:** `BASE_BRANCH` in `land.conf`, else the HEAD of the remote, asked at every
 landing because what a clone recorded goes stale, else `main` if it exists, else `master`. A remote
-that cannot be reached is a refusal, never a guess. Nothing assumes a remote named `origin`, and
-`gh` is told which repository that remote is, or it would pick one of its own.
+that cannot be reached is a refusal, never a guess. Whether its host gives no answer at all is told
+by the exit code of one `curl` to the host after git or `gh` failed, never by their words, and the
+refusal then says that the remote, or GitHub, gives no answer; without `curl` it cannot be told.
+Nothing assumes a remote named `origin`, and `gh` is told which repository that remote is, or it
+would pick one of its own.
 
 ### Publishing
 

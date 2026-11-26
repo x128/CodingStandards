@@ -558,8 +558,12 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
     pr_refuse "at LANDING=$LANDING the review is of the pull request, from its merge base: "\
 "--base is for the levels below"
   REMOTE="$(resolve_remote "$REVIEW_DIR/land.conf")" || pr_refuse "$REMOTE"
-  BASE_BRANCH="$(resolve_base_branch "$REVIEW_DIR/land.conf" "$REMOTE")" || \
-    pr_refuse "$BASE_BRANCH"
+  BASE_BRANCH="$(resolve_base_branch "$REVIEW_DIR/land.conf" "$REMOTE")"
+  case $? in
+    0) ;;
+    75) pr_refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+    *) pr_refuse "$BASE_BRANCH" ;;
+  esac
   PROBLEM="$(publishing_problem "$REVIEW_DIR/land.conf" "$LANDING" "$REMOTE" "$BASE_BRANCH")" \
     || pr_refuse "$PROBLEM"
   BRANCH="$(current_branch)"
@@ -577,7 +581,7 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   PR_URL="$(printf '%s' "$PULL_REQUEST" | jq -r '.url // ""')"
   PR_HEAD="$(printf '%s' "$PULL_REQUEST" | jq -r '.headRefOid // ""')"
   case "$(printf '%s' "$PULL_REQUEST" | jq -r '.state // ""')" in
-    OPEN) ;;
+    OPEN) heard pull "$BRANCH" "$PR_URL" ;;
     CLOSED) pr_refuse "$PR_URL was closed without a merge" \
               user:only-theirs "reopen it, or say that the task ends here" ;;
     *) pr_refuse "$BRANCH has no open pull request into $BASE_BRANCH" \

@@ -3309,25 +3309,32 @@ e2e_land "a harness committed as a link lands" 0 "For the user to commit" .revie
 # whose path matches the pattern in api-read-fails, where a post would still arrive. With
 # checks-fail neither gh pr checks nor a gh pr view that asks for statusCheckRollup
 # reaches it; with `pr checks` in that file, gh pr checks alone does not. The line
-# `unread` of the file checks is one gh pr checks that does not reach it.
+# `unread` of the file checks is one gh pr checks that does not reach it. With offline no
+# call reaches it.
 # ---------------------------------------------------------------------------
 
-# A PATH with no gh on it, whatever this machine has installed. A folder that is on
-# PATH twice is copied once.
-path_without_gh=""
-while IFS= read -r directory; do
-  if [ -e "$directory/gh" ]; then
-    copy="$WORK/no-gh/$(printf '%s' "$directory" | tr '/' '_')"
-    if [ ! -d "$copy" ]; then
-      mkdir -p "$copy" || fail_setup "no-gh folder"
-      for tool in "$directory"/*; do
-        [ "$(basename "$tool")" = "gh" ] || ln -s "$tool" "$copy/" || fail_setup "no-gh link"
-      done
+# A PATH with no <tool> on it, whatever this machine has installed: path_without <tool>. A
+# folder that holds the tool is copied without it, and a folder that is on PATH twice once.
+path_without() {
+  local tool="$1" directory copy found path=""
+  while IFS= read -r directory; do
+    if [ -e "$directory/$tool" ]; then
+      copy="$WORK/no-$tool/$(printf '%s' "$directory" | tr '/' '_')"
+      if [ ! -d "$copy" ]; then
+        mkdir -p "$copy" || fail_setup "no-$tool folder"
+        for found in "$directory"/*; do
+          [ "$(basename "$found")" = "$tool" ] || ln -s "$found" "$copy/" || \
+            fail_setup "no-$tool link"
+        done
+      fi
+      directory="$copy"
     fi
-    directory="$copy"
-  fi
-  path_without_gh="$path_without_gh${path_without_gh:+:}$directory"
-done < <(printf '%s' "$PATH" | tr ':' '\n')
+    path="$path${path:+:}$directory"
+  done < <(printf '%s' "$PATH" | tr ':' '\n')
+  printf '%s' "$path"
+}
+path_without_gh="$(path_without gh)"
+[ -n "$path_without_gh" ] || fail_setup "a PATH without gh"
 
 mkdir -p "$WORK/gh-bin"
 cat >"$WORK/gh-bin/gh" <<'EOF'
@@ -3335,6 +3342,11 @@ cat >"$WORK/gh-bin/gh" <<'EOF'
 export GIT_AUTHOR_NAME=gh GIT_AUTHOR_EMAIL=gh@example.com \
   GIT_COMMITTER_NAME=gh GIT_COMMITTER_EMAIL=gh@example.com
 printf '%s\n' "$*" >>"$GH_STATE/calls"
+# offline: GitHub gives no answer to any call.
+if [ -e "$GH_STATE/offline" ]; then
+  echo "error connecting to api.github.com" >&2
+  exit 1
+fi
 PRS="$GH_STATE/prs.json"
 STATUSES="$GH_STATE/statuses.json"
 COMMENTS="$GH_STATE/comments.json"
@@ -3639,7 +3651,18 @@ case "$1 $2" in
 esac
 EOF
 chmod +x "$WORK/gh-bin/gh"
-export PATH="$WORK/gh-bin:$PATH" GH_STATE GH_REMOTE
+# The stand-in of curl, which a script asks only after git or gh failed, to tell a host
+# that gives no answer from one that refuses: it logs its calls to curl-calls and exits 0,
+# an answer of the host, or 7, no connection, while the file offline is there.
+mkdir -p "$WORK/curl-bin" || fail_setup "curl-bin"
+cat >"$WORK/curl-bin/curl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$GH_STATE/curl-calls"
+[ ! -e "$GH_STATE/offline" ] || exit 7
+exit 0
+EOF
+chmod +x "$WORK/curl-bin/curl" || fail_setup "curl"
+export PATH="$WORK/curl-bin:$WORK/gh-bin:$PATH" GH_STATE GH_REMOTE
 
 published_projects=0
 edits=0
@@ -6440,6 +6463,99 @@ set_level merge
 pr_work
 PATH="$path_without_gh" "$LIB_DIR/land.sh" --task-file .review/task.json >"$WORK/land.log" 2>&1
 check "merge refuses when gh is not installed" 3 "gh is not installed" $? "$WORK/land.log"
+
+# ---- a remote whose host gives no answer ------------------------------------
+# An offline project is published to a remote written http://127.0.0.1:1/x/<name>.git, which
+# git reaches through a rewrite of that URL to the bare repository (url.<bare>.insteadOf), so
+# no request leaves the machine. go_offline takes the rewrite out, after which git cannot
+# connect, and makes the file offline: the stand-in of gh then answers no call, and that of
+# curl exits 7, no connection. go_online undoes both. What this copy last heard of its remote
+# is in .review/runs/.loop/last-heard.json: heard_holds <name> <jq filter>.
+offline_project() {
+  published_project origin
+  offline_url="http://127.0.0.1:1/x/$(basename "$repository").git"
+  git remote set-url origin "$offline_url" && git config remote.origin.proxy "" &&
+    git config "url.$GH_REMOTE.insteadOf" "$offline_url" || fail_setup "offline project"
+}
+go_offline() {
+  git config --unset "url.$GH_REMOTE.insteadOf"
+  touch "$GH_STATE/offline"
+}
+go_online() {
+  git config "url.$GH_REMOTE.insteadOf" "$offline_url"
+  rm -f "$GH_STATE/offline"
+}
+heard_holds() {
+  local heard=.review/runs/.loop/last-heard.json
+  if [ "$(jq -r "$2" "$heard" 2>/dev/null)" = true ]; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: «$2» does not hold in $heard — it follows"
+    sed 's/^/      /' "$heard" 2>/dev/null
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+offline_project
+for asked in git@github.com:acme/app.git=https://github.com/ \
+             ssh://git@ssh.github.com:443/acme/app.git=https://ssh.github.com/ \
+             https://token@git.example.com:8443/acme/app=https://git.example.com:8443/; do
+  git remote add probe "${asked%%=*}"
+  holds "${asked%%=*} is asked at ${asked#*=}" \
+    [ "$(. "$LIB_DIR/common.sh" && remote_host_url probe)" = "${asked#*=}" ]
+  git remote remove probe
+done
+git remote add probe "$WORK/nowhere.git"
+holds "a remote that is a path has no host to ask" \
+  [ -z "$(. "$LIB_DIR/common.sh" && remote_host_url probe)" ]
+git remote remove probe
+holds "GitHub is asked at its API" \
+  [ "$(. "$LIB_DIR/common.sh" && github_api_url acme/app)" = https://api.github.com/ ]
+holds "and another host of gh at that host" \
+  [ "$(. "$LIB_DIR/common.sh" && github_api_url git.example.com/acme/app)" = \
+    https://git.example.com/ ]
+set_level merge
+pr_work
+pr_land "a remote reached through another URL lands as before" 0 "landed T-001 on task/T-001"
+holds "curl is asked only after git or gh failed" not test -e "$GH_STATE/curl-calls"
+heard_holds "what this copy last heard of its remote is kept: the base and the pull request" \
+  '.base == "main" and (.pulls["task/T-001"] | test("^https://"))'
+git config --unset "url.$GH_REMOTE.insteadOf"
+pr_work
+start="$(git rev-parse HEAD)"
+pr_land "a host that answers and refuses is no lost connection" 3 \
+  "the remote origin cannot be reached"
+holds "that refusal commits nothing" [ "$(git rev-parse HEAD)" = "$start" ]
+holds "the host was asked once" [ "$(grep -c '^' "$GH_STATE/curl-calls")" -eq 1 ]
+says "and as it is written, before the rewrite" "http://127.0.0.1:1/" "$GH_STATE/curl-calls"
+touch "$GH_STATE/offline"
+PATH="$(path_without curl)" "$LIB_DIR/land.sh" --task-file .review/task.json \
+  >"$WORK/land.log" 2>&1
+check "without curl nothing is guessed" 3 "the remote origin cannot be reached" $? \
+  "$WORK/land.log"
+pr_land "a remote whose host gives no answer is told from one that refuses" 3 \
+  "the remote origin gives no answer"
+never_says "it is not called unreachable" "cannot be reached" "$WORK/land.log"
+holds "nothing is committed then either" [ "$(git rev-parse HEAD)" = "$start" ]
+set_level merge BASE_BRANCH=main
+pr_land "and so it is where BASE_BRANCH is set" 3 "the remote origin gives no answer"
+
+offline_project
+go_offline
+set_level merge
+pr_work
+pr_land "with no base ever heard and none set the landing says what to set" 3 \
+  "never heard which branch is its base — set BASE_BRANCH in .review/land.conf"
+git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+pr_land "the base a clone recorded stands in for one never heard" 3 \
+  "the remote origin gives no answer"
+
+offline_project
+set_level merge
+touch "$GH_STATE/offline"
+pr_work
+pr_land "a gh that cannot connect is not called a login" 3 "GitHub gives no answer"
+never_says "it does not send anyone to gh auth login" "gh auth login" "$WORK/land.log"
 
 published_project github
 merged_change "a remote not named origin is found" 0 "merged T-001"

@@ -195,7 +195,12 @@ fi
 landing_opens_pull_request "$LANDING" || \
   refuse "LANDING=$LANDING in $CONFIG opens no pull request — only pr and merge do"
 REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
-BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")" || refuse "$BASE"
+BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")"
+case $? in
+  0) ;;
+  75) refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+  *) refuse "$BASE" ;;
+esac
 REPOSITORY="$(remote_repository "$REMOTE")" || refuse "the remote $REMOTE has no URL"
 # The report of the checks a merged task owed goes on the pull request that was merged,
 # which the list names: HEAD is on the base branch by then and that pull request is closed,
@@ -239,6 +244,7 @@ if [ "$COMMAND" != after-merge ]; then
     PR_NUMBER="$(printf '%s' "$OPEN" | jq -r '.number // ""')"
     [ -n "$PR_URL" ] || \
       refuse "$BRANCH has no open pull request into $BASE — publish.sh opens it"
+    heard pull "$BRANCH" "$PR_URL"
   fi
 fi
 
