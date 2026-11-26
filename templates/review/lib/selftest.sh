@@ -1105,6 +1105,65 @@ else
   sed 's/^/      /' "$WORK/stamps"
   FAILURES=$((FAILURES + 1))
 fi
+# Two runs that wait for the same hold that ran out: one takes it over, the other goes on
+# waiting. Here the second reads the hold first, and slowly: its jq, on the read of until,
+# writes $WORK/reading and waits until the tests of the first have begun.
+mkdir -p "$WORK/until-jq" && printf '#!/bin/sh
+case "$*" in *".until | floor"*) : >"%s"
+  tenths=0
+  until grep -q " start " "%s" 2>/dev/null || [ "$tenths" -ge 600 ]; do
+    sleep 0.1; tenths=$((tenths + 1))
+  done ;;
+esac
+exec "%s" "$@"
+' "$WORK/reading" "$WORK/stamps" "$(command -v jq)" \
+  >"$WORK/until-jq/jq" && chmod +x "$WORK/until-jq/jq" || fail_setup "a jq that reads slowly"
+sleep 0 &
+gone_pid=$!
+wait "$gone_pid"
+hold_by_another -5 "$gone_pid"
+rm -f "$WORK/reviewer-ran" "$WORK/reading"
+: >"$WORK/stamps"
+PATH="$WORK/until-jq:$PATH" E2E_SLEEP=3 E2E_STAMPS="$WORK/stamps" \
+  held_start "$copy" "$WORK/second.log" --again
+second_pid="$held_pid"
+arrives "$WORK/reading" || fail_setup "the slow run did not read the hold"
+E2E_SLEEP=3 E2E_STAMPS="$WORK/stamps" held_review "$repository" "$WORK/first.log" --again
+first_exit=$?
+wait "$second_pid"
+second_exit=$?
+overlap="$(awk '$2 == "start" { if (open != "") { print "overlap"; exit } open = $3 }
+  $2 == "end" && $3 == open { open = "" }' "$WORK/stamps")"
+if [ "$first_exit" -eq 0 ] && [ "$second_exit" -eq 0 ] && [ -z "$overlap" ] \
+   && [ "$(grep -c ' start ' "$WORK/stamps")" -eq 2 ]; then
+  echo "ok    of two runs that wait for one hold that ran out, one takes it over and the other waits"
+else
+  echo "FAIL  of two runs that wait for one hold that ran out, one takes it over and the other"\
+" waits: exit $first_exit and $second_exit; the stamps, then the two logs, follow"
+  sed 's/^/      /' "$WORK/stamps" "$WORK/first.log" "$WORK/second.log"
+  FAILURES=$((FAILURES + 1))
+fi
+says "the first takes it over" "ran out — taking over" "$WORK/first.log"
+says "the other waits for the first, and names it" "── android: waiting — held by .review/runs/" \
+  "$WORK/second.log"
+says "the first by its project" " of $repository since " "$WORK/second.log"
+# A taker that was killed while it took a hold over leaves <lock>.taking: once it is over a
+# minute old, the next taker removes it.
+rm -f "$WORK/reviewer-ran"
+printf 'E2E_WAIT=5\n' >>.review/land.conf
+hold_by_another -5 "$gone_pid"
+mkdir -p "$holds/android.lock.taking" && touch -t 202001010000 "$holds/android.lock.taking" \
+  || fail_setup "what a killed taker left"
+held_review "$repository" "$WORK/run.log" --again
+check "what a taker that was killed left does not keep the hold from being taken over" 0 \
+  "ran out — taking over" $? "$WORK/run.log"
+if [ ! -e "$holds/android.lock.taking" ] && [ ! -e "$holds/android.lock" ]; then
+  echo "ok    and nothing of the take-over is left"
+else
+  echo "FAIL  and nothing of the take-over is left: $(ls "$holds" | tr '\n' ' ')"
+  FAILURES=$((FAILURES + 1))
+fi
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 rm -f "$WORK/reviewer-ran"
 : >"$WORK/stamps"
 E2E_SLEEP=30 E2E_STAMPS="$WORK/stamps" held_start "$repository" "$WORK/run.log" --again
