@@ -9,7 +9,9 @@
 # Usage, from the project root:
 #   e2e-gate.sh run <run-dir> [task-id]   runs .review/e2e.sh once per platform
 #                                         and writes <run-dir>/e2e.json
-#   e2e-gate.sh check                     reads the newest e2e.json, runs nothing
+#   e2e-gate.sh check                     reads the newest e2e.json, runs nothing:
+#                                         of a run or of a repeat of its tests alone
+#                                         (<run>/e2e-again/<n>, review.sh)
 #
 # What counts is the JUnit XML .review/e2e.sh leaves, never its exit code: a test
 # command with nothing to run exits 0. A platform has a harness when a test ran
@@ -82,8 +84,10 @@ as_json_array() { jq -R . | jq -sc 'map(select(length > 0)) | unique'; }
 
 if [ "$MODE" = check ]; then
   # The newest by the time recorded inside, not by folder name: run folders are
-  # named by the local clock and the process id, and neither sorts by time.
-  NEWEST="$(for record in "$REVIEW_DIR"/runs/*/e2e.json; do
+  # named by the local clock and the process id, and neither sorts by time. A repeat of a
+  # run's tests alone is in a folder of its own beside the run's files.
+  NEWEST="$(for record in "$REVIEW_DIR"/runs/*/e2e.json \
+      "$REVIEW_DIR"/runs/*/e2e-again/*/e2e.json; do
       [ -f "$record" ] || continue
       jq -c --arg file "$record" '{time, status, platforms, reasons, file: $file}' "$record" \
         2>/dev/null
@@ -101,7 +105,7 @@ if [ "$MODE" = check ]; then
     environment | no-test)
       hold_back "E2E DID NOT RUN — the newest end-to-end run, $RECORD, could not run its tests:" \
         "$(printf '%s' "$NEWEST" | jq -r '.reasons[]? | "   \(.)"')" \
-        "   Mend what stopped them, then run review.sh again." ;;
+        "   Mend what stopped them, then run review.sh again: it repeats only the tests." ;;
   esac
   MISSING="$(platforms | as_json_array | jq -r --argjson newest "$NEWEST" \
     '. - ($newest.platforms // []) | join(" ")')"
@@ -403,14 +407,15 @@ case "$STATUS" in
     echo "NO END-TO-END TEST RAN — the harness is there and ran none:"
     show_failures
     turn loop "read the end of each log: a cause in the code is fixed; a device or a tool "\
-"that was not there is restored; then run review.sh again. A harness that knows its device is "\
-"gone says so with exit 75 (templates/review/project/e2e.sh)"
+"that was not there is restored, and review.sh run again repeats only the tests. A harness that "\
+"knows its device is gone says so with exit 75 (templates/review/project/e2e.sh)"
     exit 1 ;;
   environment)
     echo
     echo "E2E COULD NOT RUN — the environment, not the code:"
     show_failures
-    turn loop "restore it, then run review.sh again"
+    turn loop "restore it, then run review.sh again: it repeats only these tests, in this run, "\
+"and counts no review"
     exit 75 ;;
   *)
     echo

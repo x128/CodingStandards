@@ -13,8 +13,8 @@
 # Writes:  JUnit XML of every end-to-end test of that platform into report-dir,
 #          which is empty when it starts — this run's results, nowhere else
 # Exit:    the exit code of the test command; 75 when the device or a tool the tests
-#          need is not there — nothing is known of the code then, and e2e-gate.sh
-#          tries the platform once more
+#          need is not there — nothing is known of the code then, e2e-gate.sh tries the
+#          platform once more, and the next run of review.sh repeats only the tests
 #
 # review.sh runs it through CodingStandards/templates/review/lib/e2e-gate.sh
 # after the gates. That script counts the tests in the XML and never trusts the

@@ -352,7 +352,8 @@ post_statuses() {
         done || return 1
   fi
 
-  if [ -n "$run" ] && [ -f "$run/e2e.json" ]; then
+  # What the tests came to is the newest try of them, a repeat on the same work included.
+  if [ -n "$run" ] && [ -f "$(run_e2e_record "$run")" ]; then
     for platform in $(platforms); do
       result="$(jq -r --arg platform "$platform" '
         .results[$platform] as $tests
@@ -363,7 +364,7 @@ post_statuses() {
                + (if .status == "pass" then ""
                   else " — " + ([.reasons[]? | select(startswith($platform + ": ")
                                                       or (test("^[a-z]+: ") | not))][0]
-                                 // .status) end) end' "$run/e2e.json")" || return 1
+                                 // .status) end) end' "$(run_e2e_record "$run")")" || return 1
       post_status "$HEAD_COMMIT" "loop/e2e-$platform" "${result%%$'\t'*}" "${result#*$'\t'}" \
         || return 1
     done

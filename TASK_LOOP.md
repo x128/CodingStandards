@@ -218,8 +218,8 @@ they come to, the review is made and stays, and the run's exit code and its last
 Red, the run ends as on a red gate. With no test that ran, or none that a case of `qa/test-cases.md`
 names once the file has a case, it has no working harness; only a tree with no harness file at all
 stops there before the review. A harness that ends with exit 75 says the device or a tool was not
-there: nothing is known of the code, and the run exits 75. The task lands only once they pass
-(condition 3).
+there: nothing is known of the code, the run exits 75, and the next run on the same work repeats
+only the tests and counts no review. The task lands only once they pass (condition 3).
 
 **Gates must not modify the tree.** Use check modes (`--check`, `lint`), not
 formatters that rewrite files. `review.sh` compares the fingerprint immediately

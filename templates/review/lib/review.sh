@@ -16,9 +16,12 @@
 #
 # Usage, from your project root:
 #   review.sh [--base <ref>] [--threshold <sev>] [--task-file <task.json>]
-#             [--past-limit [--because <why>] [--user-decided]] [--dry-run]
+#             [--past-limit [--because <why>] [--user-decided]] [--again] [--dry-run]
 #
 # Without --base, reviews the uncommitted work — exactly what land.sh commits.
+# A review is made once for the work: where the newest run of the task reviewed the work as
+# it is now and its end-to-end tests have not passed, the run repeats only those tests, in
+# that run — no review, no run folder, no count. --again reviews the work all the same.
 # With --base <ref>, reviews the whole branch since that ref (a final pass).
 # At LANDING=pr and merge, reviews the task's pull request instead: its change since
 # the merge base with the base branch, committed and pushed by land.sh; the run is
@@ -34,10 +37,11 @@
 #   4  escalations — answered before landing (maintain, step 7)
 #   5  review unusable — every finding failed quote verification; re-run
 #   6  nothing ran: the task is at its limit of reviews, or the script read a
-#      circle in its runs or in its /qa records — its last line says whose turn
-#      it is (--past-limit runs once more)
+#      circle in its runs or in its /qa records, or the end-to-end tests of
+#      reviewed work ended the same way in E2E_TRIES tries in a row — its last line
+#      says whose turn it is (--past-limit runs once more)
 #   75 the environment, not the work: the end-to-end tests could not run — the review
-#      is made; run again when the device is back
+#      is made; run again when the device is back, and only the tests are repeated
 #   1  pipeline error, including any malformed agent output (fails closed); no
 #      end-to-end test that ran, or no working harness — the review is made — or no
 #      harness file at all, before the review; at LANDING=pr and merge also work that
@@ -60,6 +64,7 @@ PAST_LIMIT=false
 BECAUSE=""
 BECAUSE_GIVEN=false
 USER_DECIDED=false
+AGAIN=false
 DRY_RUN=false
 
 while [ $# -gt 0 ]; do
@@ -70,6 +75,7 @@ while [ $# -gt 0 ]; do
     --past-limit) PAST_LIMIT=true; shift ;;
     --because)    require_value "--because" $#; BECAUSE_GIVEN=true; BECAUSE="$2"; shift 2 ;;
     --user-decided) USER_DECIDED=true; shift ;;
+    --again)      AGAIN=true; shift ;;
     --dry-run)    DRY_RUN=true; shift ;;
     *) echo "unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -185,7 +191,8 @@ fi
 # a stop is kept in the run and shown on the pull request. A run with --past-limit
 # starts the count of reviews again from zero, and the flag is accepted only at a
 # stop, so one left in the command fails on the next run instead of switching the
-# count off.
+# count off. A run that repeats only the end-to-end tests of reviewed work asks none of
+# these stops and has two of its own (E2E_TRIES, below).
 ASK_AFTER_RUNS="$(read_conf "$REVIEW_DIR/land.conf" ASK_AFTER_RUNS 5)"
 case "$ASK_AFTER_RUNS" in
   ''|*[!0-9]*|0*|??????????*)
@@ -205,6 +212,8 @@ fi
 # What a run's check that was not green came to, in words: what_failed <run> <failed>,
 # <failed> as task_runs_json names it.
 what_failed() {
+  local record
+  record="$(run_e2e_record "$1")"
   case "$2" in
     gates)
       printf 'gates red: %s, the same output each time but for its numbers' \
@@ -212,14 +221,14 @@ what_failed() {
                    | .key] | join(", ")' "$1/gates.json" 2>/dev/null)" ;;
     e2e)
       printf 'end-to-end tests red: %s' \
-        "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)" ;;
+        "$(jq -r '[.reasons[]?] | join("; ")' "$record" 2>/dev/null)" ;;
     harness)
-      if [ "$(jq -r '.status' "$1/e2e.json" 2>/dev/null)" = no-test ]; then
+      if [ "$(jq -r '.status' "$record" 2>/dev/null)" = no-test ]; then
         printf 'no end-to-end test ran: %s' \
-          "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)"
+          "$(jq -r '[.reasons[]?] | join("; ")' "$record" 2>/dev/null)"
       else
         printf 'no working end-to-end harness: %s' \
-          "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)"
+          "$(jq -r '[.reasons[]?] | join("; ")' "$record" 2>/dev/null)"
       fi ;;
     unusable) printf 'the review was unusable' ;;
   esac
@@ -382,6 +391,17 @@ if [ -n "$TASK_ID" ]; then
   }
   IFS=$'\t' read -r STOP STOP_WHOSE REVIEWS_SO_FAR EPOCH < <(printf '%s' "$READING" \
     | jq -r '[.stop // "-", .whose // "-", .reviews, .epoch] | @tsv')
+elif [ "$PAST_LIMIT" = true ]; then
+  echo "--past-limit needs --task-file: runs are counted per task" >&2
+  exit 1
+fi
+
+# The act of the stop read above: --past-limit is held against the stop in force, or the stop
+# is said and nothing runs. It comes after the pull request is read and before the run folder
+# is made, where a run that repeats only the end-to-end tests of reviewed work has gone its
+# own way: that run asks none of these stops.
+act_on_stop() {
+  [ -n "$TASK_ID" ] || return 0
   if [ "$PAST_LIMIT" = true ]; then
     case "$STOP_WHOSE" in
       -)
@@ -426,10 +446,7 @@ if [ -n "$TASK_ID" ]; then
     say_stop
     exit 6
   fi
-elif [ "$PAST_LIMIT" = true ]; then
-  echo "--past-limit needs --task-file: runs are counted per task" >&2
-  exit 1
-fi
+}
 
 # The disk. Builds, simulators and recordings take gigabytes, and a disk that fills
 # up stops the user's own work too, which they learn only when they come back. Below
@@ -575,17 +592,217 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
     pr_refuse "HEAD has no commit in common with $BASE_BRANCH of $REMOTE"
 fi
 
-# Created only once the configuration is known good: otherwise every run against
-# an unconfigured project leaves an empty directory behind.
-# Second precision alone collides when two passes run back to back.
-RUN_DIR="$REVIEW_DIR/runs/$(date +%Y%m%dT%H%M%S)-$$"
-mkdir -p "$RUN_DIR"
-
 # One source of truth for the threshold: land.conf, overridable per run by the
 # flag. The value actually used is recorded in the run so land.sh cannot
 # disagree with the review that produced it.
 THRESHOLD="$(read_conf "$REVIEW_DIR/land.conf" THRESHOLD major)"
 [ -n "$THRESHOLD_CLI" ] && THRESHOLD="$THRESHOLD_CLI"
+
+# A review is made once for the work. Where the newest run of the task made its review of
+# the work as it is now — the same tree, task file, threshold, base, merge base and pull
+# request — and its end-to-end tests have not passed, this run repeats only those tests, in
+# that run: no run folder, no gates, no review, no count, and none of the stops above. Each
+# repeat goes into a folder of its own beside the run's files, <run>/e2e-again/<n>, and the
+# run's own e2e.json stays as it was (run_e2e_record, common.sh). The run's meta.json takes
+# the new end and exit, nothing else of it changes. --again makes a review all the same.
+#
+# The repeats are bounded: E2E_TRIES tries in a row on the same work that end the same way
+# — red, or with tests that could not run (the environment, no test that ran, no working
+# harness), the run's own try counted — stop the next, exit 6. That stop is the loop's: a
+# retry does not mend red tests, and a device or a tool that was not there is restored.
+# --past-limit --because <why> tries once more, and the reason is kept with that try
+# (past-limit.json beside its e2e.json), never in the run's meta.json, whose fields of a
+# stop that was passed the reading of the runs takes for a review run's. The row starts
+# again at that try; E2E_TRIES more that end the same way show that the reason did not
+# hold, and then the stop is the user's, which --past-limit --user-decided passes once.
+E2E_TRIES="$(read_conf "$REVIEW_DIR/land.conf" E2E_TRIES 3)"
+case "$E2E_TRIES" in
+  ''|*[!0-9]*|0*|??????????*)
+    echo "E2E_TRIES in $REVIEW_DIR/land.conf must be a whole number from 1 to 999999999, "\
+"not '$E2E_TRIES'" >&2
+    exit 1 ;;
+esac
+REPEAT=""
+if [ -n "$TASK_ID" ] && [ "$AGAIN" = false ]; then
+  REPEAT="$(printf '%s' "$RUNS" | jq -r '.[-1] // {} | select(.reviewed == true) | .run')"
+fi
+if [ -n "$REPEAT" ]; then
+  json_holds --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
+    --arg fingerprint "$(tree_fingerprint)" --arg task "$TASK_FILE" --arg pr_url "$PR_URL" \
+    --arg merge_base "$MERGE_BASE" \
+    '.tree_fingerprint == $fingerprint and (.task_file // "") == $task
+     and .threshold == $threshold and (.base // "HEAD") == $base
+     and (.pr_url // "") == $pr_url and (.merge_base // "") == $merge_base' \
+    "$REPEAT/meta.json" || REPEAT=""
+fi
+if [ -n "$REPEAT" ] && \
+   [ "$(jq -r '.status // ""' "$(run_e2e_record "$REPEAT")" 2>/dev/null)" = pass ]; then
+  REPEAT=""
+fi
+
+# The tries of the run's tests, newest first, as far as they end the same way: `kind` red,
+# or absent for tests that could not run; `row`, how many; `passed`, the try that passed this
+# stop with the loop's reason, where the row starts at one. A try that passed it on the
+# user's decision starts nothing again.
+e2e_tries_read() {
+  local record passed
+  run_e2e_tries "$1" | while IFS= read -r record; do
+    passed="$(dirname "$record")/past-limit.json"
+    [ -f "$passed" ] || passed=/dev/null
+    jq -c --slurpfile passed "$passed" \
+      '{status: (.status // ""), reasons: [.reasons[]?], passed: ($passed[0] // null)}' "$record" \
+      || exit 1
+  done | jq -sc '
+    def kind_of: if .status == "red" then "red" elif .status == "pass" then "pass"
+                 else "absent" end;
+    reverse as $back
+    | ($back[0] // {} | kind_of) as $kind
+    | (reduce $back[] as $attempt ({row: 0, open: true, passed: null};
+         if (.open | not) or ($attempt | kind_of) != $kind then .open = false
+         else .row += 1
+           | if ($attempt.passed.because // null) != null
+                and $attempt.passed.stop == "e2e-" + $kind
+             then .open = false | .passed = $attempt.passed else . end
+         end)) as $read
+    | {kind: $kind, row: $read.row, passed: $read.passed, reasons: ($back[0].reasons // [])}'
+}
+TRIES_STOP=-
+TRIES_WHOSE=-
+if [ -n "$REPEAT" ]; then
+  TRIES="$(e2e_tries_read "$REPEAT")" && [ -n "$TRIES" ] || {
+    echo "the end-to-end tests of $REPEAT could not be read; nothing ran" >&2
+    exit 1
+  }
+  IFS=$'\t' read -r TRIES_KIND TRIES_ROW TRIES_WHOSE < <(printf '%s' "$TRIES" | jq -r '
+    [.kind, .row, (if .passed == null then "loop" else "user" end)] | @tsv')
+  if [ "$TRIES_KIND" != pass ] && [ "$TRIES_ROW" -ge "$E2E_TRIES" ]; then
+    TRIES_STOP="e2e-$TRIES_KIND"
+  fi
+  # --past-limit on a repeat is for its own stop; with none in force it is for the stops
+  # above, and the run is a review, as any run past a stop is.
+  [ "$PAST_LIMIT" = false ] || [ "$TRIES_STOP" != - ] || REPEAT=""
+fi
+
+# The stop of the repeats, said: what was read on stdout, then whose turn it is.
+say_tries_stop() {
+  local heading=STOPPED since="" what="could not run"
+  [ "$TRIES_WHOSE" = loop ] || since=" after the loop's reason passed this stop"
+  if [ "$TRIES_KIND" = red ]; then
+    what="were red"
+    [ "$TRIES_WHOSE" = loop ] || heading="NOT CONVERGING"
+  fi
+  echo "$heading — the end-to-end tests of $TASK_ID $what in $TRIES_ROW tries in a row on the "\
+"same work ($(basename "$REPEAT"))$since; nothing ran."
+  printf '%s' "$TRIES" | jq -r '.reasons[] | "   \(.)"'
+  if [ "$TRIES_WHOSE" != loop ]; then
+    printf '%s' "$TRIES" | jq -r '"   the loop'"'"'s reason then, which did not hold: "
+      + (.passed.because | gsub("\\s+"; " "))'
+  fi
+  case "$TRIES_KIND:$TRIES_WHOSE" in
+    red:loop)
+      turn loop "a retry does not mend it: fix what fails, and the review runs on the new "\
+"work; --past-limit --because \"<why once more>\" tries once more on this work" ;;
+    red:user)
+      turn user:not-converging "the same tests stayed red on the same work through the cause "\
+"the loop found — whether to go on trying, to stop the task here, or to change what is asked "\
+"of it; --past-limit --user-decided then tries once more" ;;
+    *:loop)
+      turn loop "restore it — boot the device, erase it, free the tool — then run again with "\
+"--past-limit --because \"<what was restored>\"; a cause in the code or the harness is fixed, "\
+"and the review runs on the new work" ;;
+    *)
+      turn user:only-theirs "bring back the device or the tool the tests need: it stayed away "\
+"through what the loop restored; --past-limit --user-decided then tries once more" ;;
+  esac
+}
+
+if [ -n "$REPEAT" ]; then
+  echo "── this work is reviewed already ($(basename "$REPEAT"): $(run_result "$REPEAT")): "\
+"only its end-to-end tests run again"
+  if [ "$TRIES_STOP" != - ] && [ "$PAST_LIMIT" = false ]; then
+    say_tries_stop
+    exit 6
+  fi
+  if [ "$PAST_LIMIT" = true ] && [ "$TRIES_WHOSE" = user ]; then
+    [ "$USER_DECIDED" = true ] || {
+      echo "this stop takes --user-decided: it is no decision of the loop — run without "\
+"--past-limit to read it; --past-limit --user-decided tries once more" >&2
+      exit 1
+    }
+    [ -z "$BECAUSE" ] || {
+      echo "this stop takes --user-decided alone: --because is the loop's reason at a "\
+"stop of its own, and nothing keeps words where the user decided — run again without it" >&2
+      exit 1
+    }
+  elif [ "$PAST_LIMIT" = true ]; then
+    [ "$USER_DECIDED" = false ] || {
+      echo "this stop is the loop's: --user-decided is for a stop that is the user's, "\
+"and nothing is theirs to decide here — run again with --past-limit --because \"<what was "\
+"restored or mended>\"" >&2
+      exit 1
+    }
+    [ -n "$BECAUSE" ] || {
+      echo "--past-limit at this stop needs --because \"<what was restored or mended>\" — run "\
+"without --past-limit to read the stop" >&2
+      exit 1
+    }
+  fi
+  TRY=$(( $(ls "$REPEAT/e2e-again" 2>/dev/null | grep -E '^[0-9]+$' | sort -n | tail -1) + 1 ))
+  TRY_DIR="$REPEAT/e2e-again/$TRY"
+  mkdir -p "$TRY_DIR" || exit 1
+  if [ "$PAST_LIMIT" = true ]; then
+    jq -n --arg stop "$TRIES_STOP" --arg whose "$TRIES_WHOSE" --arg because "$BECAUSE" \
+      --argjson user_decided "$USER_DECIDED" \
+      '{time: now, stop: $stop, whose: $whose,
+        because: (if $because == "" then null else $because end),
+        user_decided: (if $user_decided then true else null end)}' \
+      >"$TRY_DIR/past-limit.json" || exit 1
+  fi
+  "$LIB_DIR/e2e-gate.sh" run "$TRY_DIR" "$TASK_ID"
+  E2E_EXIT=$?
+  [ -f "$TRY_DIR/e2e.json" ] || {
+    echo "   the end-to-end tests of $REPEAT left no record; nothing of them is known" >&2
+    exit 1
+  }
+  case "$E2E_EXIT" in
+    0)  E2E_END="" ;;
+    2)  E2E_END=e2e-red ;;
+    75) E2E_END=environment ;;
+    *)  E2E_EXIT=1
+        E2E_END=no-harness
+        [ "$(jq -r '.status' "$TRY_DIR/e2e.json" 2>/dev/null)" != no-test ] || E2E_END=no-test ;;
+  esac
+  # The review's end comes first, as in the run that made it.
+  ESCALATED_COUNT="$(require_array_length "$REPEAT/escalated.json")" || exit 1
+  APPROVED_COUNT="$(require_array_length "$REPEAT/approved.json")" || exit 1
+  CODE="$E2E_EXIT"
+  END="${E2E_END:-clean}"
+  if [ "$ESCALATED_COUNT" -gt 0 ]; then
+    CODE=4; END=escalations
+  elif [ "$APPROVED_COUNT" -gt 0 ]; then
+    CODE=3; END=findings
+  fi
+  jq --arg ending "$END" --argjson exit "$CODE" '.end = $ending | .exit = $exit' \
+    "$REPEAT/meta.json" >"$REPEAT/meta.json.new" 2>/dev/null \
+    && mv "$REPEAT/meta.json.new" "$REPEAT/meta.json" \
+    || { rm -f "$REPEAT/meta.json.new"
+         echo "   how the tests ended could not be written into $REPEAT/meta.json" >&2; }
+  if [ -n "$PR_URL" ] && ! "$LIB_DIR/pr-post.sh" statuses; then
+    echo "   the statuses are not posted on $PR_URL — run $LIB_DIR/pr-post.sh statuses alone" >&2
+    [ "$CODE" -ne 0 ] || CODE=1
+  fi
+  echo
+  echo "REPEATED — only the end-to-end tests of $(basename "$REPEAT") ran again; its review "\
+"stands: $(run_result "$REPEAT"). No review was made, and none is counted."
+  exit "$CODE"
+fi
+act_on_stop
+
+# Created only once the configuration is known good: otherwise every run against
+# an unconfigured project leaves an empty directory behind.
+# Second precision alone collides when two passes run back to back.
+RUN_DIR="$REVIEW_DIR/runs/$(date +%Y%m%dT%H%M%S)-$$"
+mkdir -p "$RUN_DIR"
 
 # Shared default from the submodule, unless the project overrides it in .review/.
 lib_file() {
