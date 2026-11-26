@@ -39,6 +39,7 @@ printf "%%s\\t%%s\\n" "${DU_KB:-0}" .review/runs
 ' \
   >"$WORK/df-bin/du" && chmod +x "$WORK/df-bin/du" || { echo "setup failed: du"; exit 1; }
 export PATH="$WORK/df-bin:$PATH"
+export E2E_REPEAT_PAUSE=0
 
 fail_setup() { echo "setup failed: $1"; exit 1; }
 
@@ -54,8 +55,10 @@ printf 'fun answer() = 41\n' >src/answer.kt
 # unless a case sets another report (E2E_XML, or E2E_XML_<platform> for one platform,
 # or E2E_REPORT, a file to copy), where it goes inside the report folder (E2E_NAME), a
 # second place it is copied to (E2E_ALSO), another exit code (E2E_EXIT), the one
-# platform it runs on (E2E_ONLY) or a file it appends to (E2E_TOUCH). Each published
-# project below commits the same harness.
+# platform it runs on (E2E_ONLY) or a file it appends to (E2E_TOUCH). E2E_ENV_TIMES names a
+# file that holds a number: while it is above zero the harness takes one off and exits 75,
+# as a harness does whose device is not there. Each published project below commits the
+# same harness. The gate tries a platform once more after an exit 75 with no pause here.
 cat >qa/test-cases.md <<'EOF'
 # Test cases
 
@@ -70,6 +73,10 @@ cat >.review/e2e.sh <<'EOF'
 report="$2/${E2E_NAME:-r.xml}"
 mkdir -p "$(dirname "$report")"
 [ -z "${E2E_TOUCH:-}" ] || printf 'touched\n' >>"$E2E_TOUCH"
+if [ -n "${E2E_ENV_TIMES:-}" ] && [ "$(cat "$E2E_ENV_TIMES")" -gt 0 ]; then
+  echo "$(($(cat "$E2E_ENV_TIMES") - 1))" >"$E2E_ENV_TIMES"
+  exit 75
+fi
 platform_xml="E2E_XML_$1"
 if [ -n "${E2E_REPORT:-}" ]; then
   cp "$E2E_REPORT" "$report"
@@ -128,6 +135,27 @@ check() {
 "got exit $actual_exit — log follows"
     sed 's/^/      /' "$log"
     FAILURES=$((FAILURES + 1))
+  fi
+}
+
+# says <name> <line> [<log>] and never_says <name> <line> [<log>]: what the log of the
+# case before holds, and what it must not hold.
+says() {
+  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: no «$2» — log follows"
+    sed 's/^/      /' "${3:-$WORK/post.log}"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+never_says() {
+  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
+    echo "FAIL  $1: «$2» is there — log follows"
+    sed 's/^/      /' "${3:-$WORK/post.log}"
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "ok    $1"
   fi
 }
 
@@ -451,8 +479,9 @@ check "a commit that failed twice sends the work back to review.sh" 3 \
   "failed at or after its gates twice" $? "$WORK/land.log"
 rm .git/hooks/pre-commit
 
-# The end-to-end tests. Each review here has no findings, so it ends CLEAN
-# unless the end-to-end tests stop it; the run it made is $last_run.
+# The end-to-end tests. They run after the review, whatever they come to, and only a
+# harness file that is not there ends a run before it. Each review here has no findings,
+# so it ends CLEAN unless the end-to-end tests did not pass; the run it made is $last_run.
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 printf '{"findings":[]}' >"$WORK/reviewer.json"
 printf '{"verdicts":[]}' >"$WORK/maintainer.json"
@@ -490,17 +519,37 @@ xml() {
 
 printf '{"id": "T-006", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
 '"exit_criteria": []}' >.review/T-006.json
+# reviewer_ran <name> [not]: whether the reviewer of the last e2e_review ran.
+reviewer_ran() {
+  if { [ -e "$WORK/reviewer-ran" ] && [ "${2:-}" != not ]; } || \
+     { [ ! -e "$WORK/reviewer-ran" ] && [ "${2:-}" = not ]; }; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: the reviewer $([ -e "$WORK/reviewer-ran" ] && echo ran || echo "did not run")"
+    sed 's/^/      /' "$WORK/run.log"
+    FAILURES=$((FAILURES + 1))
+  fi
+  rm -f "$WORK/reviewer-ran"
+}
+rm -f "$WORK/reviewer-ran"
 mv .review/e2e.sh "$WORK/e2e.sh"
 e2e_review "no end-to-end harness stops the review" 1 \
   "NO E2E HARNESS — copy CodingStandards/templates/review/project/e2e.sh" .review/T-006.json
+reviewer_ran "a missing harness still ends the run before the review" not
 e2e_check "after a run with no harness /qa is held back" 2 "found no working harness"
 mv "$WORK/e2e.sh" .review/e2e.sh
 E2E_XML='<testsuite tests="0"/>' \
-  e2e_review "a harness that runs no test is no harness" 1 "app: the e2e run ran no test" \
-  .review/T-006.json
+  e2e_review "a harness that runs no test is said to have run none, and the review is made" 1 \
+  "app: the e2e run ran no test" .review/T-006.json
+says "its run says that no end-to-end test ran" "NO END-TO-END TEST RAN — the harness is there "\
+"and ran none:" "$WORK/run.log"
+never_says "and calls it no missing harness" "NO E2E HARNESS" "$WORK/run.log"
+reviewer_ran "the review of a run that ran no test is made"
+e2e_check "after a run that ran no test /qa is held back and told why" 2 "E2E DID NOT RUN"
 E2E_ONLY=none E2E_EXIT=143 \
-  e2e_review "a harness killed before any test is no harness" 1 \
+  e2e_review "a harness killed before any test is said to have run none" 1 \
   "app: the e2e run ran no test (exit 143)" .review/T-006.json
+rm -f "$WORK/reviewer-ran"
 cp qa/test-cases.md "$WORK/test-cases.md"
 printf '# Test cases\n\n- **TC-001 Answer.** Open the app: it shows 42. — manual\n' \
   >qa/test-cases.md
@@ -514,12 +563,74 @@ rm -f "$WORK/reviewer-ran"
 E2E_XML="$(xml shows42=failed starts)" \
   e2e_review "a failing end-to-end test is red" 2 "app: failed: AnswerE2E.shows42" \
   .review/T-006.json
-if [ ! -e "$WORK/reviewer-ran" ]; then
-  echo "ok    red end-to-end tests never reach the reviewer"
+reviewer_ran "red end-to-end tests do not hold the review back"
+run_records "a red run that made a review is counted as one" \
+  '(.count | type) == "number" and .end == "e2e-red"'
+says "its last line says the review is made and the tests did not pass" "REVIEWED — no verified "\
+"findings; the end-to-end tests of this run did not pass: see above." "$WORK/run.log"
+# A harness says with exit 75 that its device or a tool was not there: the environment,
+# not the code. The gate tries the platform once more, and the review is made all the same.
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_review "a harness that says the device was not there is believed" 75 \
+  "E2E COULD NOT RUN — the environment, not the code" .review/T-006.json
+environment_run="$last_run"
+says "it names the platform and the exit code twice" "app: .review/e2e.sh says the device or a "\
+"tool was not there (exit 75), twice" "$WORK/run.log"
+reviewer_ran "the review of that run is made"
+if [ -f "$environment_run/approved.json" ]; then
+  echo "ok    the review of that run is kept"
 else
-  echo "FAIL  red end-to-end tests reached the reviewer"
+  echo "FAIL  the review of that run is kept: $environment_run has no approved.json"
   FAILURES=$((FAILURES + 1))
 fi
+never_says "it is not called red" "E2E RED" "$WORK/run.log"
+never_says "and not a missing harness" "NO E2E HARNESS" "$WORK/run.log"
+if jq -e '.status == "environment" and .results.app.outcome == "environment"' \
+     "$environment_run/e2e.json" >/dev/null 2>&1; then
+  echo "ok    its record says the environment"
+else
+  echo "FAIL  its record says the environment: $environment_run/e2e.json follows"
+  sed 's/^/      /' "$environment_run/e2e.json"
+  FAILURES=$((FAILURES + 1))
+fi
+run_records "it records its end as the environment, and counts its review" \
+  '.end == "environment" and .exit == 75 and (.count | type) == "number"'
+e2e_land "such a run does not land" 3 "condition 3" .review/T-006.json "$environment_run"
+e2e_check "after it /qa is held back and told to run the tests again" 2 "E2E DID NOT RUN"
+E2E_EXIT=75 E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "a device lost under the tests is the environment's, whatever the report holds" 75 \
+  "E2E COULD NOT RUN" .review/T-006.json
+if jq -e '.status == "environment"' "$last_run/e2e.json" >/dev/null 2>&1; then
+  echo "ok    its record says the environment, not red"
+else
+  echo "FAIL  its record says the environment, not red: $last_run/e2e.json follows"
+  sed 's/^/      /' "$last_run/e2e.json"
+  FAILURES=$((FAILURES + 1))
+fi
+rm -f "$WORK/reviewer-ran"
+echo 1 >"$WORK/env-times"
+: >"$WORK/e2e-calls"
+E2E_ENV_TIMES="$WORK/env-times" E2E_TOUCH="$WORK/e2e-calls" \
+  e2e_review "the gate tries the platform once more by itself" 0 "── e2e: pass" \
+  .review/T-006.json
+if [ "$(grep -c . "$WORK/e2e-calls")" -eq 2 ]; then
+  echo "ok    the harness ran twice"
+else
+  echo "FAIL  the harness ran twice: it ran $(grep -c . "$WORK/e2e-calls") time(s)"
+  FAILURES=$((FAILURES + 1))
+fi
+says "and the run is clean" "CLEAN — gates green, no verified findings." "$WORK/run.log"
+printf '%s' "$(finding '"bug"')" >"$WORK/reviewer.json"
+printf '%s' "$(verdict '"accept"' no-rule-fired)" >"$WORK/maintainer.json"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_review "findings and red tests come back in one run" 3 "accepted (>= major): 1" \
+  .review/T-006.json
+says "the red tests are in it" "E2E RED. Failing:" "$WORK/run.log"
+says "and its last line says both" "── also: the end-to-end tests of this run did not pass "\
+"(above); the task lands only once they do." "$WORK/run.log"
+printf '{"findings":[]}' >"$WORK/reviewer.json"
+printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+rm -f "$WORK/reviewer-ran"
 mkdir -p app/src/main app/App.xcodeproj
 printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
   >app/src/main/AndroidManifest.xml
@@ -532,19 +643,19 @@ check "an iOS app in the tree needs its tests run on iOS" 1 "ios: the e2e run ra
   "$review_exit" "$WORK/run.log"
 rm -rf app
 E2E_TOUCH=src/x \
-  e2e_review "an end-to-end run that changes the tree stops the review" 1 \
+  e2e_review "an end-to-end run that changes the tree ends the run with an error" 1 \
   "the e2e run modified the working tree" .review/T-006.json
 rm -f src/x
 printf 'v1\n' >"src/Отчёт.kt"
 E2E_TOUCH="src/Отчёт.kt" \
-  e2e_review "an end-to-end run that changes a file with a non-ASCII name stops the review" 1 \
-  "the e2e run modified the working tree" .review/T-006.json
+  e2e_review "an end-to-end run that changes a file with a non-ASCII name ends the run with an "\
+"error" 1 "the e2e run modified the working tree" .review/T-006.json
 rm -f "src/Отчёт.kt"
 # The loop's and the owner's files are outside the fingerprint; the run changes them
 # no more than the rest. A harness that rewrites the cases would choose its own tests.
 for touched in qa/test-cases.md TASK_TRACKER.md REQUIREMENTS.md; do
   E2E_TOUCH="$touched" E2E_XML="$(xml starts)" \
-    e2e_review "an end-to-end run that changes $touched stops the review" 1 \
+    e2e_review "an end-to-end run that changes $touched ends the run with an error" 1 \
     "the e2e run modified the working tree" .review/T-006.json
 done
 cp "$WORK/test-cases.md" qa/test-cases.md
@@ -879,8 +990,8 @@ mkdir -p "\$2"
 printf '%s' '$(xml shows42 starts)' >"\$2/r.xml"
 cp "$WORK/e2e.committed" "\$0.new" && mv "\$0.new" "\$0"
 EOF
-e2e_review "a harness that puts the committed one back while it runs stops the review" 1 \
-  "the harness changed while it ran" .review/T-008.json
+e2e_review "a harness that puts the committed one back while it runs ends the run with an "\
+"error" 1 "the harness changed while it ran" .review/T-008.json
 git checkout -q -- .review/e2e.sh
 printf '#!/usr/bin/env bash\nexit 0\n' >.review/e2e-app.sh
 chmod +x .review/e2e-app.sh
@@ -955,26 +1066,6 @@ record_refuses() {
     echo "FAIL  the refusal does not say «$fault» — log follows"
     sed 's/^/      /' "$WORK/land.log"
     FAILURES=$((FAILURES + 1))
-  fi
-}
-# says <name> <line> [<log>] and never_says <name> <line> [<log>]: what the log of the
-# case before holds, and what it must not hold.
-says() {
-  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
-    echo "ok    $1"
-  else
-    echo "FAIL  $1: no «$2» — log follows"
-    sed 's/^/      /' "${3:-$WORK/post.log}"
-    FAILURES=$((FAILURES + 1))
-  fi
-}
-never_says() {
-  if grep -qF -- "$2" "${3:-$WORK/post.log}"; then
-    echo "FAIL  $1: «$2» is there — log follows"
-    sed 's/^/      /' "${3:-$WORK/post.log}"
-    FAILURES=$((FAILURES + 1))
-  else
-    echo "ok    $1"
   fi
 }
 new_task T-020
@@ -2127,7 +2218,7 @@ done
 round "a harness that ran no test three times is no circle of the work, though it changed" 6 \
   "STOPPED — T-086 ended the same way in 3 runs in a row; nothing ran." T-086 new -
 says "it says that no test ran" \
-  "   no working end-to-end harness: app: the e2e run ran no test (exit 1)" "$WORK/run.log"
+  "   no end-to-end test ran: app: the e2e run ran no test (exit 1)" "$WORK/run.log"
 says "and that is the loop's to restore" "   The loop goes on: a retry does not mend it" \
   "$WORK/run.log"
 never_says "a device that never ran a test is no question" "the user" "$WORK/run.log"

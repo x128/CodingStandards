@@ -14,15 +14,22 @@
 # What counts is the JUnit XML .review/e2e.sh leaves, never its exit code: a test
 # command with nothing to run exits 0. A platform has a harness when a test ran
 # on it and a case of qa/test-cases.md names a test that ran (any test, while
-# the file has no case yet).
+# the file has no case yet). The one exit code that is read is 75: the harness
+# says that its device or a tool was not there. The platform then runs once
+# more, after E2E_REPEAT_PAUSE seconds (15; the environment only), and a second
+# 75 is the environment's: its reports are not read, since nothing is known of
+# the code.
 #
 # Exit codes, run:
 #   0  pass — no test failed, and every test a case names passed on every
 #      platform that runs it
 #   2  red — a test failed, e2e.sh failed, or a named test did not pass or run
-#   1  no working harness, or a pipeline error
+#   75 the environment — the harness said so with exit 75, twice; nothing is
+#      known of the code
+#   1  no working harness, no test that ran, or a pipeline error
 # Exit codes, check:
-#   0  the newest e2e.json had a harness on every platform the tree ships now
+#   0  the newest e2e.json had a harness on every platform the tree ships now,
+#      and its tests ran
 #   2  it did not, or the check itself could not run, with the reason on
 #      stderr — a PreToolUse hook blocks on 2 and lets any other code through
 #
@@ -86,11 +93,16 @@ if [ "$MODE" = check ]; then
     "   review.sh runs the end-to-end tests after the gates; the app is checked by hand" \
     "   only where they ran. The harness is a task of its own and comes first."
   RECORD="$(printf '%s' "$NEWEST" | jq -r '.file')"
-  if [ "$(printf '%s' "$NEWEST" | jq -r '.status')" = no-harness ]; then
-    hold_back "NO E2E HARNESS — the newest end-to-end run, $RECORD, found no working harness:" \
-      "$(printf '%s' "$NEWEST" | jq -r '.reasons[]? | "   \(.)"')" \
-      "   The harness is a task of its own and comes first."
-  fi
+  case "$(printf '%s' "$NEWEST" | jq -r '.status')" in
+    no-harness)
+      hold_back "NO E2E HARNESS — the newest end-to-end run, $RECORD, found no working harness:" \
+        "$(printf '%s' "$NEWEST" | jq -r '.reasons[]? | "   \(.)"')" \
+        "   The harness is a task of its own and comes first." ;;
+    environment | no-test)
+      hold_back "E2E DID NOT RUN — the newest end-to-end run, $RECORD, could not run its tests:" \
+        "$(printf '%s' "$NEWEST" | jq -r '.reasons[]? | "   \(.)"')" \
+        "   Mend what stopped them, then run review.sh again." ;;
+  esac
   MISSING="$(platforms | as_json_array | jq -r --argjson newest "$NEWEST" \
     '. - ($newest.platforms // []) | join(" ")')"
   [ -z "$MISSING" ] || \
@@ -102,6 +114,11 @@ fi
 # run
 # ---------------------------------------------------------------------------
 
+REPEAT_PAUSE="${E2E_REPEAT_PAUSE:-15}"
+case "$REPEAT_PAUSE" in
+  ''|*[!0-9]*) echo "E2E_REPEAT_PAUSE must be a whole number of seconds, not '$REPEAT_PAUSE'" >&2
+               exit 1 ;;
+esac
 START="$(date +%s)"
 FINGERPRINT="$(tree_fingerprint)"
 # The loop's own files are outside the fingerprint, and qa/test-cases.md is one of
@@ -189,22 +206,36 @@ junit_rows() {
 
 # Each platform's tests, into <run-dir>/e2e/<platform>/, emptied first and read
 # as soon as its run ends: a report another platform's run wrote there is not
-# this platform's. The log and the rows go next to that folder.
+# this platform's. The log and the rows go next to that folder. A platform whose
+# harness said twice that its device or a tool was not there is in ENVIRONMENT,
+# with no report read.
 PRESET_REASONS="[]"
 RESULTS="{}"
+ENVIRONMENT="[]"
 if [ ! -x "$HARNESS" ]; then
   PRESET_REASONS="$(jq -nc --arg reason "$HARNESS is missing or not executable" '[$reason]')"
 else
   for platform in $PLATFORMS; do
     directory="$RUN_DIR/e2e/$platform"
-    rm -rf "$directory" && mkdir -p "$directory" || exit 1
-    echo "── e2e $platform" >&2
-    "$HARNESS" "$platform" "$directory" >"$RUN_DIR/e2e/$platform.log" 2>&1
-    exit_code=$?
+    for try in first second; do
+      rm -rf "$directory" && mkdir -p "$directory" || exit 1
+      echo "── e2e $platform" >&2
+      "$HARNESS" "$platform" "$directory" >"$RUN_DIR/e2e/$platform.log" 2>&1
+      exit_code=$?
+      [ "$exit_code" -eq 75 ] && [ "$try" = first ] || break
+      echo "   .review/e2e.sh says the device or a tool was not there (exit 75): "\
+"$platform runs once more in $REPEAT_PAUSE s" >&2
+      sleep "$REPEAT_PAUSE"
+    done
     reports=()
-    while IFS= read -r -d '' report; do
-      reports+=("$report")
-    done < <(find "$directory" -type f -iname '*.xml' -print0)
+    if [ "$exit_code" -eq 75 ]; then
+      ENVIRONMENT="$(jq -c --arg platform "$platform" '. + [$platform]' <<<"$ENVIRONMENT")" \
+        || exit 1
+    else
+      while IFS= read -r -d '' report; do
+        reports+=("$report")
+      done < <(find "$directory" -type f -iname '*.xml' -print0)
+    fi
     if [ "${#reports[@]}" -gt 0 ]; then junit_rows "${reports[@]}"; fi \
       >"$RUN_DIR/e2e/$platform.rows.tsv"
     digests="$(for report in ${reports[@]+"${reports[@]}"}; do sha256_stdin <"$report"; done \
@@ -264,31 +295,42 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
       --argjson platforms "$(printf '%s\n' "$PLATFORMS" | as_json_array)" \
       --argjson results "$RESULTS" --argjson named "$NAMED" --argjson required "$REQUIRED" \
       --argjson marks "$MARKED" --argjson words "$CASE_DIGESTS" \
-      --argjson preset "$PRESET_REASONS" "$JQ_HIT"'
+      --argjson preset "$PRESET_REASONS" --argjson absent "$ENVIRONMENT" "$JQ_HIT"'
   def class: base | if test("\\.") then sub("\\.[^.]*$"; "") else null end;
   def rows: .passed + .failed + .skipped;
   def ran: .passed + .failed;
   def stamp: .[0:19] | try (strptime("%Y-%m-%dT%H:%M:%S") | mktime) catch null;
   def once: reduce .[] as $item ([]; if any(.[]; . == $item) then . else . + [$item] end);
-  ($results | to_entries) as $all
-  | ($preset
+  def prefixed($platform): startswith($platform + ": ");
+  # A platform of the environment says nothing of the code: only the others are read.
+  [$results | to_entries[] | select(.key as $platform | $absent | index($platform) | not)]
+    as $all
+  | [$absent[] | "\(.): .review/e2e.sh says the device or a tool was not there (exit 75), twice"]
+    as $environment
+  | ([$preset[] | {kind: "no-harness", reason: .}]
      + [$all[] | .key as $platform | .value
-        | if (ran | length) == 0 then "\($platform): the e2e run ran no test (exit \(.exit))"
+        | if (ran | length) == 0
+            then {kind: "no-test", reason: "\($platform): the e2e run ran no test (exit \(.exit))"}
           elif .exit >= 126
-            then "\($platform): .review/e2e.sh could not run or was killed (exit \(.exit))"
+            then {kind: "no-harness",
+                  reason: "\($platform): .review/e2e.sh could not run or was killed (exit \(.exit))"}
           elif any(.timestamps[]; stamp as $time | $time != null and $time < $start - 86400)
-            then "\($platform): a report is older than this run (testsuite timestamp "
-                 + "\(.timestamps | min)) — the harness copied results it did not make"
+            then {kind: "no-harness",
+                  reason: ("\($platform): a report is older than this run (testsuite timestamp "
+                           + "\(.timestamps | min)) — the harness copied results it did not make")}
           elif $cases > 0
                and ([ran[] as $row | $named[] | select(. as $id | $row | hit($id))] | length) == 0
-            then "\($platform): no case of qa/test-cases.md names an e2e test that ran"
+            then {kind: "no-harness",
+                  reason: "\($platform): no case of qa/test-cases.md names an e2e test that ran"}
           else empty end]
      + [range(0; $all | length) as $i | range(0; $i) as $j
         | select(any($all[$i].value.reports[]; . as $digest
                      | any($all[$j].value.reports[]; . == $digest)))
-        | "\($all[$i].key): a report is the same file as one of \($all[$j].key)"
-          + " — each platform writes its own"]
-    ) as $no_harness
+        | {kind: "no-harness",
+           reason: ("\($all[$i].key): a report is the same file as one of \($all[$j].key)"
+                    + " — each platform writes its own")}]
+    ) as $faults
+  | [$faults[].reason] as $no_harness
   | ([$all[] | .key as $platform | .value
       | (if .exit != 0 then "\($platform): .review/e2e.sh exited \(.exit)" else empty end),
         (.failed[] | "\($platform): failed: \(.)")]
@@ -303,7 +345,8 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
                             | any($classes[]; . == $other))}] as $on
         | if ([$on[].passed[]] | length) == 0
              and (($mark.tagged | not) or ([$on[].skipped[]] | length) == 0)
-            then "named but did not pass: \($mark.test)"
+            then (if ($absent | length) == 0 then "named but did not pass: \($mark.test)"
+                  else empty end)
           else
             ($on[] | select((.skipped | length) > 0 and ($mark.tagged | not))
              | "\(.platform): named but did not pass: \($mark.test)"),
@@ -311,13 +354,27 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
              | "\(.platform): named but did not run: \($mark.test)")
           end]
      | once) as $red
+  # The worst of the platforms: no harness, no test that ran, red, the environment, pass.
+  | (if any($faults[]; .kind == "no-harness") then "no-harness"
+     elif ($faults | length) > 0 then "no-test"
+     elif ($red | length) > 0 then "red"
+     elif ($environment | length) > 0 then "environment"
+     else "pass" end) as $status
   | {time: now, task: (if $task == "" then null else $task end),
      fingerprint: $fingerprint, harness: $harness, platforms: $platforms, qa_failures: $qa,
      marks: $marks, cases: $words,
-     status: (if ($no_harness | length) > 0 then "no-harness"
-              elif ($red | length) > 0 then "red" else "pass" end),
-     reasons: (if ($no_harness | length) > 0 then $no_harness else $red end),
-     results: $results}' >"$RUN_DIR/e2e.json" || exit 1
+     status: $status,
+     reasons: (if $status == "no-harness" or $status == "no-test" then $no_harness
+               elif $status == "red" then $red
+               elif $status == "environment" then $environment else [] end),
+     environment: $environment,
+     results: ($results | with_entries(.key as $platform
+       | .value.outcome = (if $absent | index($platform) then "environment"
+                           elif any($faults[]; .kind == "no-harness"
+                                    and (.reason | prefixed($platform))) then "no-harness"
+                           elif any($faults[]; .reason | prefixed($platform)) then "no-test"
+                           elif any($red[]; prefixed($platform)) then "red"
+                           else "pass" end)))}' >"$RUN_DIR/e2e.json" || exit 1
 
 STATUS="$(jq -r '.status' "$RUN_DIR/e2e.json")"
 
@@ -338,9 +395,23 @@ case "$STATUS" in
 "— $(jq '[.results[].passed[]] | length' "$RUN_DIR/e2e.json") test(s) passed" ;;
   red)
     echo
-    echo "E2E RED — no LLM review. Failing:"
+    echo "E2E RED. Failing:"
     show_failures
     exit 2 ;;
+  no-test)
+    echo
+    echo "NO END-TO-END TEST RAN — the harness is there and ran none:"
+    show_failures
+    turn loop "read the end of each log: a cause in the code is fixed; a device or a tool "\
+"that was not there is restored; then run review.sh again. A harness that knows its device is "\
+"gone says so with exit 75 (templates/review/project/e2e.sh)"
+    exit 1 ;;
+  environment)
+    echo
+    echo "E2E COULD NOT RUN — the environment, not the code:"
+    show_failures
+    turn loop "restore it, then run review.sh again"
+    exit 75 ;;
   *)
     echo
     if [ ! -x "$HARNESS" ]; then
@@ -349,7 +420,8 @@ case "$STATUS" in
 "the harness is a task"
       echo "  of its own and comes first."
     else
-      echo "NO E2E HARNESS — nothing reviewed; the harness is a task of its own and comes first:"
+      echo "NO E2E HARNESS — the harness does not test this tree; it is a task of its own and "\
+"comes first:"
       show_failures
     fi
     exit 1 ;;

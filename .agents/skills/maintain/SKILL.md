@@ -116,27 +116,31 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 
    Below `pr`, no `--base` inside the loop: by default it reviews the uncommitted work, which is
    what `land.sh` will commit; `--base <ref>` is for a final pass over a finished branch. Exit
-   codes: `0` clean, `2` checks red, `3` accepted findings remain, `4` escalations, `5` review
-   unusable (re-run; not clean), `6` nothing ran: the script stopped the task and says what it read
-   in its runs, `1` pipeline error. Note the run directory it prints; landing needs the last one. On
-   `6` do what its last line says. `review.sh` stops at `ASK_AFTER_RUNS` reviews of the task (5
-   unless `.review/land.conf` says otherwise) — reviews: a run that ended before its review is not
-   counted, and as many of those in a row stop the task too — and at any count when it reads a
-   circle: a finding accepted at the same place in three reviews in a row, each after a change of
-   the work, a case that failed in three `/qa`, each on other work, or three runs in a row that
-   ended the same way. At the count it prints how many findings each review accepted and whether one
-   came back after its fix. `The loop goes on`: reviews that found different things, each fixed, are
-   no question — run again with `--past-limit`, which runs once more and starts the count again;
-   where the line asks for it, with `--because "<what moves toward the goal>"`, which is kept in the
-   run and shown on the pull request. Where the findings do not get fewer and you cannot tell
-   whether the work moves, that line makes it a question: ask it with what the script printed, and
-   when the user decides to go on, `--past-limit --user-decided` passes that stop too. Three runs in
-   a row that ended the same way are the loop's the first time, also where the work changed each
-   time: the script cannot tell fixes that do not close a failure from a device that went away, a
-   stale build or a service that was down, and you have the logs. Find the cause, mend it and run
-   again with `--past-limit --because "<what the cause was, and what was done about it>"`;
-   `--user-decided` is refused there. When the runs end that way three more times in a row after
-   that pass, each after a change of the work, the reason did not hold, and that is the user's.
+   codes: `0` clean, `2` checks red — the gates, with no review, or the end-to-end tests, with one
+   —, `3` accepted findings remain, `4` escalations, `5` review unusable (re-run; not clean), `75`
+   the environment, not the work: the end-to-end tests could not run — the review is made, `6`
+   nothing ran: the script stopped the task and says what it read in its runs, `1` pipeline error.
+   Note the run directory it prints; landing needs the last one. On `6` do what its last line says.
+   On `75` bring the device back if you can and run again: it is no failure of the work. With `3` or
+   `4` the run also says when its end-to-end tests did not pass: fix both in one round. `review.sh`
+   stops at `ASK_AFTER_RUNS` reviews of the task (5 unless `.review/land.conf` says otherwise) —
+   reviews: a run that ended before its review is not counted, and as many of those in a row stop
+   the task too — and at any count when it reads a circle: a finding accepted at the same place in
+   three reviews in a row, each after a change of the work, a case that failed in three `/qa`, each
+   on other work, or three runs in a row that ended the same way. At the count it prints how many
+   findings each review accepted and whether one came back after its fix. `The loop goes on`:
+   reviews that found different things, each fixed, are no question — run again with `--past-limit`,
+   which runs once more and starts the count again; where the line asks for it, with
+   `--because "<what moves toward the goal>"`, which is kept in the run and shown on the pull
+   request. Where the findings do not get fewer and you cannot tell whether the work moves, that
+   line makes it a question: ask it with what the script printed, and when the user decides to go
+   on, `--past-limit --user-decided` passes that stop too. Three runs in a row that ended the same
+   way are the loop's the first time, also where the work changed each time: the script cannot tell
+   fixes that do not close a failure from a device that went away, a stale build or a service that
+   was down, and you have the logs. Find the cause, mend it and run again with
+   `--past-limit --because "<what the cause was, and what was done about it>"`; `--user-decided` is
+   refused there. When the runs end that way three more times in a row after that pass, each after a
+   change of the work, the reason did not hold, and that is the user's.
    `For the user, the work does not converge`: ask once, with what the script printed; when they
    decide to go on, run again with `--past-limit --user-decided`, which takes no words: the run
    records that they decided, and the pull request shows it. A count alone is never a question.

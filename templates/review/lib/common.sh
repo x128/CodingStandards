@@ -799,30 +799,44 @@ review_runs_on() {
   done
 }
 
-# What a review run came to, in a few words.
+# What a review run came to, in a few words: the review's words, and after them, when the
+# run made a review and its end-to-end tests are not green, what they came to. A run that
+# made no review says what ended it: a run of the master's scripts ended at red end-to-end
+# tests or at a missing harness before its review.
 run_result() {
-  local run="$1"
+  local run="$1" status
+  status="$(jq -r '.status // ""' "$run/e2e.json" 2>/dev/null)"
   if [ ! -f "$run/gates.json" ]; then
     echo "did not finish"
   elif jq -e 'any(.[]; .status == "fail" and .blocking != false)' "$run/gates.json" \
        >/dev/null 2>&1; then
     echo "gates red"
-  elif [ ! -f "$run/e2e.json" ]; then
-    echo "did not finish"
-  elif ! jq -e '.status == "pass"' "$run/e2e.json" >/dev/null 2>&1; then
-    case "$(jq -r '.status' "$run/e2e.json" 2>/dev/null)" in
-      red) echo "end-to-end tests red" ;;
-      *) echo "no end-to-end harness" ;;
-    esac
   elif [ ! -f "$run/approved.json" ] || [ ! -f "$run/escalated.json" ]; then
     if [ -f "$run/findings.json" ] && [ "$(jq '.findings | length' "$run/findings.json")" -eq 0 ]
-    then echo "unusable: no finding located"; else echo "did not finish"; fi
+    then echo "unusable: no finding located"
+    else
+      case "$status" in
+        red) echo "end-to-end tests red" ;;
+        no-harness) echo "no end-to-end harness" ;;
+        *) echo "did not finish" ;;
+      esac
+    fi
   else
     jq -rn --slurpfile approved "$run/approved.json" --slurpfile escalated "$run/escalated.json" '
       ($approved[0] | length) as $a | ($escalated[0] | length) as $e
       | if $a + $e == 0 then "clean"
         else [if $a > 0 then "\($a) accepted" else empty end,
-              if $e > 0 then "\($e) escalated" else empty end] | join(", ") end'
+              if $e > 0 then "\($e) escalated" else empty end] | join(", ") end' \
+      | tr -d '\n'
+    case "$status" in
+      pass) ;;
+      red) printf '; end-to-end tests red' ;;
+      no-test) printf '; no end-to-end test ran' ;;
+      environment) printf '; the end-to-end tests could not run' ;;
+      no-harness) printf '; no end-to-end harness' ;;
+      *) printf '; the end-to-end tests have not run' ;;
+    esac
+    echo
   fi
 }
 
@@ -876,7 +890,11 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
 | (.end
    // (if $reviewed then
          (if (($escalated | arrays | length) // 0) > 0 then "escalations"
-          elif ($approved | length) > 0 then "findings" else "clean" end)
+          elif ($approved | length) > 0 then "findings"
+          elif $e2e.status == "red" then "e2e-red"
+          elif $e2e.status == "environment" or $e2e.status == "no-test"
+               or $e2e.status == "no-harness" then $e2e.status
+          else "clean" end)
        elif ($red_gates | length) > 0 then "gates-red"
        elif $e2e.status == "red" then "e2e-red"
        elif $e2e.status == "no-harness" then "no-harness"
@@ -884,7 +902,7 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
        else "error" end)) as $ending
 | (if ($red_gates | length) > 0 then "gates"
    elif $e2e.status == "red" then "e2e"
-   elif $e2e.status == "no-harness" then "harness"
+   elif $e2e.status == "no-harness" or $e2e.status == "no-test" then "harness"
    elif $ending == "unusable" then "unusable"
    else null end) as $failed
 | {run: $run, time: (.time // 0), epoch: (.epoch // 0), past_limit: (.past_limit == true),
@@ -923,10 +941,13 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
 # `end`: how
 # the run ended, as review.sh records it (record_end); for a run that does not say — one
 # made before review.sh recorded it, or one that was killed — it is read from what the run
-# left: clean, findings or escalations when it is reviewed, gates-red when a blocking gate
-# failed, e2e-red or no-harness by the status of its e2e.json, unusable when its
-# findings.json holds no finding, and error otherwise. `failed`: which check of the run was
-# not green, whether or not it made a review — gates, e2e, harness, unusable — or null.
+# left: escalations or findings when it is reviewed and its review says so, else by the
+# status of its e2e.json — e2e-red, environment, no-test or no-harness, clean on a pass;
+# gates-red when a blocking gate failed, e2e-red or no-harness by the status of its
+# e2e.json when there is no review, unusable when its findings.json holds no finding, and
+# error otherwise. `failed`: which check of the run was not green, whether or not it made a
+# review — gates, e2e, harness (no harness, or no test that ran), unusable — or null: an
+# end-to-end run that the environment kept from running failed nothing of the work.
 # `same`: a digest of `failed` and of what failed, null when `failed` is: the name and the
 # output of each failing blocking gate, or the reasons of e2e.json, sorted, each with its
 # digits taken out, so that two runs that end the same way but for a time or a count have

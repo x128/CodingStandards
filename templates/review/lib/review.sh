@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# review.sh — one review pass: gates → reviewer → maintainer triage.
+# review.sh — one review pass: gates → reviewer → maintainer triage → end-to-end tests.
 #
 # The loop around this (rounds, landing, advancing) is driven by /maintain.
 # Landing lives in land.sh.
@@ -25,19 +25,23 @@
 # then posted there (pr-post.sh run). --dry-run reviews the uncommitted work, as at
 # push, and posts nothing.
 #
-# Exit codes:
-#   0  clean — gates green, nothing accepted above the threshold
-#   2  gates or end-to-end tests red — send the executor back with the output,
-#      no LLM review
+# Exit codes — the review's own first, then the end-to-end tests', which run after the
+# review and whatever they come to; the last lines of the run say both:
+#   0  clean — gates green, nothing accepted above the threshold, end-to-end tests passed
+#   2  gates red — no LLM review; or end-to-end tests red — the review is made all the
+#      same. Send the executor back with the output
 #   3  accepted findings remain — hand them to the executor
 #   4  escalations — answered before landing (maintain, step 7)
 #   5  review unusable — every finding failed quote verification; re-run
 #   6  nothing ran: the task is at its limit of reviews, or the script read a
 #      circle in its runs or in its /qa records — its last line says whose turn
 #      it is (--past-limit runs once more)
-#   1  pipeline error, including any malformed agent output (fails closed), or
-#      no working end-to-end harness; at LANDING=pr and merge also work that is not
-#      committed, a pull request that is not at HEAD, or a run that could not be
+#   75 the environment, not the work: the end-to-end tests could not run — the review
+#      is made; run again when the device is back
+#   1  pipeline error, including any malformed agent output (fails closed); no
+#      end-to-end test that ran, or no working harness — the review is made — or no
+#      harness file at all, before the review; at LANDING=pr and merge also work that
+#      is not committed, a pull request that is not at HEAD, or a run that could not be
 #      posted on it
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
@@ -210,8 +214,13 @@ what_failed() {
       printf 'end-to-end tests red: %s' \
         "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)" ;;
     harness)
-      printf 'no working end-to-end harness: %s' \
-        "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)" ;;
+      if [ "$(jq -r '.status' "$1/e2e.json" 2>/dev/null)" = no-test ]; then
+        printf 'no end-to-end test ran: %s' \
+          "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)"
+      else
+        printf 'no working end-to-end harness: %s' \
+          "$(jq -r '[.reasons[]?] | join("; ")' "$1/e2e.json" 2>/dev/null)"
+      fi ;;
     unusable) printf 'the review was unusable' ;;
   esac
 }
@@ -901,19 +910,22 @@ jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
   >"$RUN_DIR/meta.json"
 
 # How the run ended, written into its meta.json whatever ends it: the next run of the task
-# reads there what repeats (task_runs_json). STAGE is how far the run came — gates, e2e,
-# reviewer, verify, maintainer, triage — and END what it came to, set where the script
-# knows it: gates-red, e2e-red, no-harness, unusable, clean, findings or escalations. A run
-# that ends anywhere else — an agent's answer that does not hold, a gate runner that did
-# not run, a signal — ended in an error.
+# reads there what repeats (task_runs_json). STAGE is how far the run came — gates,
+# reviewer, verify, maintainer, triage, e2e — and END what it came to, set where the script
+# knows it: gates-red, unusable, escalations, findings, clean, e2e-red, environment,
+# no-test or no-harness — the review's end before the tests'. A run that ends anywhere
+# else — an agent's answer that does not hold, a gate runner that did not run, end-to-end
+# tests that changed the tree, a signal — ended in an error. REVIEW_END is the review's
+# own end once it is made: every run that made a review has its count, whatever its
+# end-to-end tests came to.
 STAGE=""
 END=""
+REVIEW_END=""
 record_end() {
   local count=null
-  case "$END" in
-    clean | findings | escalations)
-      [ -z "$TASK_ID" ] || [ "$PAST_LIMIT" = true ] || count=$((REVIEWS_SO_FAR + 1)) ;;
-  esac
+  if [ -n "$REVIEW_END" ] && [ -n "$TASK_ID" ] && [ "$PAST_LIMIT" != true ]; then
+    count=$((REVIEWS_SO_FAR + 1))
+  fi
   jq --arg ending "${END:-error}" --argjson exit "$1" --arg stage "$STAGE" \
     --argjson count "$count" \
     '.end = $ending | .exit = $exit | .stage = (if $stage == "" then null else $stage end)
@@ -1027,24 +1039,41 @@ if [ "$GATES_EXIT" -ne 0 ]; then
   exit 2
 fi
 
-# The end-to-end tests, through the project's .review/e2e.sh, after the gates
-# because they need the build. Green gates say nothing about the app as its
-# user drives it, so a tree with no working harness stops here as well — in
-# every project, whatever its gates.sh holds, since this file is the
-# submodule's. e2e-gate.sh exits 2 when red and 1 without a harness, and has written
-# e2e.json then: with none, it ended in an error.
-STAGE=e2e
-"$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID"
-E2E_EXIT=$?
-if [ "$E2E_EXIT" -ne 0 ]; then
-  if [ -f "$RUN_DIR/e2e.json" ]; then
-    case "$E2E_EXIT" in
-      2) END=e2e-red ;;
-      1) END=no-harness ;;
-    esac
-  fi
-  exit "$E2E_EXIT"
+# The end-to-end tests, through the project's .review/e2e.sh, are a check beside the
+# review, not a condition of it: they run after it (run_end_to_end), whatever they come
+# to, and the review is made and stays. Green gates say nothing about the app as its user
+# drives it, so every project's run has them, whatever its gates.sh holds, since this file
+# is the submodule's. Only a harness file that is not there, or cannot be executed, ends
+# the run here, before the review: that is told without a device.
+if [ ! -x "$REVIEW_DIR/e2e.sh" ]; then
+  STAGE=e2e
+  "$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID"
+  [ ! -f "$RUN_DIR/e2e.json" ] || END=no-harness
+  exit 1
 fi
+
+# e2e-gate.sh exits 0 on a pass, 2 when red, 75 when the harness said twice that its device
+# or a tool was not there, and 1 when no test ran or the harness does not test this tree;
+# it has written e2e.json then. With none it ended in an error — the harness changed while
+# it ran, or the run changed the tree — and no result is bound to this tree: the run ends
+# there with 1. E2E_END is what the tests came to, empty on a pass.
+run_end_to_end() {
+  STAGE=e2e
+  "$LIB_DIR/e2e-gate.sh" run "$RUN_DIR" "$TASK_ID"
+  E2E_EXIT=$?
+  [ -f "$RUN_DIR/e2e.json" ] || exit 1
+  case "$E2E_EXIT" in
+    0)  E2E_END="" ;;
+    2)  E2E_END=e2e-red ;;
+    75) E2E_END=environment ;;
+    *)  E2E_EXIT=1
+        if [ "$(jq -r '.status' "$RUN_DIR/e2e.json" 2>/dev/null)" = no-test ]; then
+          E2E_END=no-test
+        else
+          E2E_END=no-harness
+        fi ;;
+  esac
+}
 
 # The requirements, the plan and the loop's records are not reviewed. With
 # WITH_RECORDS=yes they land in the task's commit all the same, and a review that
@@ -1173,11 +1202,18 @@ if [ "$FINDING_COUNT" -eq 0 ]; then
   echo '[]' >"$RUN_DIR/escalated.json"
   echo '[]' >"$RUN_DIR/optional.json"
   echo '{"verdicts":[]}' >"$RUN_DIR/verdicts.json"
+  REVIEW_END=clean
+  run_end_to_end
   echo
   echo "── review complete: $RUN_DIR"
-  echo "CLEAN — gates green, no verified findings."
-  END=clean
-  exit 0
+  if [ "$E2E_EXIT" -eq 0 ]; then
+    echo "CLEAN — gates green, no verified findings."
+    END=clean
+    exit 0
+  fi
+  echo "REVIEWED — no verified findings; the end-to-end tests of this run did not pass: see above."
+  END="$E2E_END"
+  exit "$E2E_EXIT"
 fi
 
 # ---------------------------------------------------------------------------
@@ -1250,6 +1286,15 @@ OPTIONAL_COUNT="$(require_array_length "$RUN_DIR/optional.json")" || exit 1
 REJECTED_COUNT=\
 "$(jq '[.verdicts[] | select(.verdict == "reject")] | length' "$RUN_DIR/verdicts.json")"
 
+if [ "$ESCALATED_COUNT" -gt 0 ]; then
+  REVIEW_END=escalations
+elif [ "$APPROVED_COUNT" -gt 0 ]; then
+  REVIEW_END=findings
+else
+  REVIEW_END=clean
+fi
+run_end_to_end
+
 echo
 echo "── review complete: $RUN_DIR"
 echo "   verified findings : $FINDING_COUNT   (of $RAW_COUNT reported, $DROPPED_COUNT dropped)"
@@ -1257,14 +1302,16 @@ echo "   accepted (>= $THRESHOLD): $APPROVED_COUNT   → approved.json, for the 
 echo "   accepted (below)  : $OPTIONAL_COUNT   → optional.json, not acted on"
 echo "   escalated         : $ESCALATED_COUNT   → escalated.json, to answer"
 echo "   rejected          : $REJECTED_COUNT"
+if [ "$E2E_EXIT" -ne 0 ]; then
+  echo "── also: the end-to-end tests of this run did not pass (above); the task lands only once "\
+"they do."
+fi
 
-if [ "$ESCALATED_COUNT" -gt 0 ]; then
-  END=escalations
-  exit 4
-fi
-if [ "$APPROVED_COUNT" -gt 0 ]; then
-  END=findings
-  exit 3
-fi
-END=clean
-exit 0
+# The review's end comes first: escalations, then accepted findings; with neither, the
+# end is what the end-to-end tests came to.
+case "$REVIEW_END" in
+  escalations) END=escalations; exit 4 ;;
+  findings)    END=findings; exit 3 ;;
+esac
+END="${E2E_END:-clean}"
+exit "$E2E_EXIT"
