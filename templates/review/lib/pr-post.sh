@@ -352,36 +352,50 @@ post_statuses() {
         done || return 1
   fi
 
-  # What the tests came to is the newest try of them, a repeat on the same work included.
+  # What the tests came to is the newest try of them, a repeat on the same work included,
+  # each platform by its own outcome. A platform whose device or tool was not there is
+  # pending: nothing is known of the code, and the next run on the same work repeats the
+  # tests. A platform that passed fails while the harness is not as it ran or a mark of
+  # qa/test-cases.md names a test the run was not checked against. A record with no outcome
+  # of its platforms is read by the status of the whole run.
   if [ -n "$run" ] && [ -f "$(run_e2e_record "$run")" ]; then
+    reason="$(why_not run_e2e_checked_now "$run")"
     for platform in $(platforms); do
-      result="$(jq -r --arg platform "$platform" '
+      result="$(jq -r --arg platform "$platform" --arg stale "$reason" '
         .results[$platform] as $tests
         | if $tests == null then "failure\tdid not run"
-          else (if .status == "pass" then "success" else "failure" end) + "\t"
-               + "\($tests.passed | length) of "
-               + "\($tests.passed + $tests.failed + $tests.skipped | length) passed"
-               + (if .status == "pass" then ""
-                  else " — " + ([.reasons[]? | select(startswith($platform + ": ")
-                                                      or (test("^[a-z]+: ") | not))][0]
-                                 // .status) end) end' "$(run_e2e_record "$run")")" || return 1
+          else ($tests.outcome // (if .status == "pass" then "pass" else "red" end)) as $outcome
+          | if $outcome == "environment" then
+              "pending\tcould not run: "
+              + ([.environment[]? | select(startswith($platform + ": "))
+                  | ltrimstr($platform + ": ")][0]
+                 // "the device or a tool was not there")
+              + " — to be repeated"
+            else
+              (if $outcome == "pass" and $stale == "" then "success" else "failure" end) + "\t"
+              + "\($tests.passed | length) of "
+              + "\($tests.passed + $tests.failed + $tests.skipped | length) passed"
+              + (if $outcome != "pass" then
+                   " — " + ([.reasons[]? | select(startswith($platform + ": ")
+                                                  or (test("^[a-z]+: ") | not))][0]
+                            // .status)
+                 elif $stale != "" then " — " + $stale
+                 else "" end) end end' "$(run_e2e_record "$run")")" || return 1
       post_status "$HEAD_COMMIT" "loop/e2e-$platform" "${result%%$'\t'*}" "${result#*$'\t'}" \
         || return 1
     done
   fi
 
-  # loop/review: M1 to M4 of the merge.
+  # loop/review: the review's part of M1 to M4 of the merge, its own whatever the end-to-end
+  # tests came to; they have their statuses above, and the merge asks for them too (M1, M2).
   if [ -z "$run" ]; then
     state=pending; text="not checked by the loop yet"
-  elif [ "$(run_result "$run")" = "gates red" ] || \
-       [ "$(run_result "$run")" = "end-to-end tests red" ] || \
-       [ "$(run_result "$run")" = "no end-to-end harness" ]; then
-    state=failure; text="checks were red: $(run_result "$run")"
+  elif [ "$(run_result "$run")" = "gates red" ]; then
+    state=failure; text="checks were red: gates red"
   else
-    reason="$(why_not run_is_complete "$run")"
+    reason="$(why_not run_review_is_complete "$run")"
     [ -n "$reason" ] || \
       reason="$(why_not run_reviewed_this_tree "$run" "$TASK_FILE" "$fingerprint")"
-    [ -n "$reason" ] || reason="$(why_not run_e2e_passed "$run" "$fingerprint")"
     [ -n "$reason" ] || reason="$(why_not run_has_no_findings "$run")"
     if [ -n "$reason" ]; then
       state=failure; text="$reason"

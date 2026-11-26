@@ -1121,9 +1121,9 @@ Use hooks for invariants, never for logic:
 - [ ] Rounds go on while each accepts fewer findings; an oscillation stop
 - [ ] Landing passes all eight conditions or fails loudly; at `pr` and `merge`, the commit contract
       before the review and the merge contract, M1–M10, before the merge
-- [ ] At `pr` and `merge` the review, the end-to-end tests and `/qa` run on the pull request and
-      post there; before the merge every finding handed over has its answer there, and every
-      person's comment is fixed or decided by the user
+- [ ] At `pr` and `merge` the review, the end-to-end tests beside it and `/qa` run on the pull
+      request and post there; before the merge every finding handed over has its answer there, and
+      every person's comment is fixed or decided by the user
 - [ ] Missing or malformed pipeline output fails closed, never as "nothing found"
 - [ ] `lib/selftest.sh` passes after any change to `review.sh`, `land.sh`, `publish.sh`,
       `pr-post.sh`, the schemas or the output contract — it is the only run of the validation that
