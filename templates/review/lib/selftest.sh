@@ -6923,6 +6923,23 @@ pr_review_quietly
 qa_checked
 publish "and the merge does not wait for it" 0 "merged T-001" --merge
 
+# Back online, publish.sh --merge asked before plain publish.sh: M1 sends the loop to
+# publish.sh alone, which sends what is owed in its order.
+offline_project
+reviewed_pull_request merge
+go_offline
+pr_work
+pr_land "a landing here before a merge is asked" 4 "publishing is owed"
+pr_review_quietly
+go_online
+publish "a merge asked first back online is refused by M1" 3 \
+  "M1: $(basename "$run") is not posted on https://example.test/pull/1 — publish.sh alone \
+sends it, with everything owed, in order" --merge
+never_says "it does not send the loop to pr-post.sh run" "pr-post.sh run" "$WORK/publish.log"
+publish "publish.sh alone, as M1 says, sends it" 0 "sent: the review of $run"
+qa_checked
+publish "and then the merge goes" 0 "merged T-001" --merge
+
 offline_project
 reviewed_pull_request merge
 go_offline

@@ -500,7 +500,8 @@ run_reviewed_this_tree "$RUN" "$TASK_FILE" "$FINGERPRINT"
   refuse M1 "$(basename "$RUN") reviewed the change from another merge base than $MERGE_BASE "\
 "— review again"
 jq -e --arg url "$PR_URL" '.pr_url == $url' "$RUN/pr-review.json" >/dev/null 2>&1 || \
-  refuse M1 "$(basename "$RUN") is not posted on $PR_URL — pr-post.sh run $RUN posts it"
+  refuse M1 "$(basename "$RUN") is not posted on $PR_URL — publish.sh alone sends it, with "\
+"everything owed, in order"
 run_e2e_passed "$RUN" "$FINGERPRINT"
 run_has_no_findings "$RUN"
 run_escalations_answered "$RUN"
