@@ -1565,15 +1565,20 @@ qa_asks() {
 
 # 1. The run directory is a completed review run. Missing files must never read as "nothing
 #    was found" — that would let any empty directory authorise a commit.
-#    The end-to-end tests may have run in a repeat of them alone (run_e2e_record).
-run_is_complete() {
+#    The end-to-end tests may have run in a repeat of them alone (run_e2e_record). The
+#    review's own files are run_review_is_complete: the review's status on the pull request
+#    asks for those alone, since the review is made whatever the tests come to.
+run_review_is_complete() {
   local run="$1" artifact
   for artifact in meta.json verdicts.json approved.json escalated.json; do
     [ -f "$run/$artifact" ] || \
       refuse 1 "$run has no $artifact — this is not a completed review run"
   done
-  [ -f "$(run_e2e_record "$run")" ] || \
-    refuse 1 "$run has no e2e.json — this is not a completed review run"
+}
+run_is_complete() {
+  run_review_is_complete "$1"
+  [ -f "$(run_e2e_record "$1")" ] || \
+    refuse 1 "$1 has no e2e.json — this is not a completed review run"
 }
 
 # 2. The run reviewed THIS tree, for THIS task. Any edit since the review — including the fix
@@ -1600,7 +1605,7 @@ run_reviewed_this_tree() {
 #    the harness is in the reviewed diff and lands with the task. What is read is the newest
 #    try of the run's tests, a repeat of them on the same work included (run_e2e_record).
 run_e2e_passed() {
-  local run="$1" fingerprint="$2" platforms_now harness_now record
+  local run="$1" fingerprint="$2" platforms_now record
   record="$(run_e2e_record "$run")"
   platforms_now="$(platforms | jq -R . | jq -sc .)"
   jq -e --arg fingerprint "$fingerprint" --argjson need "$platforms_now" \
@@ -1608,12 +1613,19 @@ run_e2e_passed() {
     "$record" >/dev/null 2>&1 || \
     refuse 3 "the end-to-end tests of this run did not pass on every platform the tree ships: "\
 "$(printf '%s' "$platforms_now" | jq -r 'join(" ")')"
+  run_e2e_checked_now "$run"
+}
 
-  # The harness is `.review/e2e.sh` and any `.review/e2e-*` it calls: each must be now as it
-  # ran (recorded before the run), and `.review/e2e.sh` must be there.
+# The half of condition 3 that a platform's own tests answer to as well, whatever the other
+# platforms came to: the harness is `.review/e2e.sh` and any `.review/e2e-*` it calls, each
+# now as it ran (recorded before the run), `.review/e2e.sh` there; and every mark of
+# qa/test-cases.md was one the run was checked against.
+run_e2e_checked_now() {
+  local run="$1" harness_now
   harness_now="$(harness_blobs)"
   case "$harness_now" in *" .review/e2e.sh"*) ;; *) harness_now="" ;; esac
-  [ -n "$harness_now" ] && [ "$(jq -r '.harness // ""' "$record")" = "$harness_now" ] || \
+  [ -n "$harness_now" ] && \
+    [ "$(jq -r '.harness // ""' "$(run_e2e_record "$run")")" = "$harness_now" ] || \
     refuse 3 ".review/e2e.sh, or a .review/e2e-* beside it, is not as it ran — review again"
   marks_checked_by_run "$run"
 }

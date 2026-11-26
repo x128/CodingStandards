@@ -3311,6 +3311,12 @@ status_is() {
     '[.[] | select(.sha == $sha and .context == $context)] | last | .state // "none"' \
     "$GH_STATE/statuses.json")" = "$2" ]
 }
+# Whether the newest status of a context at HEAD says a text.
+status_says() {
+  jq_true --arg sha "$(git rev-parse HEAD)" --arg context "$1" --arg text "$2" \
+    '[.[] | select(.sha == $sha and .context == $context)] | last | .description
+     | contains($text)' "$GH_STATE/statuses.json"
+}
 posted() { jq_true --arg text "$1" 'any(.[]; .body | contains($text))' \
   "$GH_STATE/comments.json" >/dev/null; }
 posted_count_is() {
@@ -4036,6 +4042,44 @@ pr_review "the next run on the pull request repeats only the tests" 0 \
   "this work is reviewed already"
 holds "and posts the statuses again: the tests show green" status_is loop/e2e-app success
 holds "with no second review on the pull request" posted_count_is "<!-- loop:review " 1
+
+# On the pull request the review's status is its own: the end-to-end tests have theirs, and
+# what they came to holds the merge, not the review.
+published_project origin
+land_change "a pull request for the statuses of its review and its tests" 0 \
+  "pull request: https://example.test/pull/1" pr
+E2E_ONLY=none E2E_EXIT=75 pr_review \
+  "a run whose tests could not run shows the review green and the tests pending" 75 \
+  "E2E COULD NOT RUN"
+holds "it shows the review green" status_is loop/review success
+holds "and the tests pending" status_is loop/e2e-app pending
+holds "the pending tests say why, and that they are to be repeated" status_says loop/e2e-app \
+  "could not run: .review/e2e.sh says the device or a tool was not there (exit 75), twice — to be repeated"
+publish "the merge waits for the tests all the same" 3 "M2:" --check
+pr_review "the repeat turns them green with no second review" 0 \
+  "this work is reviewed already"
+holds "the repeat shows the tests green" status_is loop/e2e-app success
+holds "and the review still green" status_is loop/review success
+holds "one review is posted" posted_count_is "<!-- loop:review " 1
+mkdir -p qa && printf '# Test cases\n\n- **TC-001 Answer.** It shows 42. — e2e: `AnswerE2E.later`\n' \
+  >qa/test-cases.md
+pr_post "the statuses after a mark is written that the run was not checked against" 0 \
+  "statuses posted" statuses
+holds "a mark the run was not checked against fails the tests' status" \
+  status_is loop/e2e-app failure
+holds "and says which" status_says loop/e2e-app "names end-to-end tests this run was not checked against"
+holds "the review's status stays its own" status_is loop/review success
+rm -r qa
+pr_work
+pr_land "new work on the pull request whose tests will be red" 0 "landed T-001"
+E2E_XML="$(xml shows42=failed starts)" pr_review \
+  "red tests fail their own status, not the review's" 2 "E2E RED"
+holds "the review of red tests shows green" status_is loop/review success
+holds "and the red tests fail" status_is loop/e2e-app failure
+mv "$run/e2e.json" "$WORK/e2e.kept.json"
+pr_post "the statuses of a reviewed run whose tests left no record" 0 "statuses posted" statuses
+holds "show its review by the review alone" status_is loop/review success
+mv "$WORK/e2e.kept.json" "$run/e2e.json"
 
 published_project origin
 printf 'fun util() = 1\n' >src/util.kt
