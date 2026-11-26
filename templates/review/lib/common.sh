@@ -799,13 +799,35 @@ review_runs_on() {
   done
 }
 
+# The tries of a run's end-to-end tests, oldest first, one e2e.json a line: the run's own,
+# then each repeat. A run on work whose review is made and whose tests have not passed
+# repeats only the tests (review.sh), each time into a folder of its own beside the run's
+# files, <run>/e2e-again/<n>, numbered from 1, and never rewrites the run's own e2e.json:
+# the landing's condition on a /qa failure reads each try as a record of its own
+# (qa_failures_proven).
+# run_e2e_record <run> is the newest try, what the tests came to; with none it names the
+# run's own e2e.json, which is then not there.
+run_e2e_tries() {
+  local number
+  [ ! -f "$1/e2e.json" ] || printf '%s\n' "$1/e2e.json"
+  [ -d "$1/e2e-again" ] || return 0
+  for number in $(ls "$1/e2e-again" | grep -E '^[0-9]+$' | sort -n); do
+    [ ! -f "$1/e2e-again/$number/e2e.json" ] || printf '%s\n' "$1/e2e-again/$number/e2e.json"
+  done
+}
+run_e2e_record() {
+  local newest
+  newest="$(run_e2e_tries "$1" | tail -1)"
+  printf '%s' "${newest:-$1/e2e.json}"
+}
+
 # What a review run came to, in a few words: the review's words, and after them, when the
 # run made a review and its end-to-end tests are not green, what they came to. A run that
 # made no review says what ended it: a run of the master's scripts ended at red end-to-end
 # tests or at a missing harness before its review.
 run_result() {
   local run="$1" status
-  status="$(jq -r '.status // ""' "$run/e2e.json" 2>/dev/null)"
+  status="$(jq -r '.status // ""' "$(run_e2e_record "$run")" 2>/dev/null)"
   if [ ! -f "$run/gates.json" ]; then
     echo "did not finish"
   elif jq -e 'any(.[]; .status == "fail" and .blocking != false)' "$run/gates.json" \
@@ -952,14 +974,16 @@ def parsed: if . == "" then null else (try fromjson catch null) end;
 # output of each failing blocking gate, or the reasons of e2e.json, sorted, each with its
 # digits taken out, so that two runs that end the same way but for a time or a count have
 # one digest. A run that ended in an error has none: two errors at one stage may be two
-# errors. A meta.json that cannot be read fails the whole call and says which: it must
-# never read as "no run". task_run_json <run-dir> gives one run. task_runs_json <id>
-# [<landed-at>] gives the runs made after a landing of the id committed (task_landed_at),
-# every run of the id without it.
+# errors. The e2e.json read is the newest try of the run's tests (run_e2e_record): a repeat
+# on reviewed work is no run of its own. A meta.json that cannot be read fails the whole
+# call and says which: it must never read as "no run". task_run_json <run-dir> gives one
+# run. task_runs_json <id> [<landed-at>] gives the runs made after a landing of the id
+# committed (task_landed_at), every run of the id without it.
 task_run_json() {
-  local run="$1" entry same
+  local run="$1" entry same e2e
   local approved="$1/approved.json" escalated="$1/escalated.json" gates="$1/gates.json"
-  local e2e="$1/e2e.json" findings="$1/findings.json" quote_lines="$1/quote-lines.json"
+  local findings="$1/findings.json" quote_lines="$1/quote-lines.json"
+  e2e="$(run_e2e_record "$1")"
   [ -f "$approved" ] || approved=/dev/null
   [ -f "$escalated" ] || escalated=/dev/null
   [ -f "$gates" ] || gates=/dev/null
@@ -1541,12 +1565,15 @@ qa_asks() {
 
 # 1. The run directory is a completed review run. Missing files must never read as "nothing
 #    was found" — that would let any empty directory authorise a commit.
+#    The end-to-end tests may have run in a repeat of them alone (run_e2e_record).
 run_is_complete() {
   local run="$1" artifact
-  for artifact in meta.json verdicts.json approved.json escalated.json e2e.json; do
+  for artifact in meta.json verdicts.json approved.json escalated.json; do
     [ -f "$run/$artifact" ] || \
       refuse 1 "$run has no $artifact — this is not a completed review run"
   done
+  [ -f "$(run_e2e_record "$run")" ] || \
+    refuse 1 "$run has no e2e.json — this is not a completed review run"
 }
 
 # 2. The run reviewed THIS tree, for THIS task. Any edit since the review — including the fix
@@ -1570,13 +1597,15 @@ run_reviewed_this_tree() {
 # 3, end-to-end half. The run's end-to-end tests passed on this tree, on every platform the
 #    tree ships, through the harness as it is now. Only files are read: the devices ran in
 #    review.sh, and condition 2 binds that run to this tree, the harness included: a change to
-#    the harness is in the reviewed diff and lands with the task.
+#    the harness is in the reviewed diff and lands with the task. What is read is the newest
+#    try of the run's tests, a repeat of them on the same work included (run_e2e_record).
 run_e2e_passed() {
-  local run="$1" fingerprint="$2" platforms_now harness_now
+  local run="$1" fingerprint="$2" platforms_now harness_now record
+  record="$(run_e2e_record "$run")"
   platforms_now="$(platforms | jq -R . | jq -sc .)"
   jq -e --arg fingerprint "$fingerprint" --argjson need "$platforms_now" \
     '.status == "pass" and .fingerprint == $fingerprint and (($need - .platforms) | length) == 0' \
-    "$run/e2e.json" >/dev/null 2>&1 || \
+    "$record" >/dev/null 2>&1 || \
     refuse 3 "the end-to-end tests of this run did not pass on every platform the tree ships: "\
 "$(printf '%s' "$platforms_now" | jq -r 'join(" ")')"
 
@@ -1584,7 +1613,7 @@ run_e2e_passed() {
   # ran (recorded before the run), and `.review/e2e.sh` must be there.
   harness_now="$(harness_blobs)"
   case "$harness_now" in *" .review/e2e.sh"*) ;; *) harness_now="" ;; esac
-  [ -n "$harness_now" ] && [ "$(jq -r '.harness // ""' "$run/e2e.json")" = "$harness_now" ] || \
+  [ -n "$harness_now" ] && [ "$(jq -r '.harness // ""' "$record")" = "$harness_now" ] || \
     refuse 3 ".review/e2e.sh, or a .review/e2e-* beside it, is not as it ran — review again"
   marks_checked_by_run "$run"
 }
@@ -1594,11 +1623,12 @@ run_e2e_passed() {
 # written since the run names a test no run has seen pass. land.sh checks it again after the
 # gates, which run between here and the commit.
 marks_checked_by_run() {
-  local run="$1" now unchecked
+  local run="$1" now unchecked record
+  record="$(run_e2e_record "$run")"
   now="$(case_marks | marks_json)" || refuse 3 "could not read the marks of qa/test-cases.md"
   unchecked="$(jq -r --argjson now "$now" \
-    '$now - (.marks // []) | map("\(.case) \(.test)") | join(", ")' "$run/e2e.json")" || \
-    refuse 3 "$run/e2e.json is unreadable"
+    '$now - (.marks // []) | map("\(.case) \(.test)") | join(", ")' "$record")" || \
+    refuse 3 "$record is unreadable"
   [ -z "$unchecked" ] || \
     refuse 3 "qa/test-cases.md names end-to-end tests this run was not checked against: "\
 "$unchecked — review again before landing"
@@ -1676,13 +1706,15 @@ criteria_verified() {
 #    - the user answered it: proven. The loop never asks for that answer.
 #    - it has no marked test now and a run of the task recorded one for it: the mark was
 #      taken off a failing case, and nothing proves it.
-#    - it has a marked test: that test failed in a run of this task made after /qa recorded
-#      the failure, and passes in this run, or is skipped in it under a tag of the case for
+#    - it has a marked test: that test failed in a try of another run of this task made
+#      after /qa recorded the failure — the run's own or a repeat's (run_e2e_tries) —, and
+#      passes in the newest try of this run, or is skipped in it under a tag of the case for
 #      the task it belongs to — and the words of the case are those the newest /qa that
 #      failed it failed it with (cases.json beside its record, kept by pr-post.sh qa), or,
-#      where none was kept, those the oldest such red run recorded (cases in its e2e.json;
+#      where none was kept, those the oldest such red try recorded (cases in its e2e.json;
 #      a run made before they were recorded is not compared): a case reworded since /qa
-#      failed it proves nothing. A pass of /qa never stands in for a case that has a test.
+#      failed it proves nothing. A test red and then green in tries of this run proves no
+#      fix. A pass of /qa never stands in for a case that has a test.
 #    - it has no test and says why none can see it (case_manual): the newest /qa record of
 #      the task with items of the case passed them all — and among them each item of the
 #      case that failed in the failing record (`TC-nnn on <platform>`): a pass on another
@@ -1715,21 +1747,29 @@ qa_failures_proven() {
     [ -z "$still" ] || refuse 7 "the end-to-end test of $still"
   done
 
-  runs="$(for record in .review/runs/*/e2e.json; do
-      [ -f "$record" ] || continue
-      jq -c --arg run "${record%/e2e.json}" '. + {run: $run}' "$record" || exit 1
+  # Every try of every run, each a record of its own: the run's e2e.json and each repeat's.
+  # A try of the run that is landed is never the red side (`landed`).
+  runs="$(for folder in .review/runs/*/; do
+      folder="${folder%/}"
+      run_e2e_tries "$folder" | while IFS= read -r record; do
+        jq -c --arg run "${record#.review/runs/}" --arg folder "$(basename "$folder")" \
+          --arg landed "$(basename "$run")" \
+          '. + {run: ($run | sub("/e2e.json$"; "")), landed: ($folder == $landed)}' \
+          "$record" || exit 1
+      done || exit 1
     done | jq -sc --arg id "$task_id" '[.[] | select(.task == $id)
-      | {run, time: (.time // 0), qa: (.qa_failures // []), failed: [.results[]?.failed[]?],
-         marks: (.marks // []), cases: (.cases // {})}]')" || \
+      | {run, landed, time: (.time // 0), qa: (.qa_failures // []),
+         failed: [.results[]?.failed[]?], marks: (.marks // []), cases: (.cases // {})}]')" || \
     refuse 7 "an e2e.json is unreadable — refusing to read it as no failures"
   failures="$(jq -nc --argjson records "$records" --argjson runs "$runs" \
     '[$records[].failures[].case] + [$runs[].qa[]] | unique')" || \
     refuse 7 "could not gather the /qa failures of $task_id"
-  # A run that never got as far as its end-to-end tests saw nothing pass.
+  # A run that never got as far as its end-to-end tests saw nothing pass. What passed is
+  # the newest try of the run's tests, a repeat of them included (run_e2e_record).
   now='{"passed": [], "skipped": []}'
-  if [ -f "$run/e2e.json" ]; then
+  if [ -f "$(run_e2e_record "$run")" ]; then
     now="$(jq -c '{passed: [.results[]?.passed[]?], skipped: [.results[]?.skipped[]?]}' \
-      "$run/e2e.json")" || refuse 7 "$run/e2e.json is unreadable"
+      "$(run_e2e_record "$run")")" || refuse 7 "$(run_e2e_record "$run") is unreadable"
   fi
   # Only the user's answer counts, and only one that lets the task land: `fixed` means review
   # again (maintain, step 7).
@@ -1772,13 +1812,12 @@ qa_failures_proven() {
       elif ($tests | length) > 0 then
         [$tests[] | select(. as $mark | ($mark.test | among($now.passed))
                            or ($mark.tagged and ($mark.test | among($now.skipped))))] as $green
-        | ([$runs[] | select((.qa | index($case)) != null)
+        | ([$runs[] | select((.landed | not) and (.qa | index($case)) != null)
             | select(. as $run | any($green[]; .test | among($run.failed)))]
            | sort_by(.time)) as $reds
         | ($kept[$case]
            // ([$reds[] | select(.cases[$case] != null)] | first
-               | if . == null then null
-                 else {digest: .cases[$case], run: (.run | split("/") | last)} end)) as $said
+               | if . == null then null else {digest: .cases[$case], run} end)) as $said
         | if ($reds | length) == 0 then "unproven"
           elif $said != null and $digests[$case] != null and $said.digest != $digests[$case]
             then "words \($said.run)"

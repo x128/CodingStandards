@@ -118,15 +118,16 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    what `land.sh` will commit; `--base <ref>` is for a final pass over a finished branch. Exit
    codes: `0` clean, `2` checks red — the gates, with no review, or the end-to-end tests, with one
    —, `3` accepted findings remain, `4` escalations, `5` review unusable (re-run; not clean), `75`
-   the environment, not the work: the end-to-end tests could not run — the review is made, `6`
-   nothing ran: the script stopped the task and says what it read in its runs, `1` pipeline error.
-   Note the run directory it prints; landing needs the last one. On `6` do what its last line says.
-   On `75` bring the device back if you can and run again: it is no failure of the work. With `3` or
-   `4` the run also says when its end-to-end tests did not pass: fix both in one round. `review.sh`
-   stops at `ASK_AFTER_RUNS` reviews of the task (5 unless `.review/land.conf` says otherwise) —
-   reviews: a run that ended before its review is not counted, and as many of those in a row stop
-   the task too — and at any count when it reads a circle: a finding accepted at the same place in
-   three reviews in a row, each after a change of the work, a case that failed in three `/qa`, each
+   the environment, not the work: the end-to-end tests could not run — the review is made, and the
+   next run on the same work repeats only the tests, `6` nothing ran: the script stopped the task
+   and says what it read in its runs, `1` pipeline error. Note the run directory it prints; landing
+   needs the last one. On `6` do what its last line says. On `75` bring the device back if you can
+   and run again: it is no failure of the work and counts no review. With `3` or `4` the run also
+   says when its end-to-end tests did not pass: fix both in one round. `review.sh` stops at
+   `ASK_AFTER_RUNS` reviews of the task (5 unless `.review/land.conf` says otherwise) — reviews: a
+   run that ended before its review is not counted, and as many of those in a row stop the task
+   too — and at any count when it reads a circle: a finding accepted at the same place in three
+   reviews in a row, each after a change of the work, a case that failed in three `/qa`, each
    on other work, or three runs in a row that ended the same way. At the count it prints how many
    findings each review accepted and whether one came back after its fix. `The loop goes on`:
    reviews that found different things, each fixed, are no question — run again with `--past-limit`,

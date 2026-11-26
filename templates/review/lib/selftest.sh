@@ -482,6 +482,8 @@ rm .git/hooks/pre-commit
 # The end-to-end tests. They run after the review, whatever they come to, and only a
 # harness file that is not there ends a run before it. Each review here has no findings,
 # so it ends CLEAN unless the end-to-end tests did not pass; the run it made is $last_run.
+# Each is a review, though the work is the same: --again (a run on reviewed work repeats
+# only its end-to-end tests, e2e_repeat below).
 printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
 printf '{"findings":[]}' >"$WORK/reviewer.json"
 printf '{"verdicts":[]}' >"$WORK/maintainer.json"
@@ -490,7 +492,7 @@ e2e_review() {
   runs_listed="$(ls .review/runs)"
   REVIEWER_CMD="touch $WORK/reviewer-ran; cat $WORK/reviewer.json #" \
     MAINTAINER_CMD="cat $WORK/maintainer.json #" \
-    "$LIB_DIR/review.sh" --task-file "$task_file" >"$WORK/run.log" 2>&1
+    "$LIB_DIR/review.sh" --task-file "$task_file" --again >"$WORK/run.log" 2>&1
   review_exit=$?
   check "$name" "$expected_exit" "$expected_line" "$review_exit" "$WORK/run.log"
   last_run=".review/runs/$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs))"
@@ -630,6 +632,268 @@ says "and its last line says both" "── also: the end-to-end tests of this ru
 "(above); the task lands only once they do." "$WORK/run.log"
 printf '{"findings":[]}' >"$WORK/reviewer.json"
 printf '{"verdicts":[]}' >"$WORK/maintainer.json"
+rm -f "$WORK/reviewer-ran"
+
+# A run on work whose review is made and whose end-to-end tests have not passed repeats only
+# the tests: no review, no run folder, no count. Each run of e2e_review above is a review all
+# the same (--again), since each gives the gate another report on the same work.
+# e2e_repeat <name> <exit> <line> <task-file> [flags] runs review.sh as the loop does;
+# $new_runs is how many run folders it made. record_holds <name> <file> <jq filter>.
+e2e_repeat() {
+  local name="$1" expected_exit="$2" expected_line="$3" task_file="$4" runs_listed
+  shift 4
+  runs_listed="$(ls .review/runs)"
+  REVIEWER_CMD="touch $WORK/reviewer-ran; cat $WORK/reviewer.json #" \
+    MAINTAINER_CMD="cat $WORK/maintainer.json #" \
+    "$LIB_DIR/review.sh" --task-file "$task_file" "$@" >"$WORK/run.log" 2>&1
+  check "$name" "$expected_exit" "$expected_line" $? "$WORK/run.log"
+  new_runs="$(comm -13 <(printf '%s\n' "$runs_listed") <(ls .review/runs) | grep -c .)"
+}
+record_holds() {
+  if [ "$(jq -r "$3" "$2" 2>/dev/null)" = true ]; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: «$3» does not hold in $2 — it follows"
+    sed 's/^/      /' "$2" 2>/dev/null
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+runs_made() {
+  if [ "$new_runs" -eq "$2" ]; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: the run made $new_runs run folder(s), not $2"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+for task_id in T-100 T-101; do
+  printf '{"id": "%s", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' "$task_id" >".review/$task_id.json"
+  mkdir -p ".review/runs/0-qa-$task_id"
+  printf '{"task": "%s", "failures": []}' "$task_id" >".review/runs/0-qa-$task_id/qa.json"
+done
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "the first run on new work makes its review" 75 "E2E COULD NOT RUN" \
+  .review/T-100.json
+reviewer_ran "its reviewer ran"
+repeated="$(newest_run)"
+count_before="$(jq '.count' "$repeated/meta.json")"
+: >"$WORK/e2e-calls"
+E2E_TOUCH="$WORK/e2e-calls" \
+  e2e_repeat "the next run on the same work repeats only the tests" 0 \
+  "── this work is reviewed already ($(basename "$repeated"): clean; the end-to-end tests could "\
+"not run): only its end-to-end tests run again" .review/T-100.json
+reviewer_ran "it makes no review" not
+runs_made "it makes no run folder" 0
+says "the tests ran once" "── e2e: pass" "$WORK/run.log"
+says "it says that the review stands and that none was made" "REPEATED — only the end-to-end "\
+"tests of $(basename "$repeated") ran again; its review stands: clean. No review was made, and "\
+"none is counted." "$WORK/run.log"
+record_holds "such a repeat counts no review" "$repeated/meta.json" \
+  ".count == $count_before and .end == \"clean\" and .exit == 0"
+if [ "$(newest_run)" = "$repeated" ]; then
+  echo "ok    one meta.json stands for the work"
+else
+  echo "FAIL  one meta.json stands for the work: the newest run is $(newest_run)"
+  FAILURES=$((FAILURES + 1))
+fi
+record_holds "the repeat leaves the run's own record of its tests as it was" \
+  "$repeated/e2e.json" '.status == "environment"'
+record_holds "and records its own beside it" "$repeated/e2e-again/1/e2e.json" '.status == "pass"'
+e2e_check "after the repeat /qa reads what the tests came to last" 0 "check exited 0"
+e2e_land "and the run then lands" 0 "For the user to commit" .review/T-100.json "$repeated"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "work whose tests passed is reviewed again, as before" 2 "E2E RED" \
+  .review/T-100.json
+reviewer_ran "so its reviewer ran"
+red_run="$(newest_run)"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "red tests on the same work are repeated the same way" 2 \
+  "this work is reviewed already" .review/T-100.json
+reviewer_ran "the repeat of red tests makes no review" not
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "a third red try on the same work runs" 2 "E2E RED" .review/T-100.json
+: >"$WORK/e2e-calls"
+E2E_TOUCH="$WORK/e2e-calls" E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "a fourth red try on the same work is stopped" 6 "STOPPED — the end-to-end tests "\
+"of T-100 were red in 3 tries in a row on the same work ($(basename "$red_run")); nothing ran." \
+  .review/T-100.json
+says "it names what failed" "   app: failed: AnswerE2E.shows42" "$WORK/run.log"
+says "a retry of red tests is the loop's, and does not mend them" \
+  "   The loop goes on: a retry does not mend it" "$WORK/run.log"
+never_says "and is no question" "For the user" "$WORK/run.log"
+if [ ! -s "$WORK/e2e-calls" ]; then
+  echo "ok    at that stop no test ran"
+else
+  echo "FAIL  at that stop no test ran: the harness ran"
+  FAILURES=$((FAILURES + 1))
+fi
+e2e_repeat "--past-limit there needs the loop's reason" 1 "needs --because" .review/T-100.json \
+  --past-limit
+e2e_repeat "and takes no decision of the user" 1 "--user-decided is for a stop that is the user's" \
+  .review/T-100.json --past-limit --user-decided
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "its reason lets it try once more" 2 "this work is reviewed already" \
+  .review/T-100.json --past-limit --because "the device was busy with another run"
+record_holds "the reason is kept with the repeat" "$red_run/e2e-again/3/past-limit.json" \
+  '.because == "the device was busy with another run" and .user_decided == null'
+record_holds "and not in the run's meta.json" "$red_run/meta.json" \
+  '.past_limit == false and .stop == null and .because == null and .user_decided == null'
+for attempt in second third; do
+  E2E_XML="$(xml shows42=failed starts)" \
+    e2e_repeat "a red try after the loop's reason runs ($attempt)" 2 "E2E RED" .review/T-100.json
+done
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "red tries on the same work after the loop's reason are the user's" 6 \
+  "NOT CONVERGING — the end-to-end tests of T-100 were red in 3 tries in a row on the same work "\
+"($(basename "$red_run")) after the loop's reason passed this stop; nothing ran." \
+  .review/T-100.json
+says "it says the reason that did not hold" \
+  "   the loop's reason then, which did not hold: the device was busy with another run" \
+  "$WORK/run.log"
+says "and that the work does not converge" "   For the user, the work does not converge:" \
+  "$WORK/run.log"
+e2e_repeat "there the loop's reason passes no more" 1 "this stop takes --user-decided" \
+  .review/T-100.json --past-limit --because "the device is free now"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "once the user decided to go on it tries once more" 2 \
+  "this work is reviewed already" .review/T-100.json --past-limit --user-decided
+record_holds "the repeat records that they decided, and no words" \
+  "$red_run/e2e-again/6/past-limit.json" '.user_decided == true and .because == null'
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "a decision of the user lets one try through" 6 "NOT CONVERGING" .review/T-100.json
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "--again reviews the same work again" 75 "E2E COULD NOT RUN" .review/T-100.json \
+  --again
+reviewer_ran "the reviewer ran on the same work"
+runs_made "and the run made a folder of its own" 1
+absent_run="$(newest_run)"
+for attempt in second third; do
+  E2E_ONLY=none E2E_EXIT=75 \
+    e2e_repeat "a try with no device on the same work runs ($attempt)" 75 \
+    "this work is reviewed already" .review/T-100.json
+done
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a device that stays away stops the repeat" 6 "STOPPED — the end-to-end tests of "\
+"T-100 could not run in 3 tries in a row on the same work ($(basename "$absent_run")); nothing "\
+"ran." .review/T-100.json
+says "and names no user: the loop restores it" "   The loop goes on: restore it" "$WORK/run.log"
+never_says "a device that stays away is no question" "For the user" "$WORK/run.log"
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "what the loop restored lets it try once more" 75 "this work is reviewed already" \
+  .review/T-100.json --past-limit --because "the emulator is booted again"
+for attempt in second third; do
+  E2E_ONLY=none E2E_EXIT=75 \
+    e2e_repeat "a try with no device after the loop's reason runs ($attempt)" 75 \
+    "this work is reviewed already" .review/T-100.json
+done
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a device still away after what the loop restored is the user's to bring" 6 \
+  "could not run in 3 tries in a row on the same work ($(basename "$absent_run")) after the "\
+"loop's reason passed this stop; nothing ran." .review/T-100.json
+says "only they can bring it" "   For the user, only they can:" "$WORK/run.log"
+E2E_XML='<testsuite tests="0"/>' \
+  e2e_repeat "a harness that ran no test" 1 "NO END-TO-END TEST RAN" .review/T-100.json --again
+no_test_run="$(newest_run)"
+for attempt in second third; do
+  E2E_XML='<testsuite tests="0"/>' \
+    e2e_repeat "a repeat that runs no test runs ($attempt)" 1 "this work is reviewed already" \
+    .review/T-100.json
+done
+E2E_XML='<testsuite tests="0"/>' \
+  e2e_repeat "repeats that run no test on the same work are bounded the same way" 6 \
+  "could not run in 3 tries in a row on the same work ($(basename "$no_test_run"))" \
+  .review/T-100.json
+says "it names what stopped them" "   app: the e2e run ran no test (exit 0)" "$WORK/run.log"
+cp src/answer.kt "$WORK/answer.kt"
+printf '// once more\n' >>src/answer.kt
+e2e_repeat "changed work is reviewed again" 0 "CLEAN — gates green" .review/T-100.json
+reviewer_ran "the reviewer ran on the changed work"
+runs_made "and the run of the changed work has a folder of its own" 1
+cp "$WORK/answer.kt" src/answer.kt
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=1\n' >.review/land.conf
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a task's one review whose tests could not run" 75 "E2E COULD NOT RUN" \
+  .review/T-101.json
+e2e_repeat "a task at its limit can still repeat its tests" 0 "this work is reviewed already" \
+  .review/T-101.json
+never_says "the limit of reviews does not stop the repeat" "LIMIT OF REVIEWS" "$WORK/run.log"
+for tries in 0 three; do
+  printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nE2E_TRIES=%s\n' "$tries" \
+    >.review/land.conf
+  e2e_repeat "an E2E_TRIES of '$tries' fails closed" 1 \
+    "E2E_TRIES in .review/land.conf must be a whole number from 1" .review/T-101.json
+done
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n' >.review/land.conf
+# The landing's condition on a /qa failure reads every try. Its green side is the newest try
+# of the run that is landed; its red side is every try of every other run of the task, the
+# run's own and each repeat's, each with its own time and its own words of the cases. A try
+# of the run that is landed is never the red side: red and then green on the same work
+# proves no fix.
+for task_id in T-103 T-104 T-105 T-106 T-107; do
+  printf '{"id": "%s", "title": "Answer 42", "category": "bugfix", "scope": ["src/*"], '\
+'"exit_criteria": []}' "$task_id" >".review/$task_id.json"
+  mkdir -p ".review/runs/0-qa-$task_id"
+  printf '{"task": "%s", "failures": [{"case": "TC-001"}]}' "$task_id" \
+    >".review/runs/0-qa-$task_id/qa.json"
+done
+cp src/answer.kt "$WORK/answer.kt"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "the test of a /qa failure is red before its fix" 2 \
+  "app: failed: AnswerE2E.shows42" .review/T-103.json
+printf '// the fix\n' >>src/answer.kt
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "the run of the fix whose own try could not run" 75 "E2E COULD NOT RUN" \
+  .review/T-103.json
+fixed_run="$(newest_run)"
+e2e_repeat "and whose repeat passes" 0 "REPEATED" .review/T-103.json
+e2e_land "a fix whose own try could not run and whose repeat passed lands" 0 \
+  "For the user to commit" .review/T-103.json "$fixed_run"
+cp "$WORK/answer.kt" src/answer.kt
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a run whose own try could not run" 75 "E2E COULD NOT RUN" .review/T-104.json
+same_run="$(newest_run)"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "the test of a /qa failure is red in its repeat" 2 \
+  "this work is reviewed already" .review/T-104.json
+e2e_repeat "and green in the next repeat on the same work" 0 "REPEATED" .review/T-104.json
+e2e_land "red, then green in tries of the run that is landed is not proven" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-001" \
+  .review/T-104.json "$same_run"
+printf '// the fix\n' >>src/answer.kt
+e2e_repeat "the fix is reviewed, and its test passes" 0 "CLEAN — gates green" \
+  .review/T-104.json
+e2e_land "a failure seen red only in a repeat of an earlier run, then green, lands" 0 \
+  "For the user to commit" .review/T-104.json "$(newest_run)"
+cp "$WORK/answer.kt" src/answer.kt
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a run of a case that is then reworded could not run" 75 "E2E COULD NOT RUN" \
+  .review/T-105.json
+red_run="$(newest_run)"
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "its test is red in the repeat" 2 "this work is reviewed already" \
+  .review/T-105.json
+sed 's/it shows 42\./it shows a number./' "$WORK/test-cases.md" >qa/test-cases.md
+printf '// the fix\n' >>src/answer.kt
+e2e_repeat "with the case reworded the fix is reviewed, and its test passes" 0 \
+  "CLEAN — gates green" .review/T-105.json
+e2e_land "a case reworded between a red repeat and the green run proves nothing" 3 \
+  "whose words changed since /qa failed it: TC-001 (as recorded in $(basename "$red_run")/"\
+"e2e-again/1)" .review/T-105.json "$(newest_run)"
+cp "$WORK/test-cases.md" qa/test-cases.md
+cp "$WORK/answer.kt" src/answer.kt
+E2E_ONLY=none E2E_EXIT=75 \
+  e2e_repeat "a run of another task with the same /qa failure could not run" 75 \
+  "E2E COULD NOT RUN" .review/T-106.json
+E2E_XML="$(xml shows42=failed starts)" \
+  e2e_repeat "and its test is red in the repeat" 2 "this work is reviewed already" \
+  .review/T-106.json
+printf '// the fix\n' >>src/answer.kt
+e2e_repeat "the fix in a task of its own passes" 0 "CLEAN — gates green" .review/T-107.json
+e2e_land "a red repeat of another task proves nothing" 3 \
+  "a /qa failure without an end-to-end test seen red, then green: TC-001" \
+  .review/T-107.json "$(newest_run)"
+cp "$WORK/answer.kt" src/answer.kt
 rm -f "$WORK/reviewer-ran"
 mkdir -p app/src/main app/App.xcodeproj
 printf '<category android:name="android.intent.category.LAUNCHER"/>\n' \
@@ -3759,6 +4023,19 @@ publish "at merge --merge merges" 0 "merged T-001: https://example.test/pull/1 i
 holds "with a squash" gh_called " --squash "
 holds "whose body carries the trailers" remote_log_has main "Task-Id: T-001"
 holds "and ends on the base branch" on_branch main
+
+# On the pull request, a run on reviewed work repeats only the end-to-end tests and posts
+# the statuses again.
+published_project origin
+land_change "a pull request whose tests will not run at first" 0 \
+  "pull request: https://example.test/pull/1" pr
+E2E_ONLY=none E2E_EXIT=75 \
+  pr_review "a review on the pull request whose tests could not run" 75 "E2E COULD NOT RUN"
+holds "its tests do not show green" not status_is loop/e2e-app success
+pr_review "the next run on the pull request repeats only the tests" 0 \
+  "this work is reviewed already"
+holds "and posts the statuses again: the tests show green" status_is loop/e2e-app success
+holds "with no second review on the pull request" posted_count_is "<!-- loop:review " 1
 
 published_project origin
 printf 'fun util() = 1\n' >src/util.kt
