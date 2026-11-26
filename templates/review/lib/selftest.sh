@@ -6572,6 +6572,31 @@ check "without curl nothing is guessed" 3 "the remote origin cannot be reached" 
 pr_land "a remote whose host gives no answer is told from one that refuses" 4 \
   "the remote origin gives no answer"
 never_says "it is not called unreachable" "cannot be reached" "$WORK/land.log"
+# curl's exit code decides, with a stand-in that exits $CURL_CODE: 35, a host that took the
+# connection and spoke no TLS (an ssh server on port 443), tells nothing; 6, 7 and 28 are a
+# host that gives no answer.
+mkdir -p "$WORK/curl-code-bin" || fail_setup "curl-code-bin"
+cat >"$WORK/curl-code-bin/curl" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$GH_STATE/curl-calls"
+exit "$CURL_CODE"
+EOF
+chmod +x "$WORK/curl-code-bin/curl" || fail_setup "curl-code"
+pr_work
+start="$(git rev-parse HEAD)"
+CURL_CODE=35 PATH="$WORK/curl-code-bin:$PATH" "$LIB_DIR/land.sh" --task-file .review/task.json \
+  >"$WORK/land.log" 2>&1
+check "a host that speaks no TLS tells nothing, and the refusal stays" 3 \
+  "the remote origin cannot be reached" $? "$WORK/land.log"
+never_says "it is not called a host that gives no answer" "gives no answer" "$WORK/land.log"
+holds "nothing is committed then" [ "$(git rev-parse HEAD)" = "$start" ]
+for code in 6 7 28; do
+  pr_work
+  CURL_CODE=$code PATH="$WORK/curl-code-bin:$PATH" "$LIB_DIR/land.sh" \
+    --task-file .review/task.json >"$WORK/land.log" 2>&1
+  check "curl's exit $code is a host that gives no answer" 4 \
+    "the remote origin gives no answer" $? "$WORK/land.log"
+done
 set_level merge BASE_BRANCH=main
 pr_work
 pr_land "and so it is where BASE_BRANCH is set" 4 "the remote origin gives no answer"

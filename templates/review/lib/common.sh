@@ -273,8 +273,9 @@ github_api_url() {
 }
 
 # Whether a host answers: 0 for an answer of any status, 75 when it gives none (no
-# proxy, no name, no connection, a timeout, no TLS, an empty reply, a connection that
-# broke), 1 when that cannot be told: an empty URL, no curl, any other failure.
+# proxy, no name, no connection, a timeout, an empty reply, a connection that broke), 1
+# when that cannot be told: an empty URL, no curl, no TLS where the connection was taken
+# (an ssh server on port 443), any other failure.
 host_answers() {
   local url="$1" status
   [ -n "$url" ] || return 1
@@ -283,7 +284,7 @@ host_answers() {
   status=$?
   case "$status" in
     0) return 0 ;;
-    5 | 6 | 7 | 28 | 35 | 52 | 56) return 75 ;;
+    5 | 6 | 7 | 28 | 52 | 56) return 75 ;;
     *) return 1 ;;
   esac
 }
