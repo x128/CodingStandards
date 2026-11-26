@@ -12,7 +12,9 @@
 #          platform: android, ios or app — what e2e-gate.sh finds in the tree
 # Writes:  JUnit XML of every end-to-end test of that platform into report-dir,
 #          which is empty when it starts — this run's results, nowhere else
-# Exit:    the exit code of the test command
+# Exit:    the exit code of the test command; 75 when the device or a tool the tests
+#          need is not there — nothing is known of the code then, and e2e-gate.sh
+#          tries the platform once more
 #
 # review.sh runs it through CodingStandards/templates/review/lib/e2e-gate.sh
 # after the gates. That script counts the tests in the XML and never trusts the
@@ -41,25 +43,31 @@ exit 1
 #
 #   case "$PLATFORM" in
 #     android)
-#       # A booted device is reused; otherwise one boots, for at most 240 s.
-#       if [ "$(adb get-state 2>/dev/null)" != device ]; then
+#       # A booted device is reused; otherwise one boots, for at most 240 s. With two
+#       # devices attached, the tests run on both.
+#       attached() { adb devices | awk 'NR > 1 && $2 == "device" { n++ } END { exit !n }'; }
+#       if ! attached; then
 #         emulator -avd "$E2E_AVD" -no-window -no-audio -no-boot-anim >/dev/null 2>&1 &
 #         for _ in $(seq 120); do
 #           [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = 1 ] && break
 #           sleep 2
 #         done
 #       fi
+#       attached || exit 75
 #       rm -rf androidApp/build/outputs/androidTest-results
 #       ./gradlew --console=plain :androidApp:connectedAndroidTest
 #       status=$?
+#       attached || exit 75   # it went away under the tests
 #       find androidApp/build/outputs/androidTest-results/connected -name '*.xml' \
 #         -exec cp {} "$REPORTS" \;
 #       exit "$status" ;;
 #     ios)
 #       udid="$(xcrun simctl list devices booted -j | jq -r '[.devices[][] | .udid][0] // empty')"
+#       [ -n "$udid" ] || exit 75
 #       xcodebuild test -project iosApp/{App}.xcodeproj -scheme {App} \
 #         -destination "id=$udid" -resultBundlePath "$REPORTS/r.xcresult"
 #       status=$?
+#       xcrun simctl list devices booted | grep -qF "$udid" || exit 75   # it went away
 #       xcrun xcresulttool get test-results tests --path "$REPORTS/r.xcresult" | jq -r '
 #         def cases($suite): if .nodeType == "Test Case" then {suite: $suite, name, result}
 #           else ((if .nodeType == "Test Suite" then .name else $suite end) as $s

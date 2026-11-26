@@ -211,10 +211,15 @@ otherwise `HEAD`. A gate may write one summary line — test counts, lint counts
 
 **Gates run before the reviewer and again at landing** — at the pull request levels at landing
 first, before the commit, then before the reviewer on the pull request. A red build means the
-reviewer never runs — send the executor back with the compiler output. After the gates `review.sh`
-runs the end-to-end tests through `.review/e2e.sh` on every platform the tree ships and counts them
-in its JUnit reports; red, it stops as on a red gate, and with no test that ran, or none that a case
-of `qa/test-cases.md` names once the file has a case, it refuses the run.
+reviewer never runs — send the executor back with the compiler output. The end-to-end tests are a
+check beside the review, not a condition of it: after the review `review.sh` runs them through
+`.review/e2e.sh` on every platform the tree ships and counts them in its JUnit reports. Whatever
+they come to, the review is made and stays, and the run's exit code and its last lines say both.
+Red, the run ends as on a red gate. With no test that ran, or none that a case of `qa/test-cases.md`
+names once the file has a case, it has no working harness; only a tree with no harness file at all
+stops there before the review. A harness that ends with exit 75 says the device or a tool was not
+there: nothing is known of the code, and the run exits 75. The task lands only once they pass
+(condition 3).
 
 **Gates must not modify the tree.** Use check modes (`--check`, `lint`), not
 formatters that rewrite files. `review.sh` compares the fingerprint immediately
@@ -421,7 +426,8 @@ round n: execute → gates → review → triage → accepted findings? → fix,
 
 - **Done** — gates green, no accepted `blocker`/`major`, no escalations.
 - **Another round** — accepted findings exist. The count is the `accepted (>= threshold)` line of
-  `review.sh`; a run that ended before review — exit 2, 5 or 1 — is not a round.
+  `review.sh`; a run that made no review — red gates, an unusable review, an error, a missing
+  harness — is not a round.
 - **Stop and find the cause** — a finding came back after its fix, a round accepted as many findings
   as the one before it or more, or a run ended the same way as the one before: another attempt of
   the same kind will not help.
