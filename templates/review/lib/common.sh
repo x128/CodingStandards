@@ -382,24 +382,38 @@ owed_replies() {
 #
 # owed_runs <task-id> <pr-url>: the review runs of the task that are not posted, oldest
 # first: no pr-review.json, and meta.json names the pull request, or says the run was made
-# offline and names none — then its head is HEAD or a commit HEAD holds, and it was made
-# after the task last landed with its review (task_landed_at).
+# offline and names none — then it was made after the task last landed with its review
+# (task_landed_at). Either way its head is HEAD or a commit HEAD holds: a run whose commit
+# is no commit of the branch any more (run_commit_gone, the branch was put together anew)
+# reviewed work that is gone, and nothing is posted for it.
 owed_runs() {
-  local task_id="$1" pr_url="$2" run head landed_at
+  local task_id="$1" pr_url="$2" run landed_at
   landed_at="$(task_landed_at "$task_id")"
   review_runs_of "$task_id" | while IFS= read -r run; do
     [ ! -f "$run/pr-review.json" ] || continue
     if [ -n "$pr_url" ] && json_holds --arg url "$pr_url" '.pr_url == $url' "$run/meta.json"
     then
-      printf '%s\n' "$run"
+      run_commit_gone "$run" || printf '%s\n' "$run"
       continue
     fi
     json_holds --argjson after "${landed_at:-0}" "$JQ_LANDED_SINCE"'
       .offline == true and .pr_url == null and landed_since($after)' "$run/meta.json" || continue
-    head="$(jq -r '.head // ""' "$run/meta.json" 2>/dev/null)"
-    [ -n "$head" ] && git merge-base --is-ancestor "$head" HEAD 2>/dev/null || continue
-    printf '%s\n' "$run"
+    run_commit_gone "$run" || printf '%s\n' "$run"
   done
+}
+
+# run_commit_gone <run>: the commit the run reviewed, its head, is not HEAD and no commit
+# HEAD holds, or the run names none.
+run_commit_gone() {
+  local head
+  head="$(jq -r '.head // ""' "$1/meta.json" 2>/dev/null)"
+  ! { [ -n "$head" ] && git merge-base --is-ancestor "$head" HEAD 2>/dev/null; }
+}
+
+# run_passed_over <run>: the run is not posted and its commit is gone, so nothing is posted
+# for it: not its review, not its answers, and the merge does not wait for it.
+run_passed_over() {
+  [ ! -f "$1/pr-review.json" ] && run_commit_gone "$1"
 }
 
 # owed_answers <run>: how many answers of the run — answers.json, and the answers to its
@@ -466,6 +480,7 @@ owed_to_github() {
   owed_runs "$task_id" "$pr_url" | sed 's/^/the review of /'
   { [ -z "$pr_url" ] || review_runs_on "$task_id" "$pr_url"
     owed_runs "$task_id" "$pr_url"; } | awk '!seen[$0]++' | while IFS= read -r run; do
+    ! run_passed_over "$run" || continue
     count="$(owed_answers "$run")"
     [ "${count:-0}" -eq 0 ] || printf '%s answer(s) of %s\n' "$count" "$run"
   done

@@ -6857,6 +6857,72 @@ publish "a branch that moved on the remote meanwhile is not overwritten" 1 \
   "the remote branch task/T-001 moved"
 holds "the remote keeps its commit" remote_is task/T-001 "$moved"
 
+# A landing and its review here; the remote branch moves meanwhile, and the branch is put
+# together anew by a rebase: the run reviewed a commit that is no commit of the branch any
+# more, and is passed over. Brought together by a merge, the commit stays one of the branch,
+# and its run is posted. put_together <rebase|merge>: the run is $apart_run.
+put_together() {
+  offline_project
+  reviewed_pull_request merge
+  go_offline
+  pr_work
+  pr_land "a landing here before the branch is put together by a $1" 4 "publishing is owed"
+  pr_review_quietly
+  apart_run="$run"
+  git -C "$GH_REMOTE" update-ref refs/heads/task/T-001 "$(git -C "$GH_REMOTE" commit-tree \
+    'refs/heads/task/T-001^{tree}' -p refs/heads/task/T-001 -m "T-001: from another copy" \
+    -m "Task-Id: T-001")"
+  go_online
+  git fetch -q origin || fail_setup "fetch"
+  case "$1" in
+    rebase) git rebase -q origin/task/T-001 ;;
+    merge) git merge -q -m "T-001: the branch brought together" -m "Task-Id: T-001" \
+             origin/task/T-001 ;;
+  esac >/dev/null 2>&1 || fail_setup "$1"
+}
+put_together rebase
+publish "a run whose commit left the branch is passed over" 0 \
+  "nothing more is owed to https://example.test/pull/1"
+says "with a line that says why" "the review of $apart_run is not sent: \
+$(jq -r '.head' "$apart_run/meta.json"), the commit it reviewed, is no commit of task/T-001 any \
+more, and nothing is posted for it" "$WORK/publish.log"
+holds "nothing is posted for it" not posted "<!-- loop:review $(basename "$apart_run") -->"
+holds "and the branch as it is now is pushed" remote_is task/T-001 "$(git rev-parse HEAD)"
+publish "the next publish.sh passes it over too" 0 "nothing more is owed to"
+put_together merge
+publish "a run whose commit is still one of the branch is posted" 0 \
+  "sent: the review of $apart_run"
+holds "it is posted once" posted_count_is "<!-- loop:review $(basename "$apart_run") -->" 1
+never_says "and is not passed over" "is not sent:" "$WORK/publish.log"
+# A run that is passed over is passed over whole: its answers are not owed either, and the
+# merge does not wait for it. The run here hands a finding over, the fix answers it, and the
+# commit it reviewed is then made anew.
+offline_project
+reviewed_pull_request merge
+go_offline
+pr_work
+pr_land "a landing here whose review finds something" 4 "publishing is owed"
+pr_review "its review hands a finding over" 3 "accepted (>= major): 1" \
+  "{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()')]}" \
+  "{\"verdicts\": [$(pr_verdict F-001 accept no-rule-fired)]}"
+apart_run="$run"
+printf '[{"finding_id": "F-001", "answer": "fixed", "text": "answer() is 42.", "commit": ""}]' \
+  >"$apart_run/answers.json"
+git commit -q --amend -m "T-001: the work, made anew" -m "Task-Id: T-001" || fail_setup "amend"
+publish "what is owed for a run whose commit left the branch is not listed" 75 \
+  "PUBLISHING WAITS FOR GITHUB"
+never_says "neither its review" "the review of $apart_run" "$WORK/publish.log"
+never_says "nor its answers" "answer(s) of $apart_run" "$WORK/publish.log"
+go_online
+publish "a run that is passed over owes no answers either" 0 \
+  "nothing more is owed to https://example.test/pull/1"
+says "the line says that nothing is posted for it" "the review of $apart_run is not sent: " \
+  "$WORK/publish.log"
+never_says "and no answer of it is sent" "answer(s) of $apart_run" "$WORK/publish.log"
+pr_review_quietly
+qa_checked
+publish "and the merge does not wait for it" 0 "merged T-001" --merge
+
 offline_project
 reviewed_pull_request merge
 go_offline
