@@ -48,7 +48,8 @@
 #      end-to-end test that ran, or no working harness — the review is made — or no
 #      harness file at all, before the review; at LANDING=pr and merge also work that
 #      is not committed, a pull request that is not at HEAD, or a run that could not be
-#      posted on it
+#      posted on it. When the remote or GitHub gives no answer at all, the run reviews here
+#      from the base as last fetched, keeps its own exit code and says what it owes GitHub
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
 # VERIFY CLI FLAGS against your installed versions before first use.
@@ -543,6 +544,12 @@ say_after_merge_unsettled "$REVIEW_DIR/land.conf"
 # request open at HEAD. Each refusal says whose turn it is. Its URL goes into no prompt
 # and into meta.json alone: the pull request holds what neither the reviewer nor the
 # executor may see. --dry-run reviews the uncommitted work, as at push.
+#
+# When the host of the remote, or GitHub, gives no answer at all (exit 75, common.sh), the
+# run is offline: it reviews here, from the base branch as last fetched and on the pull
+# request this copy last heard (last_heard_pull), or none; the state and the head of the
+# pull request are not asked. That HEAD is a commit of the task and that its work is
+# committed are checked as ever. Nothing is posted then, and the run says what it owes.
 pr_refuse() {
   echo "REVIEW REFUSED — $1" >&2
   [ $# -lt 3 ] || turn "$2" "$3"
@@ -551,6 +558,8 @@ pr_refuse() {
 LANDING="$(landing_level "$REVIEW_DIR/land.conf")" || pr_refuse "$LANDING"
 PR_URL=""
 MERGE_BASE=""
+OFFLINE=""
+REMOTE_SILENT=0
 if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   [ -n "$TASK_ID" ] || \
     pr_refuse "at LANDING=$LANDING the run is posted on the task's pull request: --task-file"
@@ -561,11 +570,21 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   BASE_BRANCH="$(resolve_base_branch "$REVIEW_DIR/land.conf" "$REMOTE")"
   case $? in
     0) ;;
-    75) pr_refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+    75) OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1 ;;
     *) pr_refuse "$BASE_BRANCH" ;;
   esac
-  PROBLEM="$(publishing_problem "$REVIEW_DIR/land.conf" "$LANDING" "$REMOTE" "$BASE_BRANCH")" \
-    || pr_refuse "$PROBLEM"
+  if [ "$REMOTE_SILENT" -eq 0 ]; then
+    PROBLEM="$(publishing_problem "$REVIEW_DIR/land.conf" "$LANDING" "$REMOTE" "$BASE_BRANCH")"
+    case $? in
+      0) ;;
+      75) if [ "$PROBLEM" = "$(remote_gives_no_answer "$REMOTE")" ]; then
+            OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1
+          else
+            OFFLINE=GitHub
+          fi ;;
+      *) pr_refuse "$PROBLEM" ;;
+    esac
+  fi
   BRANCH="$(current_branch)"
   [ -n "$BRANCH" ] || pr_refuse "HEAD is detached — there is no pull request to review"
   UNCOMMITTED="$(uncommitted_task_work)"
@@ -574,10 +593,31 @@ if landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
 "— commit it with land.sh first, which also publishes it"
   [ "$(task_id_of "$(git rev-list -1 --no-merges --first-parent HEAD)")" = "$TASK_ID" ] || \
     pr_refuse "HEAD is no commit of $TASK_ID — commit it with land.sh first"
-  git fetch -q "$REMOTE" "+refs/heads/$BASE_BRANCH:refs/remotes/$REMOTE/$BASE_BRANCH" || \
-    pr_refuse "could not read $BASE_BRANCH from $REMOTE; git says why above"
-  PULL_REQUEST="$(pull_request_of "$(remote_repository "$REMOTE")" "$BRANCH" "$BASE_BRANCH" all)" \
-    || pr_refuse "gh could not say whether $BRANCH has a pull request into $BASE_BRANCH"
+  if [ "$REMOTE_SILENT" -eq 1 ] || \
+     ! git fetch -q "$REMOTE" "+refs/heads/$BASE_BRANCH:refs/remotes/$REMOTE/$BASE_BRANCH"; then
+    [ "$REMOTE_SILENT" -eq 1 ] || connection_lost "$REMOTE" || \
+      pr_refuse "could not read $BASE_BRANCH from $REMOTE; git says why above"
+    OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1
+    git show-ref --verify --quiet "refs/remotes/$REMOTE/$BASE_BRANCH" || \
+      pr_refuse "$(remote_gives_no_answer "$REMOTE"), and its $BASE_BRANCH was never fetched here"
+  fi
+  if [ -z "$OFFLINE" ]; then
+    PULL_REQUEST="$(pull_request_of "$(remote_repository "$REMOTE")" "$BRANCH" "$BASE_BRANCH" all)"
+    if [ $? -ne 0 ]; then
+      github_lost "$(remote_repository "$REMOTE")" || \
+        pr_refuse "gh could not say whether $BRANCH has a pull request into $BASE_BRANCH"
+      OFFLINE=GitHub
+    fi
+  fi
+fi
+if [ -n "$OFFLINE" ]; then
+  PR_URL="$(last_heard_pull "$TASK_ID" "$BRANCH")"
+  MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE_BRANCH" HEAD)" || \
+    pr_refuse "HEAD has no commit in common with $BASE_BRANCH of $REMOTE"
+  echo "── $OFFLINE gives no answer: reviewing here, from $BASE_BRANCH as last fetched "\
+"($(git rev-parse --short "refs/remotes/$REMOTE/$BASE_BRANCH")); what the run owes GitHub is "\
+"said at its end"
+elif landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   PR_URL="$(printf '%s' "$PULL_REQUEST" | jq -r '.url // ""')"
   PR_HEAD="$(printf '%s' "$PULL_REQUEST" | jq -r '.headRefOid // ""')"
   case "$(printf '%s' "$PULL_REQUEST" | jq -r '.state // ""')" in
@@ -820,9 +860,16 @@ if [ -n "$REPEAT" ]; then
     && mv "$REPEAT/meta.json.new" "$REPEAT/meta.json" \
     || { rm -f "$REPEAT/meta.json.new"
          echo "   how the tests ended could not be written into $REPEAT/meta.json" >&2; }
-  if [ -n "$PR_URL" ] && ! "$LIB_DIR/pr-post.sh" statuses; then
-    echo "   the statuses are not posted on $PR_URL — run $LIB_DIR/pr-post.sh statuses alone" >&2
-    [ "$CODE" -ne 0 ] || CODE=1
+  if [ -n "$PR_URL" ] && [ -n "$OFFLINE" ]; then
+    echo "   owed to GitHub: the statuses of $PR_URL — pr-post.sh statuses posts them when "\
+"GitHub answers" >&2
+  elif [ -n "$PR_URL" ]; then
+    "$LIB_DIR/pr-post.sh" statuses
+    case $? in
+      0 | 75) ;;
+      *) echo "   the statuses are not posted on $PR_URL — run $LIB_DIR/pr-post.sh statuses alone" >&2
+         [ "$CODE" -ne 0 ] || CODE=1 ;;
+    esac
   fi
   echo
   echo "REPEATED — only the end-to-end tests of $(basename "$REPEAT") ran again; its review "\
@@ -1136,7 +1183,8 @@ fi
 # the limit, has no count. What a run with --past-limit passed: `stop` names the stop,
 # `past_limit_kind` whose it was — user, loop, or converging where the script read that
 # the work converges — `because` is the loop's reason, and `user_decided` is true when the
-# user decided to go on. All four are null on a plain run.
+# user decided to go on. All four are null on a plain run. `offline` is true when the remote
+# or GitHub gave no answer and the run was made here, on the pull request last heard.
 REVIEWED_FINGERPRINT="$(tree_fingerprint)"
 jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg fingerprint "$REVIEWED_FINGERPRINT" --arg task "$TASK_FILE" \
@@ -1145,13 +1193,14 @@ jq -n --arg base "${BASE:-HEAD}" --arg threshold "$THRESHOLD" \
       --arg because "$BECAUSE" --argjson user_decided "$USER_DECIDED" \
       --arg reviewer "$REVIEWER_CMD" --arg maintainer "$MAINTAINER_CMD" --arg models "$MODELS" \
       --arg head "$(git rev-parse HEAD)" --arg pr_url "$PR_URL" --arg merge_base "$MERGE_BASE" \
+      --argjson offline "$([ -n "$OFFLINE" ] && echo true || echo false)" \
       '{base: $base, threshold: $threshold, tree_fingerprint: $fingerprint,
         task_file: (if $task == "" then null else $task end),
         task: (if $task_id == "" then null else $task_id end),
         past_limit: $past_limit, epoch: $epoch, count: null, time: now, head: $head,
         pr_url: (if $pr_url == "" then null else $pr_url end),
         merge_base: (if $merge_base == "" then null else $merge_base end),
-        models: $models, reviewer: $reviewer, maintainer: $maintainer,
+        offline: $offline, models: $models, reviewer: $reviewer, maintainer: $maintainer,
         end: null, exit: null, stage: null,
         past_limit_kind: (if $kind == "" then null else $kind end),
         stop: (if $past_limit then $stop else null end),
@@ -1228,17 +1277,29 @@ say_what_repeats() {
 
 # At the pull request levels every run is posted there, whatever its end: red checks and
 # findings are what the people on the pull request need to see. A post that fails is
-# said, and a clean run then exits 1.
+# said, and a clean run then exits 1. Offline nothing is posted, and a post that ends
+# because GitHub gives no answer (pr-post.sh exit 75) fails nothing: the run keeps its own
+# end, and says what it owes.
 end_run() {
-  local code=$?
+  local code=$? posted
   trap - EXIT
   record_end "$code"
   say_what_repeats
-  if [ -n "$PR_URL" ] && ! "$LIB_DIR/pr-post.sh" run "$RUN_DIR"; then
-    echo "   the run is not posted on $PR_URL — run $LIB_DIR/pr-post.sh run $RUN_DIR alone" >&2
-    if [ "$code" -eq 0 ]; then
-      code=1
-      record_end "$code"
+  if [ -n "$OFFLINE" ] && [ -n "$PR_URL" ]; then
+    echo "   owed to GitHub: the review of $RUN_DIR — pr-post.sh run posts it when GitHub "\
+"answers" >&2
+  elif [ -n "$OFFLINE" ]; then
+    echo "   owed to GitHub: the review of $RUN_DIR — it names no pull request, none having been "\
+"heard here: once publish.sh has opened one, review.sh reviews again on it" >&2
+  elif [ -n "$PR_URL" ]; then
+    "$LIB_DIR/pr-post.sh" run "$RUN_DIR"
+    posted=$?
+    if [ "$posted" -ne 0 ] && [ "$posted" -ne 75 ]; then
+      echo "   the run is not posted on $PR_URL — run $LIB_DIR/pr-post.sh run $RUN_DIR alone" >&2
+      if [ "$code" -eq 0 ]; then
+        code=1
+        record_end "$code"
+      fi
     fi
   fi
   exit "$code"

@@ -150,8 +150,11 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    refuses, exit `1`, what it cannot review there: work not committed — commit it with `land.sh`
    first (step 11); the pull request's head behind HEAD, or no pull request after a landing that
    stopped before opening it — `publish.sh` alone, then review again; a closed pull request, or a
-   head HEAD does not contain — for the user. It posts the run to the pull request; a post that
-   failed makes a clean run exit `1`. Post it with
+   head HEAD does not contain — for the user. When the remote gives no answer it reviews here all
+   the same, from the base as last fetched, keeps its exit code and says what it owes: go on with
+   the fix round and `/qa`, and when the remote answers, run `publish.sh` alone and the command each
+   line of what is owed names. It posts the run to the pull request; a post that failed, but for
+   GitHub giving no answer, makes a clean run exit `1`. Post it with
    `CodingStandards/templates/review/lib/pr-post.sh run <run-dir>` alone before anything else on
    that run — answers, `/qa` — which finds a review GitHub took and posts none twice. The merge
    refuses while any run on the pull request is not posted (M1, M7).
@@ -275,14 +278,16 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    only when asked, and never run them.
 
    At `push`, `pr` and `merge`, `land.sh` calls `publish.sh` after the commit. On `4` the commit is
-   in. If no code has to change, meet the cause its output names and run the script alone, never
-   `land.sh` again:
+   in. When the cause is that GitHub gives no answer, go on with the loop here — the review, the
+   fixes, `/qa` — and run `publish.sh` alone when it answers. Never wait idle for it. If no code has
+   to change, meet the cause its output names and run the script alone, never `land.sh` again:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json
    ```
 
-   Exit codes: `0` done, `3` refused, `5` waiting (the pull request stays as it is), `1` error.
+   Exit codes: `0` done, `3` refused, `5` waiting (the pull request stays as it is), `75` GitHub
+   gives no answer: nothing was sent, `1` error.
 
    At the pull request levels `land.sh` takes no `--run`:
 

@@ -38,6 +38,8 @@
 #   3  refused, with the reason on stderr
 #   5  waiting — the pull request stays as it is, and the reason and its URL are on
 #      stderr
+#   75 the remote or GitHub gives no answer at all: nothing was sent; run it again when
+#      it answers, and meanwhile the work, land.sh, review.sh and /qa go on here
 #   1  usage or environment error, or a push that failed
 #
 # Requires: jq >= 1.6, git >= 2.23; gh at LANDING=pr and merge
@@ -103,6 +105,14 @@ waiting() {
   [ $# -lt 3 ] || turn "$2" "$3"
   exit 5
 }
+# The host of the remote, or GitHub, gives no answer at all: nothing is sent, and what
+# needs none goes on.
+waits_for_github() {
+  echo "PUBLISHING WAITS FOR GITHUB — $1; nothing was sent, and nothing is lost." >&2
+  turn loop "go on here: the work, land.sh, review.sh and /qa need no GitHub; run publish.sh "\
+"alone when it answers"
+  exit 75
+}
 
 # ---------------------------------------------------------------------------
 # 1. Only what a landing made, at a level that publishes.
@@ -131,10 +141,15 @@ REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
 BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")"
 case $? in
   0) ;;
-  75) refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+  75) waits_for_github "$(remote_gives_no_answer "$REMOTE")" ;;
   *) refuse "$BASE" ;;
 esac
-PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE")" || refuse "$PROBLEM"
+PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE")"
+case $? in
+  0) ;;
+  75) waits_for_github "$PROBLEM" ;;
+  *) refuse "$PROBLEM" ;;
+esac
 
 if branch_in_list "$BRANCH" "$(protected_branches "$CONFIG") $BASE"; then
   refuse "current branch is $BRANCH, a protected branch — it is reached only through a pull request"

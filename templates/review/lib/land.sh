@@ -34,7 +34,9 @@
 #   3  refused — a landing condition failed, with the reason on stderr
 #   4  the commit landed but publishing did not finish — publish.sh's output says
 #      why. If no code has to change, meet the cause and run publish.sh alone, never
-#      land.sh again; a change to the code is a new pass of the loop on this branch
+#      land.sh again; a change to the code is a new pass of the loop on this branch.
+#      When the remote or GitHub gives no answer at all, the landing commits here on
+#      what this copy last heard, publishing is owed, and the loop goes on here
 #   1  usage or environment error
 #
 # Requires: jq >= 1.6, git >= 2.23; gh at LANDING=pr and merge
@@ -261,6 +263,13 @@ fi
 #    so a refused landing leaves the branch as it was. What the push would meet
 #    is checked here too: a task branch that exists elsewhere, a remote branch that
 #    moved, commits under this one that no landing made.
+#
+#    When the host of the remote, or GitHub, gives no answer at all (exit 75 of
+#    resolve_base_branch or publishing_problem, common.sh), the landing is offline: it
+#    commits here on what this copy last heard — the base branch's name, the base as last
+#    fetched — and the push and what follows it are owed. The questions to the remote that
+#    only serve the push are passed over then, and the push is never forced, so a remote
+#    branch that moved meanwhile refuses it later. Any other failure refuses, as before.
 
 BRANCH="$(current_branch)"
 BRANCH_NOTE=""
@@ -269,6 +278,8 @@ REMOTE=""
 BASE_BRANCH=""
 CHANGE_BASE=HEAD
 TASK_COMMITS=""
+OFFLINE=""
+REMOTE_SILENT=0
 [ -n "$BRANCH" ] || \
   refuse 8 "HEAD is detached — a commit here would be unreachable from any branch"
 
@@ -280,20 +291,32 @@ if landing_publishes "$LANDING"; then
   BASE_BRANCH="$(resolve_base_branch "$CONFIG" "$REMOTE")"
   case $? in
     0) ;;
-    75) refuse 8 "$(remote_gives_no_answer "$REMOTE")" ;;
+    75) OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1 ;;
     *) refuse 8 "$BASE_BRANCH" ;;
   esac
-  PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE_BRANCH")" || \
-    refuse 8 "$PROBLEM"
+  if [ "$REMOTE_SILENT" -eq 0 ]; then
+    PROBLEM="$(publishing_problem "$CONFIG" "$LANDING" "$REMOTE" "$BASE_BRANCH")"
+    case $? in
+      0) ;;
+      75) if [ "$PROBLEM" = "$(remote_gives_no_answer "$REMOTE")" ]; then
+            OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1
+          else
+            OFFLINE=GitHub
+          fi ;;
+      *) refuse 8 "$PROBLEM" ;;
+    esac
+  fi
 
   TASK_BRANCH="task/$TASK_ID"
   if [ "$BRANCH" != "$TASK_BRANCH" ]; then
     git show-ref --verify --quiet "refs/heads/$TASK_BRANCH" && \
       refuse 8 "$TASK_BRANCH exists and is not the current branch, $BRANCH"
-    ON_REMOTE="$(git ls-remote --heads "$REMOTE" "refs/heads/$TASK_BRANCH" 2>/dev/null)" || \
-      refuse 8 "the remote $REMOTE cannot be reached"
-    [ -z "$ON_REMOTE" ] || \
-      refuse 8 "$TASK_BRANCH exists on $REMOTE and is not the current branch, $BRANCH"
+    if [ "$REMOTE_SILENT" -eq 0 ]; then
+      ON_REMOTE="$(git ls-remote --heads "$REMOTE" "refs/heads/$TASK_BRANCH" 2>/dev/null)" || \
+        refuse 8 "the remote $REMOTE cannot be reached"
+      [ -z "$ON_REMOTE" ] || \
+        refuse 8 "$TASK_BRANCH exists on $REMOTE and is not the current branch, $BRANCH"
+    fi
   fi
 
   OTHER_TASK_BRANCH=0
@@ -301,14 +324,15 @@ if landing_publishes "$LANDING"; then
   if [ "$OTHER_TASK_BRANCH" -eq 1 ] || \
     branch_in_list "$BRANCH" "$PROTECTED_BRANCHES $BASE_BRANCH"; then
     # A branch named task leaves no room for a folder of that name in the refs.
-    NAMED_TASK="$(git show-ref --heads task 2>/dev/null; \
-git ls-remote --heads "$REMOTE" refs/heads/task 2>/dev/null)"
+    NAMED_TASK="$(git show-ref --heads task 2>/dev/null
+      [ "$REMOTE_SILENT" -eq 1 ] || git ls-remote --heads "$REMOTE" refs/heads/task 2>/dev/null)"
     printf '%s\n' "$NAMED_TASK" | grep -qE '[[:space:]]refs/heads/task$' && \
       refuse 8 "a branch named task exists, so $TASK_BRANCH cannot be created"
     LANDING_BRANCH="$TASK_BRANCH"
   fi
 
-  REMOTE_TIP=\
+  REMOTE_TIP=""
+  [ "$REMOTE_SILENT" -eq 1 ] || REMOTE_TIP=\
 "$(git ls-remote --heads "$REMOTE" "refs/heads/$LANDING_BRANCH" 2>/dev/null | cut -f1)"
   if [ -n "$REMOTE_TIP" ] && \
     ! git merge-base --is-ancestor "$REMOTE_TIP" HEAD 2>/dev/null; then
@@ -329,9 +353,16 @@ fi
 #    branch as the remote has it now, which is also where the change the gates
 #    measure starts (REVIEW_BASE).
 if landing_opens_pull_request "$LANDING"; then
-  git fetch -q "$REMOTE" "+refs/heads/$BASE_BRANCH:refs/remotes/$REMOTE/$BASE_BRANCH" || \
-    refuse 8 "could not read $BASE_BRANCH from $REMOTE; git says why above"
   BASE_REF="refs/remotes/$REMOTE/$BASE_BRANCH"
+  # Offline, the base is the one last fetched.
+  if [ "$REMOTE_SILENT" -eq 1 ] || \
+     ! git fetch -q "$REMOTE" "+refs/heads/$BASE_BRANCH:$BASE_REF"; then
+    [ "$REMOTE_SILENT" -eq 1 ] || connection_lost "$REMOTE" || \
+      refuse 8 "could not read $BASE_BRANCH from $REMOTE; git says why above"
+    OFFLINE="the remote $REMOTE"; REMOTE_SILENT=1
+    git show-ref --verify --quiet "$BASE_REF" || \
+      refuse 8 "$(remote_gives_no_answer "$REMOTE"), and its $BASE_BRANCH was never fetched here"
+  fi
   OTHER_TASKS="$(other_tasks_on "$BASE_REF" "$TASK_ID")"
   [ -z "$OTHER_TASKS" ] || \
     refuse 8 "HEAD carries ${OTHER_TASKS}which is not on $BASE_BRANCH of $REMOTE: a squash never "\
@@ -344,8 +375,13 @@ if landing_opens_pull_request "$LANDING"; then
   done)"
 
   # The loop's files alone land on the branch of the task, under its own commit, while
-  # the task's pull request is open: that is the task they belong to.
-  if [ "$RECORDS_ONLY" -eq 1 ]; then
+  # the task's pull request is open: that is the task they belong to. Offline, on the
+  # branch of the task that holds its commits.
+  if [ "$RECORDS_ONLY" -eq 1 ] && [ -n "$OFFLINE" ]; then
+    [ "$LANDING_BRANCH" = "$BRANCH" ] && [ -n "$TASK_COMMITS" ] || \
+      refuse 6 "the loop's own files alone are not a task: they land on the branch of $TASK_ID "\
+"that holds its commits"
+  elif [ "$RECORDS_ONLY" -eq 1 ]; then
     OPEN="$(pull_request_of "$(remote_repository "$REMOTE")" "$BRANCH" "$BASE_BRANCH")" || \
       refuse 8 "gh could not say whether $BRANCH has a pull request into $BASE_BRANCH"
     OPEN="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
@@ -371,6 +407,9 @@ fi
 
 [ -x "$REVIEW_DIR/gates.sh" ] || \
   refuse 3 "$REVIEW_DIR/gates.sh is missing or not executable — the gates cannot be confirmed"
+
+[ -z "$OFFLINE" ] || echo "── $OFFLINE gives no answer: landing here on what this copy last heard "\
+"(base $BASE_BRANCH); the push and what follows it are owed"
 
 # A landing whose gates end red or unfinished, or which fails after them, may be
 # retried once on the same run — the simulator is booted again, say — so the
@@ -719,6 +758,19 @@ landing_publishes "$LANDING" || exit 0
 
 "$LIB_DIR/publish.sh" --task-file "$TASK_FILE"
 PUBLISH_EXIT=$?
+# The remote or GitHub gave no answer: the commit is here, and nothing of it is lost.
+if [ "$PUBLISH_EXIT" -eq 75 ]; then
+  echo "the commit of $TASK_ID landed on $LANDING_BRANCH; publishing is owed: "\
+"${OFFLINE:-the remote $REMOTE, or GitHub,} gives no answer (publish.sh exit 75)" >&2
+  echo "  nothing is lost: publish.sh alone sends it when it answers" >&2
+  if landing_opens_pull_request "$LANDING"; then
+    turn loop "go on here: review.sh reviews this commit from what this copy last heard, "\
+"and /qa checks it"
+  else
+    turn loop "go on here, and run publish.sh alone when it answers: it pushes this commit"
+  fi
+  exit 4
+fi
 if [ "$PUBLISH_EXIT" -ne 0 ]; then
   echo "the commit of $TASK_ID landed on $LANDING_BRANCH, "\
 "but publishing did not finish (publish.sh exit $PUBLISH_EXIT)" >&2
