@@ -86,12 +86,13 @@
 #                        oldest first, at the commit it reviewed — a run made offline
 #                        where no pull request was heard is taken in, and the pull request
 #                        is written into its meta.json; a run whose commit is not on the
-#                        remote branch is refused, its push is owed first — then the
-#                        answers, the reports of /qa and of the checks after a merge, the
-#                        replies kept — each only while the comment it answers and its
-#                        text file are as they were when it was kept; else it is not
-#                        sent, and the loop answers again — and the statuses and the
-#                        description, made now. publish.sh calls it after the push and
+#                        remote branch is refused, its push is owed first, and one whose
+#                        commit is no commit of the branch any more is passed over, with a
+#                        line — then the answers, the reports of /qa and of the checks
+#                        after a merge, the replies kept — each only while the comment it
+#                        answers and its text file are as they were when it was kept; else
+#                        it is not sent, and the loop answers again — and the statuses and
+#                        the description, made now. publish.sh calls it after the push and
 #                        the pull request
 #
 # Usage, from the project root:
@@ -1106,6 +1107,11 @@ send_reply() {
 send_owed() {
   local run head folder count record comments=""
   while IFS= read -r run; do
+    run_passed_over "$run" || continue
+    echo "the review of $run is not sent: $(jq -r '.head // ""' "$run/meta.json"), the commit "\
+"it reviewed, is no commit of $BRANCH any more, and nothing is posted for it" >&2
+  done < <(review_runs_on "$TASK_ID" "$PR_URL")
+  while IFS= read -r run; do
     [ -n "$run" ] || continue
     head="$(jq -r '.head // ""' "$run/meta.json")"
     git merge-base --is-ancestor "$head" "refs/remotes/$REMOTE/$BRANCH" 2>/dev/null || \
@@ -1121,6 +1127,7 @@ send_owed() {
   done < <(owed_runs "$TASK_ID" "$PR_URL")
   while IFS= read -r run; do
     [ -n "$run" ] || continue
+    ! run_passed_over "$run" || continue
     count="$(owed_answers "$run")"
     [ "${count:-0}" -gt 0 ] || continue
     post_answers "$run"

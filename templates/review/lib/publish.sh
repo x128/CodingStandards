@@ -521,9 +521,11 @@ OUT_OF_SCOPE="$(git -c core.quotePath=false diff --name-only --no-renames "$MERG
 
 # M7: every run made on this pull request is posted there, and every finding it handed
 # over — accepted at or above the threshold, or escalated — has its answer posted there.
-# The optional ones never reach anyone.
+# The optional ones never reach anyone, and a run that is passed over, its commit gone
+# from the branch, is not waited for.
 UNANSWERED="$(review_runs_on "$TASK_ID" "$PR_URL" | while IFS= read -r run; do
     if ! jq -e --arg url "$PR_URL" '.pr_url == $url' "$run/pr-review.json" >/dev/null 2>&1; then
+      ! run_passed_over "$run" || continue
       echo "$(basename "$run"): not posted — pr-post.sh run $run"
       continue
     fi
