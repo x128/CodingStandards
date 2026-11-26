@@ -341,6 +341,22 @@ last_heard_base() {
   printf '%s' "$base"
 }
 
+# last_heard_pull <task-id> <branch>: the open pull request of the branch this copy last
+# heard; where it has heard of no pull request at all (a copy from before it kept them), the
+# one the newest review run of the task names; else nothing. A pull request found merged is
+# forgotten (heard pull <branch> ""), and nothing stands in for it then.
+last_heard_pull() {
+  local url run
+  if [ "$(jq -r '.pulls | type' "$LAST_HEARD" 2>/dev/null)" = object ]; then
+    jq -r --arg branch "$2" '.pulls[$branch] // empty | strings' "$LAST_HEARD" 2>/dev/null
+    return 0
+  fi
+  run="$(review_runs_of "$1" | tail -1)"
+  [ -n "$run" ] || return 0
+  url="$(jq -r '.pr_url // empty | strings' "$run/meta.json" 2>/dev/null)"
+  printf '%s' "$url"
+}
+
 # The branch pull requests go to, which is also protected at the levels that
 # publish. Asked of the remote every time: the HEAD a clone recorded stays as it
 # was when the remote's default branch changes, and the real one would then be left

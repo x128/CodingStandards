@@ -46,7 +46,9 @@
 #                        the work now and HEAD, for /qa to record in qa.json; below the
 #                        pull request levels that is all, and nothing is asked of the
 #                        remote. At pr and merge: merge_base too, the merge base, which a
-#                        /qa of the whole pull request records as since
+#                        /qa of the whole pull request records as since; it asks for no
+#                        pull request, and when the remote gives no answer the merge base
+#                        is of the base branch as last fetched
 #   qa <qa-dir>          at every level, before anything is asked of the remote: checks
 #                        <qa-dir>/qa.json (common.sh, qa_record_fault), keeps beside it,
 #                        once, a digest of the words of each case it failed (cases.json:
@@ -80,10 +82,17 @@
 # The task is the one HEAD's Task-Id trailer names. Its file is --task-file, else the one
 # the run, or the newest review run of the task, was made with.
 #
+# When the host of the remote, or GitHub, gives no answer at all (exit 75 of
+# resolve_base_branch, or a question about the pull request that failed for it), nothing is
+# posted: each command but work says what it owes and exits 75, and the same command posts
+# it when GitHub answers. comments cannot read what people wrote then.
+#
 # Exit codes:
 #   0  posted, or nothing was left to post; qa below the pull request levels, once it
 #      has said what /qa left; work, once it has printed it
 #   3  refused, with the reason on stderr
+#   75 the remote or GitHub gives no answer at all: nothing was posted, and the output
+#      says what is owed
 #   1  usage or environment error, or gh failed; qa: a qa.json that is missing or does
 #      not hold
 #
@@ -195,10 +204,11 @@ fi
 landing_opens_pull_request "$LANDING" || \
   refuse "LANDING=$LANDING in $CONFIG opens no pull request — only pr and merge do"
 REMOTE="$(resolve_remote "$CONFIG")" || refuse "$REMOTE"
+OFFLINE=""
 BASE="$(resolve_base_branch "$CONFIG" "$REMOTE")"
 case $? in
   0) ;;
-  75) refuse "$(remote_gives_no_answer "$REMOTE")" ;;
+  75) OFFLINE="the remote $REMOTE" ;;
   *) refuse "$BASE" ;;
 esac
 REPOSITORY="$(remote_repository "$REMOTE")" || refuse "the remote $REMOTE has no URL"
@@ -237,15 +247,50 @@ if [ "$COMMAND" != after-merge ]; then
       refuse "$TASK_FILE is not the task HEAD was committed for, $TASK_ID"
   fi
 
-  if [ -z "$TO" ]; then
-    OPEN="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE")" || \
-      fail "gh could not say whether $BRANCH has a pull request into $BASE"
-    PR_URL="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
-    PR_NUMBER="$(printf '%s' "$OPEN" | jq -r '.number // ""')"
-    [ -n "$PR_URL" ] || \
-      refuse "$BRANCH has no open pull request into $BASE — publish.sh opens it"
-    heard pull "$BRANCH" "$PR_URL"
+  if [ -z "$TO" ] && [ "$COMMAND" != work ] && [ -z "$OFFLINE" ]; then
+    if OPEN="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE")"; then
+      PR_URL="$(printf '%s' "$OPEN" | jq -r '.url // ""')"
+      PR_NUMBER="$(printf '%s' "$OPEN" | jq -r '.number // ""')"
+      [ -n "$PR_URL" ] || \
+        refuse "$BRANCH has no open pull request into $BASE — publish.sh opens it"
+      heard pull "$BRANCH" "$PR_URL"
+    else
+      github_lost "$REPOSITORY" || \
+        fail "gh could not say whether $BRANCH has a pull request into $BASE"
+      OFFLINE=GitHub
+    fi
   fi
+  [ -z "$OFFLINE" ] || PR_URL="$(last_heard_pull "$TASK_ID" "$BRANCH")"
+fi
+
+# Offline nothing is posted: what each command owes is said, and the same command posts it
+# when GitHub answers. owed <what> [them].
+owed() {
+  echo "owed to GitHub: $1 — pr-post.sh $COMMAND posts ${2:-it} when GitHub answers" >&2
+  exit 75
+}
+if [ -n "$OFFLINE" ]; then
+  # A folder is named from the project root, as review.sh names its runs.
+  FOLDER="${ARGUMENT#"$PROJECT_ROOT"/}"
+  case "$COMMAND" in
+    run)
+      if [ -n "$(jq -r '.pr_url // empty' "$ARGUMENT/meta.json" 2>/dev/null)" ]; then
+        owed "the review of $FOLDER"
+      fi
+      echo "owed to GitHub: the review of $FOLDER — it names no pull request, none having "\
+"been heard here: once publish.sh has opened one, review.sh reviews again on it" >&2
+      exit 75 ;;
+    answers) owed "the answers of $FOLDER" them ;;
+    qa) owed "the report of $FOLDER" ;;
+    after-merge) owed "the report of the checks after the merge in $FOLDER" ;;
+    statuses) owed "the statuses at HEAD" them ;;
+    body) [ -n "$TO" ] || owed "the description of the pull request of $BRANCH" ;;
+    reply) owed "the reply to ${ARGUMENTS[0]} (${ARGUMENTS[1]})" ;;
+    comments)
+      echo "what people wrote on ${PR_URL:-the pull request of $BRANCH} cannot be read without "\
+"GitHub: $OFFLINE gives no answer" >&2
+      exit 75 ;;
+  esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -939,8 +984,18 @@ case "$COMMAND" in
   run)      post_run "$ARGUMENT" ;;
   after-merge) post_after_merge "$ARGUMENT" ;;
   comments) show_comments ;;
-  work)     git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || \
-              fail "could not read $BASE from $REMOTE; git says why above"
+  work)     if [ -n "$OFFLINE" ] || \
+               ! git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE"; then
+              [ -n "$OFFLINE" ] || connection_lost "$REMOTE" || \
+                fail "could not read $BASE from $REMOTE; git says why above"
+              OFFLINE="the remote $REMOTE"
+              git show-ref --verify --quiet "refs/remotes/$REMOTE/$BASE" || {
+                echo "POSTING WAITS — $(remote_gives_no_answer "$REMOTE"), and its $BASE was "\
+"never fetched here" >&2
+                exit 75
+              }
+              echo "── $OFFLINE gives no answer: the merge base is of $BASE as last fetched" >&2
+            fi
             jq -n --arg work "$(tree_fingerprint)" --arg head "$HEAD_COMMIT" \
               --arg merge_base "$(git merge-base "refs/remotes/$REMOTE/$BASE" HEAD)" \
               '{work: $work, head: $head, merge_base: $merge_base}' ;;

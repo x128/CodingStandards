@@ -579,7 +579,7 @@ three of them, and the rest at the merge
 | 5 | Zero pending escalations | An escalation is owed an answer |
 | 6 | Changed files ⊆ the task's declared scope, the loop's own files and the end-to-end harness apart | The diff did not sprawl |
 | 7 | Every exit criterion carries a `verified_by` claim; `/qa` recorded the task in a `qa.json`, each `/qa` failure has its end-to-end test seen failing, then passing, with the words of its case as they were when it failed — or, for a case that `/qa` marks `manual: <why>`, a later `/qa` of other work that passed it; or the test skipped for the task it belongs to, or the user's own answer — and no test is skipped for this task | The tracker's definition of done, with the claim recorded in the commit |
-| 8 | `LANDING` is a known level, `WITH_RECORDS` is `yes` or `no`, and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists and answers, the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository, and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
+| 8 | `LANDING` is a known level, `WITH_RECORDS` is `yes` or `no`, and the branch is not detached. With `LANDING=on`, the branch is not protected. At `push` and up, a remote exists, and answers or its host gives no answer at all — then what this copy last heard from it stands in, and the push is owed — the task id can name a branch, `task/<id>` is the current branch or exists neither here nor on the remote, a branch that has to be created can be, the remote's copy of the branch has not moved past it, and it carries no commit that no landing made. At `pr` and `merge`, the base branch is on the remote, `gh` is installed, logged in and sees the repository — owed too while GitHub gives no answer — and `CHECKS_WAIT` is a number | The loop never commits on trunk, and never makes an unreachable commit; a landing never ends half done for a reason known in advance; a host that gives no answer is not such a reason; with `LANDING=off` the user commits, so a protected branch is a note, not a refusal |
 
 Then one switch, which is **not** a refusal: `LANDING` in `.review/land.conf`. At `on` and `push`
 the eight checks, and at `pr` and `merge` the three of the commit contract, are followed by a
@@ -616,11 +616,12 @@ among the files the commit names. Whatever the user had staged stays staged, unt
 
 `land.sh` exits `0` when the task went as far as `LANDING` says, `3` on a refusal, `1` on an error,
 and `4` when the commit landed but publishing did not finish. The output of `publish.sh` is shown.
-If no code has to change — the network was down, the checks are still running — meet the cause and
-run `publish.sh` alone, never `land.sh` again: the commit is in, and another landing with nothing
-new would only be refused. If code has to change, that is a new pass of the loop on the same branch:
-the work, a review run and `land.sh`, which adds a commit; at the pull request levels, the work,
-`land.sh`, then a review run.
+If no code has to change — the checks are still running, GitHub gave no answer — run `publish.sh`
+alone when the cause is gone, never `land.sh` again; while GitHub gives no answer the loop goes on
+with the review, the checks and `/qa`, which need none: the commit is in, and another landing with
+nothing new would only be refused. If code has to change, that is a new pass of the loop on the same
+branch: the work, a review run and `land.sh`, which adds a commit; at the pull request levels, the
+work, `land.sh`, then a review run.
 
 ### The contract at the pull request levels
 
@@ -716,11 +717,10 @@ ends on the base branch, so the next one starts there; at `pr`, once you have me
 **Remote:** `REMOTE` in `land.conf`, else `origin` if it exists, else the only remote, else a
 refusal. **Base branch:** `BASE_BRANCH` in `land.conf`, else the HEAD of the remote, asked at every
 landing because what a clone recorded goes stale, else `main` if it exists, else `master`. A remote
-that cannot be reached is a refusal, never a guess. Whether its host gives no answer at all is told
-by the exit code of one `curl` to the host after git or `gh` failed, never by their words, and the
-refusal then says that the remote, or GitHub, gives no answer; without `curl` it cannot be told.
-Nothing assumes a remote named `origin`, and `gh` is told which repository that remote is, or it
-would pick one of its own.
+that answers and refuses, or of which nothing can be told, is a refusal, never a guess. A remote
+whose host gives no answer at all is the connection, not the project: the loop goes on with the base
+branch as this copy last heard it ([Without GitHub](#without-github)). Nothing assumes a remote
+named `origin`, and `gh` is told which repository that remote is, or it would pick one of its own.
 
 ### Publishing
 
@@ -793,6 +793,21 @@ A conflict with the base branch goes to you, since no agent can merge or rebase:
 merge and `publish.sh --merge` exits `5` with its reason. Merge the base into the branch, or merge
 the pull request yourself. The base merged in changes the work, so the loop then publishes it with
 `publish.sh` alone, reviews it and checks it with `/qa` again before `publish.sh --merge`.
+
+### Without GitHub
+
+When the remote's host gives no answer — told by the exit code of one `curl` to it after git or `gh`
+failed, never by their words, and without `curl` not at all — the loop does here everything that
+needs no GitHub. `land.sh` commits on what this copy last heard: the base branch's name, the base as
+last fetched. `review.sh` reviews the commit from that base, runs the end-to-end tests and keeps its
+run. `/qa` checks, and keeps its report. Each says what it owes, and a script that could send
+nothing exits 75. When the host answers, `publish.sh` alone sends the push, never forced, and the
+pull request, and the command of `pr-post.sh` that owed a review run, the answers or a report of
+`/qa` posts it when run again; a run made where no pull request was heard is reviewed again on the
+pull request. The statuses and the description are made again for the work as it is then, and the
+merge is never kept: `publish.sh --merge` checks the whole contract against GitHub as it is. So a
+base that moved meanwhile costs a review again (M1), never a wrong merge. A host that answers and
+refuses is a refusal, as before.
 
 ### What landing cannot do
 

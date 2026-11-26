@@ -6533,12 +6533,12 @@ PATH="$(path_without curl)" "$LIB_DIR/land.sh" --task-file .review/task.json \
   >"$WORK/land.log" 2>&1
 check "without curl nothing is guessed" 3 "the remote origin cannot be reached" $? \
   "$WORK/land.log"
-pr_land "a remote whose host gives no answer is told from one that refuses" 3 \
+pr_land "a remote whose host gives no answer is told from one that refuses" 4 \
   "the remote origin gives no answer"
 never_says "it is not called unreachable" "cannot be reached" "$WORK/land.log"
-holds "nothing is committed then either" [ "$(git rev-parse HEAD)" = "$start" ]
 set_level merge BASE_BRANCH=main
-pr_land "and so it is where BASE_BRANCH is set" 3 "the remote origin gives no answer"
+pr_work
+pr_land "and so it is where BASE_BRANCH is set" 4 "the remote origin gives no answer"
 
 offline_project
 go_offline
@@ -6547,15 +6547,125 @@ pr_work
 pr_land "with no base ever heard and none set the landing says what to set" 3 \
   "never heard which branch is its base — set BASE_BRANCH in .review/land.conf"
 git symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
-pr_land "the base a clone recorded stands in for one never heard" 3 \
+pr_land "the base a clone recorded stands in for one never heard" 4 \
   "the remote origin gives no answer"
 
 offline_project
 set_level merge
 touch "$GH_STATE/offline"
 pr_work
-pr_land "a gh that cannot connect is not called a login" 3 "GitHub gives no answer"
+pr_land "a gh that cannot connect is not called a login" 4 "GitHub gives no answer"
 never_says "it does not send anyone to gh auth login" "gh auth login" "$WORK/land.log"
+# ---- without the remote the landing, the review and /qa's tools go on ---------------
+# The task lands, is reviewed and checked online; then the remote's host gives no answer.
+# What the loop does here goes on, on what this copy last heard, and says what it owes;
+# nothing is sent. gh_state is what the stand-in of gh keeps: the pull requests, the
+# statuses and the comments.
+gh_state() { cat "$GH_STATE/prs.json" "$GH_STATE/statuses.json" "$GH_STATE/comments.json" \
+  2>/dev/null | cksum; }
+offline_project
+set_level merge
+pr_work
+step "the landing of the work online" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked
+online_pull="$(jq -r '.pr_url' "$run/meta.json")"
+go_offline
+pr_work
+remote_tip="$(git -C "$GH_REMOTE" rev-parse refs/heads/task/T-001)"
+sent_before="$(gh_state)"
+pr_land "a remote that gives no answer does not stop a landing" 4 \
+  "publishing is owed: the remote origin gives no answer"
+says "it says it lands on what this copy last heard" \
+  "── the remote origin gives no answer: landing here on what this copy last heard (base main)" \
+  "$WORK/land.log"
+holds "the commit is made" \
+  [ "$(git log -1 --format=%s HEAD)" = "T-001: changes after review 1" ]
+holds "with its trailer" [ -n "$(git log -1 --format=%B HEAD | grep -x 'Task-Id: T-001')" ]
+holds "and nothing is sent" \
+  [ "$(git -C "$GH_REMOTE" rev-parse refs/heads/task/T-001)" = "$remote_tip" -a \
+    "$(gh_state)" = "$sent_before" ]
+says "it says the loop goes on" "The loop goes on: go on here" "$WORK/land.log"
+pr_review "the review runs on it here" 0 "CLEAN — gates green"
+says "it says it reviews here, from the base as last fetched" \
+  "── the remote origin gives no answer: reviewing here, from main as last fetched" \
+  "$WORK/run.log"
+says "its run says what it owes" "owed to GitHub: the review of $run" "$WORK/run.log"
+never_says "and does not call that a run not posted" "is not posted on" "$WORK/run.log"
+run_records "the run records that it was made offline, on the pull request last heard" \
+  '.offline == true and .pr_url == "'"$online_pull"'" and .end == "clean" and .exit == 0'
+offline_run="$run"
+pr_post "pr-post.sh work answers from what was last fetched" 0 \
+  "the merge base is of main as last fetched" work
+holds "with a merge base" [ -n "$("$LIB_DIR/pr-post.sh" work 2>/dev/null \
+  | jq -r '.merge_base // empty | select(test("^[0-9a-f]{40}$"))')" ]
+qa_recorded
+pr_post "the report of /qa is kept" 75 "owed to GitHub: the report of $qa_folder" qa "$qa_folder"
+pr_post "an answer to a finding is kept" 75 "owed to GitHub" answers "$offline_run"
+pr_post "what people wrote cannot be read without GitHub, and the script says so" 75 \
+  "cannot be read without GitHub" comments
+pr_post "a run is kept for when GitHub answers" 75 "owed to GitHub: the review of" \
+  run "$offline_run"
+holds "nothing of that is sent" [ "$(gh_state)" = "$sent_before" ]
+printf 'T-001 done\n' >>TASK_TRACKER.md
+pr_land "offline the loop's files alone land on the branch of the task" 4 "publishing is owed"
+holds "in a commit of their own" [ "$(git log -1 --format=%s HEAD)" = "T-001: records" ]
+jq -n '{base: "main"}' >.review/runs/.loop/last-heard.json
+pr_review "a copy that kept no pull request takes the one its newest run names" 0 \
+  "CLEAN — gates green" '{"findings":[]}' '{"verdicts":[]}'
+run_records "and records it" '.pr_url == "'"$online_pull"'" and .offline == true'
+
+# A post that fails for the connection: the gates go offline while they run.
+go_online
+pr_work
+step "a landing online again" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+cat >.review/gates.sh <<'GATES'
+#!/usr/bin/env bash
+git config --unset "url.$GH_REMOTE.insteadOf"
+touch "$GH_STATE/offline"
+echo '{"build":{"status":"pass","blocking":true,"command":"true","output":""}}' >"$1"
+GATES
+pr_review "a post that fails for the connection leaves a clean run clean" 0 "CLEAN — gates green"
+says "and it says what it owes" "owed to GitHub: the review of" "$WORK/run.log"
+run_records "the run keeps its own end" '.end == "clean" and .exit == 0'
+cp "$WORK/gates.green" .review/gates.sh
+
+# At push the review needs no remote, and the landing commits and owes the push.
+offline_project
+set_level push BASE_BRANCH=main
+go_offline
+reviewed_change
+remote_main="$(git -C "$GH_REMOTE" rev-parse refs/heads/main)"
+land_run "at push the commit is made and the push is owed" 4 \
+  "publishing is owed: the remote origin gives no answer"
+holds "the commit is on the branch of the task" on_branch task/T-001
+holds "and the remote is as it was" \
+  [ "$(git -C "$GH_REMOTE" rev-parse refs/heads/main)" = "$remote_main" ]
+holds "with no branch of the task" not remote_has task/T-001
+
+# A first landing offline, in a copy that never heard of a pull request.
+offline_project
+set_level merge BASE_BRANCH=main
+go_offline
+pr_work
+pr_land "a task whose pull request was never heard lands here" 4 "publishing is owed"
+pr_review "a task whose pull request was never heard is reviewed all the same" 0 \
+  "CLEAN — gates green"
+run_records "its run names no pull request, and was made offline" \
+  '.pr_url == null and .offline == true'
+says "and it says how the run reaches the pull request" "owed to GitHub: the review of $run" \
+  "$WORK/run.log"
+holds "its base is the one last fetched" \
+  [ "$(jq -r '.merge_base' "$run/meta.json")" = "$(git rev-parse refs/remotes/origin/main)" ]
+
+# Online, pr-post.sh work asks for no pull request.
+published_project origin
+set_level pr
+pr_work
+step "a landing at pr" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
+on_pull_request 1 '.state = "CLOSED"'
+pr_post "pr-post.sh work asks for no pull request" 0 '"merge_base"' work
+
 
 published_project github
 merged_change "a remote not named origin is found" 0 "merged T-001"
