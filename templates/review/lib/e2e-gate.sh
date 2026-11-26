@@ -446,7 +446,7 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
       --argjson results "$RESULTS" --argjson named "$NAMED" --argjson required "$REQUIRED" \
       --argjson marks "$MARKED" --argjson words "$CASE_DIGESTS" \
       --argjson preset "$PRESET_REASONS" --argjson unrun "$ENVIRONMENT" --argjson busy "$BUSY" \
-      --argjson stopped "$TIMED_OUT" "$JQ_HIT"'
+      --argjson unmade "$UNMADE" --argjson stopped "$TIMED_OUT" "$JQ_HIT"'
   def class: base | if test("\\.") then sub("\\.[^.]*$"; "") else null end;
   def rows: .passed + .failed + .skipped;
   def ran: .passed + .failed;
@@ -524,7 +524,7 @@ jq -n --arg task "$TASK_ID" --arg fingerprint "$FINGERPRINT" --arg harness "$HAR
      reasons: (if $status == "no-harness" or $status == "no-test" then $no_harness
                elif $status == "red" then $red
                elif $status == "environment" then $environment else [] end),
-     environment: $environment, busy: $busy,
+     environment: $environment, busy: $busy, unmade: $unmade,
      results: ($results | with_entries(.key as $platform
        | .value.outcome = (if $absent | index($platform) then "environment"
                            elif any($faults[]; .kind == "no-harness"
@@ -569,9 +569,7 @@ case "$STATUS" in
     echo "E2E COULD NOT RUN — the environment, not the code:"
     show_failures
     if [ "$UNMADE" != "[]" ]; then
-      turn user:only-theirs "let the runs meet somewhere they can write: DEVICE_LOCK_DIR in "\
-".review/land.conf, the same folder in every copy of the project, or E2E_LOCK=off where each "\
-"copy has devices of its own — an edit of that file is theirs"
+      turn_unmade
     elif json_holds --argjson busy "$BUSY" '[.results | to_entries[]
            | select(.value.outcome == "environment") | .key] - $busy == []' "$RUN_DIR/e2e.json"
     then
