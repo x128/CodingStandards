@@ -1248,6 +1248,40 @@ says "and the stop said" \
   "android: .review/e2e.sh did not end in 2 s (E2E_TIMEOUT) and was stopped" "$WORK/run.log"
 never_says "and it is no missing harness" "NO E2E HARNESS" "$WORK/run.log"
 never_says "nor one that ran no test" "NO END-TO-END TEST RAN" "$WORK/run.log"
+# Where the hold cannot be made, the user's line is the last line of the run, and a try that
+# could not hold its platforms for that cause is no try: the stops of the repeats are not
+# reached by it. A try that could not run for another cause counts as before.
+printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\nE2E_TRIES=1\n' >.review/land.conf
+: >"$WORK/a-file"
+unmade_last() {
+  if tail -n 1 "$WORK/run.log" | grep -qF "   For the user, only they can: let the runs meet "\
+"somewhere they can write: DEVICE_LOCK_DIR in .review/land.conf"; then
+    echo "ok    $1"
+  else
+    echo "FAIL  $1: the last line is «$(tail -n 1 "$WORK/run.log")» — log follows"
+    sed 's/^/      /' "$WORK/run.log"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+DEVICE_LOCK_DIR="$WORK/a-file/devices" held_review "$repository" "$WORK/run.log" --again
+check "a review whose platform could not be held ends with the environment" 75 \
+  "android: the hold cannot be made at $WORK/a-file/devices/android.lock" $? "$WORK/run.log"
+unmade_last "and its last line is the user's, with the place to set"
+for again in second third; do
+  DEVICE_LOCK_DIR="$WORK/a-file/devices" held_review "$repository" "$WORK/run.log"
+  check "the $again run on the same work repeats the tests and says the same" 75 \
+    "android: the hold cannot be made at $WORK/a-file/devices/android.lock" $? "$WORK/run.log"
+  unmade_last "its last line is the user's again"
+done
+says "such tries are no tries: no stop of the repeats is reached" \
+  "REPEATED — only the end-to-end tests" "$WORK/run.log"
+echo 2 >"$WORK/env-times"
+E2E_ENV_TIMES="$WORK/env-times" held_review "$repository" "$WORK/run.log"
+check "a try with a device that was not there still counts" 75 \
+  "E2E COULD NOT RUN — the environment, not the code:" $? "$WORK/run.log"
+held_review "$repository" "$WORK/run.log"
+check "and at E2E_TRIES the next run is stopped" 6 "could not run in 1 tries in a row" $? \
+  "$WORK/run.log"
 for setting in E2E_WAIT=soon E2E_TIMEOUT=-1 E2E_LOCK=yes; do
   printf 'THRESHOLD=major\nLANDING=off\nASK_AFTER_RUNS=100\n%s\n' "$setting" >.review/land.conf
   held_review "$repository" "$WORK/run.log" --again

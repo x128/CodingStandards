@@ -2681,6 +2681,16 @@ hold_take() {
   done
 }
 
+# Whose turn it is where no hold could be made: the user's. e2e-gate.sh says it, and
+# review.sh says it again as the last line of its run (turn_unmade <e2e.json>, which says
+# nothing where every hold was made).
+turn_unmade() {
+  [ $# -eq 0 ] || json_holds '(.unmade // []) | length > 0' "$1" || return 0
+  turn user:only-theirs "let the runs meet somewhere they can write: DEVICE_LOCK_DIR in "\
+".review/land.conf, the same folder in every copy of the project, or E2E_LOCK=off where each "\
+"copy has devices of its own — an edit of that file is theirs"
+}
+
 # hold_renew <platform> <lease>: holds it <lease> seconds more from now, only by its holder.
 hold_renew() {
   local lock="$HOLD_PLACE/$1.lock"

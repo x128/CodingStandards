@@ -713,8 +713,9 @@ fi
 # or absent for tests that could not run; `row`, how many; `passed`, the try that passed this
 # stop with the loop's reason, where the row starts at one. A try that passed it on the
 # user's decision starts nothing again. A try that ended only because another run held its
-# platform past E2E_WAIT (`busy` of its e2e.json) is passed over: it says nothing of the
-# code, nor of a device, unless it passed a stop.
+# platform past E2E_WAIT (`busy` of its e2e.json), or because no hold on it could be made
+# (`unmade`), is passed over: it says nothing of the code, nor of a device, unless it passed
+# a stop.
 e2e_tries_read() {
   local record passed
   run_e2e_tries "$1" | while IFS= read -r record; do
@@ -722,9 +723,9 @@ e2e_tries_read() {
     [ -f "$passed" ] || passed=/dev/null
     jq -c --slurpfile passed "$passed" \
       '{status: (.status // ""), reasons: [.reasons[]?], passed: ($passed[0] // null),
-        busy: (.status == "environment" and ((.busy // []) | length) > 0
+        busy: (.status == "environment" and (((.busy // []) + (.unmade // [])) | length) > 0
                and ([.results // {} | to_entries[] | select(.value.outcome == "environment")
-                     | .key] - .busy) == [])}' "$record" \
+                     | .key] - (.busy // []) - (.unmade // [])) == [])}' "$record" \
       || exit 1
   done | jq -sc '
     def kind_of: if .status == "red" then "red" elif .status == "pass" then "pass"
@@ -875,6 +876,7 @@ if [ -n "$REPEAT" ]; then
   echo
   echo "REPEATED — only the end-to-end tests of $(basename "$REPEAT") ran again; its review "\
 "stands: $(run_result "$REPEAT"). No review was made, and none is counted."
+  turn_unmade "$TRY_DIR/e2e.json"
   exit "$CODE"
 fi
 act_on_stop
@@ -1299,6 +1301,7 @@ end_run() {
       fi
     fi
   fi
+  turn_unmade "$RUN_DIR/e2e.json"
   exit "$code"
 }
 trap end_run EXIT
