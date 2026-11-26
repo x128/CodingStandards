@@ -2309,11 +2309,23 @@ hold_ran_out() {
 # Takes over the hold <lock> of <platform> that ran out, or that a check of this copy held
 # (<why>: is this copy's own): moves it aside, so that one taker alone does it, and stops
 # the process group it recorded — unless another process has the group's number now — then
-# says so on stderr.
+# says so on stderr. One taker at a time, while it makes the folder <lock>.taking, and only
+# while the hold is still the one <holder> read; a <lock>.taking over a minute old is of a
+# taker that was killed, and is removed. 1, it did not take the hold over.
 hold_take_over() {
   local platform="$1" lock="$2" holder="$3" why="${4:-ran out}" aside="$2.taken.$$"
   local group stopped="" leader whose
-  mv "$lock" "$aside" 2>/dev/null || return 0
+  if ! mkdir "$lock.taking" 2>/dev/null; then
+    [ -z "$(find "$lock.taking" -maxdepth 0 -mmin +1 2>/dev/null)" ] || rmdir "$lock.taking"
+    return 1
+  fi
+  if [ "$(hold_holder "$lock")" != "$holder" ] || \
+     { [ -z "$holder" ] && ! hold_ran_out "$lock" ""; } || ! mv "$lock" "$aside" 2>/dev/null
+  then
+    rmdir "$lock.taking"
+    return 1
+  fi
+  rmdir "$lock.taking"
   if [ -n "$holder" ]; then
     whose="the hold of $(printf '%s' "$holder" | jq -r '"\(.who // "?") of \(.root // "?")"')"
     group="$(jq -r '.group // "" | tostring' "$aside/group" 2>/dev/null)"
@@ -2365,12 +2377,12 @@ hold_take() {
           HOLD_SAID="$platform: the hold cannot be made at $lock"
           return 1
         fi
-        hold_take_over "$platform" "$lock" "$holder" "is this copy's own"
-        continue
+        hold_take_over "$platform" "$lock" "$holder" "is this copy's own" && continue
+        holder="$(hold_holder "$lock")"
       fi
       if hold_ran_out "$lock" "$holder"; then
-        hold_take_over "$platform" "$lock" "$holder"
-        continue
+        hold_take_over "$platform" "$lock" "$holder" && continue
+        holder="$(hold_holder "$lock")"
       fi
       held_by="$(hold_named "$holder")"
       if [ "$waited" -ge "$wait" ]; then
