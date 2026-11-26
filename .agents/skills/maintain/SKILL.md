@@ -152,12 +152,11 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
    stopped before opening it — `publish.sh` alone, then review again; a closed pull request, or a
    head HEAD does not contain — for the user. When the remote gives no answer it reviews here all
    the same, from the base as last fetched, keeps its exit code and says what it owes: go on with
-   the fix round and `/qa`, and when the remote answers, run `publish.sh` alone and the command each
-   line of what is owed names. It posts the run to the pull request; a post that failed, but for
-   GitHub giving no answer, makes a clean run exit `1`. Post it with
-   `CodingStandards/templates/review/lib/pr-post.sh run <run-dir>` alone before anything else on
-   that run — answers, `/qa` — which finds a review GitHub took and posts none twice. The merge
-   refuses while any run on the pull request is not posted (M1, M7).
+   the fix round and `/qa`, and `publish.sh` alone sends everything owed when the remote answers. It
+   posts the run to the pull request; a post that failed, but for GitHub giving no answer, makes a
+   clean run exit `1`. Post it with `CodingStandards/templates/review/lib/pr-post.sh run <run-dir>`
+   alone before anything else on that run — answers, `/qa` — which finds a review GitHub took and
+   posts none twice. The merge refuses while any run on the pull request is not posted (M1, M7).
 6. **Fix round.** Work through the accepted findings and run again, as long as each run accepts
    fewer findings than the one before (TASK_LOOP.md, "Job 2"); the count is the
    `accepted (>= threshold)` line, and a run that ended with `2`, `5` or `1` is not compared.
@@ -279,15 +278,16 @@ fixed or decided. At `off`, `on` and `push` the steps run in their order.
 
    At `push`, `pr` and `merge`, `land.sh` calls `publish.sh` after the commit. On `4` the commit is
    in. When the cause is that GitHub gives no answer, go on with the loop here — the review, the
-   fixes, `/qa` — and run `publish.sh` alone when it answers. Never wait idle for it. If no code has
-   to change, meet the cause its output names and run the script alone, never `land.sh` again:
+   fixes, `/qa` — and run `publish.sh` alone when it answers: it sends everything owed, in order.
+   Never wait idle for it. If no code has to change, meet the cause its output names and run the
+   script alone, never `land.sh` again:
 
    ```bash
    CodingStandards/templates/review/lib/publish.sh --task-file .review/current-task.json
    ```
 
    Exit codes: `0` done, `3` refused, `5` waiting (the pull request stays as it is), `75` GitHub
-   gives no answer: nothing was sent, `1` error.
+   gives no answer: nothing more was sent, and the output lists what is owed, `1` error.
 
    At the pull request levels `land.sh` takes no `--run`:
 

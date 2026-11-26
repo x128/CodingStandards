@@ -357,6 +357,102 @@ last_heard_pull() {
   printf '%s' "$url"
 }
 
+# What is owed to GitHub is read from the records, never queued: what a record says is not
+# there yet. publish.sh alone sends it, in the order owed_to_github lists it (pr-post.sh
+# owed), and lists it when it cannot.
+#
+# owed_runs <task-id> <pr-url>: the review runs of the task that are not posted, oldest
+# first: no pr-review.json, and meta.json names the pull request, or says the run was made
+# offline and names none — then its head is HEAD or a commit HEAD holds, and it was made
+# after the task last landed with its review (task_landed_at).
+owed_runs() {
+  local task_id="$1" pr_url="$2" run head landed_at
+  landed_at="$(task_landed_at "$task_id")"
+  review_runs_of "$task_id" | while IFS= read -r run; do
+    [ ! -f "$run/pr-review.json" ] || continue
+    if [ -n "$pr_url" ] && json_holds --arg url "$pr_url" '.pr_url == $url' "$run/meta.json"
+    then
+      printf '%s\n' "$run"
+      continue
+    fi
+    json_holds --argjson after "${landed_at:-0}" "$JQ_LANDED_SINCE"'
+      .offline == true and .pr_url == null and landed_since($after)' "$run/meta.json" || continue
+    head="$(jq -r '.head // ""' "$run/meta.json" 2>/dev/null)"
+    [ -n "$head" ] && git merge-base --is-ancestor "$head" HEAD 2>/dev/null || continue
+    printf '%s\n' "$run"
+  done
+}
+
+# owed_answers <run>: how many answers of the run — answers.json, and the answers to its
+# escalations — answers-posted.json lacks; what cannot be read counts none.
+owed_answers() {
+  { cat "$1/answers.json" 2>/dev/null || echo '[]'
+    cat "$1/escalations-answered.json" 2>/dev/null || echo '[]'
+    cat "$1/answers-posted.json" 2>/dev/null || echo '[]'; } \
+    | jq -s '([.[0][]? | {finding_id, kind: "answer"}]
+              + [.[1][]? | select((.resolution // "") != "") | {finding_id, kind: "escalation"}])
+             - [.[2][]? | {finding_id, kind}] | unique | length' 2>/dev/null || echo 0
+}
+
+# owed_reports <task-id>: the folders of /qa of the task, made after it last landed with
+# its review, whose report.md is on no pull request (pr-comment.json); then the folders of
+# the checks after a merge whose report is not on the pull request their list names.
+owed_reports() {
+  local task_id="$1" record folder landed_at
+  landed_at="$(task_landed_at "$task_id")"
+  for record in .review/runs/*/qa.json; do
+    [ -f "$record" ] || continue
+    folder="${record%/qa.json}"
+    [ -f "$folder/report.md" ] || continue
+    json_holds --arg id "$task_id" --argjson after "${landed_at:-0}" "$JQ_LANDED_SINCE"'
+      .task == $id and landed_since($after)' "$record" || continue
+    json_holds '.pr_url | type == "string"' "$folder/pr-comment.json" && continue
+    jq -c --arg run "$folder" '{time: (.time // 0), run: $run}' "$record" 2>/dev/null
+  done | jq -sr 'sort_by(.time) | .[].run'
+}
+owed_after_merge_reports() {
+  local list folder url
+  for list in .review/runs/after-merge-*/owed.json; do
+    [ -f "$list" ] || continue
+    folder="${list%/owed.json}"
+    [ -s "$folder/report.md" ] || continue
+    url="$(jq -r '.pr_url // empty | strings' "$list" 2>/dev/null)"
+    [ -n "$url" ] || continue
+    json_holds --arg url "$url" '.pr_url == $url' "$folder/pr-comment.json" || \
+      printf '%s\n' "$folder"
+  done
+}
+
+# owed_to_github <task-id> <remote> <base> <branch> <pr-url> <level>: one line for each
+# thing the records show is not on GitHub, in the order publish.sh sends it. The commits are
+# those the remote branch as last heard does not have, or, where the remote never had the
+# branch, all of it since the base. At pr and merge: the pull request, when none was heard;
+# each review run that is owed; the answers; the reports of /qa and of the checks after a
+# merge; and the statuses and the description, which are made again when they are sent.
+owed_to_github() {
+  local task_id="$1" remote="$2" base="$3" branch="$4" pr_url="$5" level="$6" since count run
+  since="refs/remotes/$remote/$branch"
+  git show-ref --verify --quiet "$since" || since="refs/remotes/$remote/$base"
+  if git show-ref --verify --quiet "$since"; then
+    count="$(git rev-list --count "$since..HEAD" 2>/dev/null)"
+    [ "${count:-0}" -eq 0 ] || \
+      printf 'the push of %s: %s commit(s) the remote does not have\n' "$branch" "$count"
+  else
+    printf 'the push of %s\n' "$branch"
+  fi
+  landing_opens_pull_request "$level" || return 0
+  [ -n "$pr_url" ] || printf 'the pull request of %s into %s\n' "$branch" "$base"
+  owed_runs "$task_id" "$pr_url" | sed 's/^/the review of /'
+  { [ -z "$pr_url" ] || review_runs_on "$task_id" "$pr_url"
+    owed_runs "$task_id" "$pr_url"; } | awk '!seen[$0]++' | while IFS= read -r run; do
+    count="$(owed_answers "$run")"
+    [ "${count:-0}" -eq 0 ] || printf '%s answer(s) of %s\n' "$count" "$run"
+  done
+  owed_reports "$task_id" | sed 's/^/the report of /'
+  owed_after_merge_reports | sed 's/^/the report of the checks after the merge in /'
+  printf 'the statuses and the description, made again when they are sent\n'
+}
+
 # The branch pull requests go to, which is also protected at the levels that
 # publish. Asked of the remote every time: the HEAD a clone recorded stays as it
 # was when the remote's default branch changes, and the real one would then be left

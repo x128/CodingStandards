@@ -3587,6 +3587,13 @@ case "$1 $2" in
     esac
     printf '%s' "$record" | fields "$@" ;;
   "pr checks")
+    # down-at-checks: GitHub gives no answer from this call on.
+    if [ -e "$GH_STATE/down-at-checks" ]; then
+      rm "$GH_STATE/down-at-checks"
+      touch "$GH_STATE/offline"
+      echo "error connecting to api.github.com" >&2
+      exit 1
+    fi
     if [ -e "$GH_STATE/pushes-at-checks" ]; then
       rm "$GH_STATE/pushes-at-checks"
       someone_pushes "$(find_pr "$3" | jq -r .headRefName)"
@@ -3611,6 +3618,16 @@ case "$1 $2" in
   "pr merge")
     [ ! -e "$GH_STATE/refuses-merge" ] ||
       { echo "the base branch policy prohibits the merge" >&2; exit 1; }
+    # down-at-merge: the connection goes at the merge — unsent: before it is sent;
+    # unanswered: after GitHub merged, before its answer came; after: once gh answered,
+    # with the remote too.
+    down="$(cat "$GH_STATE/down-at-merge" 2>/dev/null)"
+    rm -f "$GH_STATE/down-at-merge"
+    if [ "$down" = unsent ]; then
+      touch "$GH_STATE/offline"
+      echo "error connecting to api.github.com" >&2
+      exit 1
+    fi
     record="$(find_pr "$3")"
     number="$(printf '%s' "$record" | jq -r .number)"
     head_branch="$(printf '%s' "$record" | jq -r .headRefName)"
@@ -3643,6 +3660,18 @@ case "$1 $2" in
         git pull -q --ff-only "$(git remote | head -1)" "refs/heads/$base_branch"
       git branch -q -D "$head_branch"
     fi
+    case "$down" in
+      unanswered)
+        case " $* " in
+          *" --delete-branch "*) git -C "$GH_REMOTE" update-ref -d "refs/heads/$head_branch" ;;
+        esac
+        touch "$GH_STATE/offline"
+        echo "error connecting to api.github.com" >&2
+        exit 1 ;;
+      after)
+        git config --unset "url.$GH_REMOTE.insteadOf"
+        touch "$GH_STATE/offline" ;;
+    esac
     [ ! -e "$GH_STATE/fails-after-merge" ] ||
       { echo "could not tidy the local checkout" >&2; exit 1; }
     case " $* " in
@@ -6665,6 +6694,235 @@ pr_work
 step "a landing at pr" "$WORK/land.log" "$LIB_DIR/land.sh" --task-file .review/task.json
 on_pull_request 1 '.state = "CLOSED"'
 pr_post "pr-post.sh work asks for no pull request" 0 '"merge_base"' work
+
+# ---- what is owed is sent when the host answers ------------------------------------
+# A task lands and is reviewed online, with a finding; then the remote's host gives no
+# answer, and the fix lands, is reviewed and checked here. publish.sh waits for GitHub with
+# exit 75 and lists what is owed, in the order it is sent; when the host answers, publish.sh
+# alone sends it, and the merge is checked anew: it is never kept.
+put_off_once='{"counts": {"pass": 1, "fail": 0, "unproven": 0, "not_checked": 0, "after_merge": 1},
+  "items": [{"id": "TC-001", "verdict": "pass"},
+            {"id": "the build of main", "verdict": "after_merge",
+             "reason": "the workflow runs only on a push to the base branch",
+             "check": "the run of the build workflow on main, at the merge commit"}]}'
+owed_listed() {
+  local name="$1" log="$2" line at=0 found
+  shift 2
+  for line in "$@"; do
+    found="$(grep -nF -- "$line" "$log" | head -1 | cut -d: -f1)"
+    if [ -z "$found" ] || [ "$found" -le "$at" ]; then
+      echo "FAIL  $name: «$line» is not listed after the line before — log follows"
+      sed 's/^/      /' "$log"
+      FAILURES=$((FAILURES + 1))
+      return
+    fi
+    at="$found"
+  done
+  echo "ok    $name"
+}
+offline_project
+set_level merge
+pr_work
+step "the landing of the work online" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review "a review online with a finding" 3 "accepted (>= major): 1" \
+  "{\"findings\": [$(pr_finding F-001 src/answer.kt 1 'fun answer()')]}" \
+  "{\"verdicts\": [$(pr_verdict F-001 accept no-rule-fired)]}"
+found_run="$run"
+go_offline
+pr_work
+pr_land "the fix lands here while the host gives no answer" 4 "publishing is owed"
+printf '[{"finding_id": "F-001", "answer": "fixed", "text": "answer() is 42.", "commit": ""}]' \
+  >"$found_run/answers.json"
+pr_review "the fix is reviewed here" 0 "CLEAN — gates green"
+offline_run="$run"
+says "the review says that publish.sh alone sends it" \
+  "owed to GitHub: the review of $offline_run — publish.sh alone sends it" "$WORK/run.log"
+says "and that it is posted when the host answers" \
+  "reviewing here, from main as last fetched" "$WORK/run.log"
+qa_recorded
+pr_post "so does the report of /qa" 75 \
+  "owed to GitHub: the report of $qa_folder — publish.sh alone sends it" qa "$qa_folder"
+pr_post "pr-post.sh owed says what is owed while GitHub gives no answer" 75 \
+  "the review of $offline_run" owed
+publish "the merge waits for GitHub and lists what is owed" 75 "PUBLISHING WAITS FOR GITHUB" \
+  --merge
+owed_listed "in the order publish.sh sends it" "$WORK/publish.log" \
+  "   Owed, and sent in this order by publish.sh alone when it answers:" \
+  "     the push of task/T-001: 1 commit(s) the remote does not have" \
+  "     the review of $offline_run" "     1 answer(s) of $found_run" \
+  "     the report of $qa_folder" \
+  "     the statuses and the description, made again when they are sent"
+holds "nothing is merged" not gh_called "pr merge"
+says "and the merge is not kept" \
+  "   The merge is never kept: publish.sh --merge then checks the whole contract anew." \
+  "$WORK/publish.log"
+says "it says the loop goes on" "The loop goes on: go on here" "$WORK/publish.log"
+go_online
+pr_post "a run whose commit is not on the remote yet is not posted" 3 \
+  "the push of $(jq -r '.head' "$offline_run/meta.json") is owed first: publish.sh alone" owed
+holds "nothing of it is posted" not posted "<!-- loop:review $(basename "$offline_run") -->"
+publish "back online, publish.sh alone sends it all" 0 \
+  "nothing more is owed to https://example.test/pull/1"
+holds "the remote branch is at HEAD" remote_is task/T-001 "$(git rev-parse HEAD)"
+says "it says what it sent" "sent: the review of $offline_run" "$WORK/publish.log"
+holds "the review run is posted once" \
+  posted_count_is "<!-- loop:review $(basename "$offline_run") -->" 1
+holds "the answer once" posted_count_is "<!-- loop:answer $(basename "$found_run") F-001 -->" 1
+holds "the report of /qa once" posted_count_is "<!-- loop:qa $(basename "$qa_folder") -->" 1
+holds "a run made offline is posted at the commit it reviewed" \
+  jq_true --arg marker "<!-- loop:review $(basename "$offline_run") -->" \
+  --arg head "$(jq -r '.head' "$offline_run/meta.json")" \
+  'any(.[]; .kind == "review" and (.body | startswith($marker)) and .commit_id == $head)' \
+  "$GH_STATE/comments.json"
+holds "the statuses are those of the work as it is now" status_is loop/review success
+publish "sent again, nothing is sent twice" 0 "nothing more is owed to"
+holds "no review is posted twice" posted_count_is "<!-- loop:review $(basename "$offline_run") -->" 1
+publish "then the merge goes" 0 "merged T-001" --merge
+
+# A first landing offline, in a copy that never heard of its pull request.
+offline_project
+set_level merge BASE_BRANCH=main
+go_offline
+pr_work
+pr_land "a first landing here" 4 "publishing is owed"
+says "owes its pull request" "     the pull request of task/T-001 into main" "$WORK/land.log"
+pr_review_quietly
+never_heard_run="$run"
+go_online
+publish "a first landing offline owes its pull request too" 0 \
+  "pull request: https://example.test/pull/1"
+holds "its run made here is posted on it" \
+  posted_count_is "<!-- loop:review $(basename "$never_heard_run") -->" 1
+holds "and names it now" \
+  jq_true '.pr_url == "https://example.test/pull/1"' "$never_heard_run/meta.json"
+qa_checked
+publish "and the merge goes on that review" 0 "merged T-001" --merge
+
+# A base that moved meanwhile: the merge that waited for GitHub is not kept, and is checked
+# anew on the base as it is.
+offline_project
+reviewed_pull_request merge
+go_offline
+publish "a merge that waited for GitHub" 75 "PUBLISHING WAITS FOR GITHUB" --merge
+git -C "$GH_REMOTE" update-ref refs/heads/main "$(git -C "$GH_REMOTE" commit-tree \
+  'refs/heads/main^{tree}' -p refs/heads/main -m "someone else's commit")"
+go_online
+publish "a base that moved meanwhile is checked anew at the merge" 0 "merged T-001" --merge
+holds "the base keeps the commit that moved it" remote_log_has main "someone else's commit"
+
+# The remote branch moved, or the pull request was closed, while the host gave no answer.
+offline_project
+reviewed_pull_request merge
+go_offline
+pr_work
+pr_land "a landing here before the branch moves there" 4 "publishing is owed"
+git -C "$GH_REMOTE" update-ref refs/heads/task/T-001 "$(git -C "$GH_REMOTE" commit-tree \
+  'refs/heads/task/T-001^{tree}' -p refs/heads/task/T-001 -m "pushed from elsewhere")"
+moved="$(git -C "$GH_REMOTE" rev-parse refs/heads/task/T-001)"
+go_online
+publish "a branch that moved on the remote meanwhile is not overwritten" 1 \
+  "the remote branch task/T-001 moved"
+holds "the remote keeps its commit" remote_is task/T-001 "$moved"
+
+offline_project
+reviewed_pull_request merge
+go_offline
+pr_work
+pr_land "a landing here before the pull request is closed" 4 "publishing is owed"
+on_pull_request 1 '.state = "CLOSED"'
+remote_tip="$(git -C "$GH_REMOTE" rev-parse refs/heads/task/T-001)"
+go_online
+publish "a pull request closed meanwhile is not reopened or replaced" 5 \
+  "was closed without a merge"
+holds "nothing is pushed" remote_is task/T-001 "$remote_tip"
+holds "and no pull request is opened" [ "$(jq length "$GH_STATE/prs.json")" -eq 1 ]
+
+# The connection goes in the middle: at the push, at the checks, at the merge.
+offline_project
+reviewed_pull_request merge
+pr_work
+cat >.git/hooks/pre-push <<'HOOK'
+#!/bin/sh
+git config --unset "url.$GH_REMOTE.insteadOf"
+touch "$GH_STATE/offline"
+exit 1
+HOOK
+chmod +x .git/hooks/pre-push
+pr_land "a push that fails for the connection is owed" 4 \
+  "publishing is owed: the remote origin, or GitHub, gives no answer"
+says "and listed" "     the push of task/T-001: 1 commit(s) the remote does not have" \
+  "$WORK/land.log"
+never_says "it is not called a failed push" "the push to origin failed" "$WORK/land.log"
+rm .git/hooks/pre-push
+
+offline_project
+reviewed_pull_request merge
+touch "$GH_STATE/down-at-checks"
+publish "checks that cannot be read for want of GitHub wait for it" 75 \
+  "PUBLISHING WAITS FOR GITHUB" --merge
+never_says "they are not called an error" "PUBLISHING FAILED" "$WORK/publish.log"
+holds "nothing is merged then" not gh_called "pr merge"
+
+offline_project
+reviewed_pull_request merge
+printf 'unsent\n' >"$GH_STATE/down-at-merge"
+publish "a merge that could not be sent is not told as refused" 75 \
+  "the merge of https://example.test/pull/1 was not sent, or its answer was lost" --merge
+never_says "it does not say gh did not merge" "gh did not merge" "$WORK/publish.log"
+says "it says how it is found out" \
+  "publish.sh --merge again, when GitHub answers, looks first whether the pull request is merged" \
+  "$WORK/publish.log"
+go_online
+publish "when GitHub answers the merge goes" 0 "merged T-001" --merge
+
+offline_project
+set_level merge
+pr_work
+step "a landing whose /qa puts a check off until after the merge" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked '[]' "" 0 "$put_off_once"
+printf 'unanswered\n' >"$GH_STATE/down-at-merge"
+publish "a merge whose answer was lost waits for GitHub" 75 "its answer was lost" --merge
+go_online
+publish "when GitHub answers, the merge it took is found" 0 "merged T-001" --merge
+says "and what it owes after the merge is said" \
+  "OWED AFTER THE MERGE — /qa put off 1 check(s) of T-001 until now:" "$WORK/publish.log"
+holds "and written down" \
+  jq_true '.items[0].id == "the build of main"' .review/runs/after-merge-T-001/owed.json
+
+offline_project
+set_level merge
+pr_work
+step "a landing whose /qa puts a check off until after the merge" "$WORK/land.log" \
+  "$LIB_DIR/land.sh" --task-file .review/task.json
+pr_review_quietly && qa_checked '[]' "" 0 "$put_off_once"
+printf 'after\n' >"$GH_STATE/down-at-merge"
+publish "a merge whose base cannot be updated here waits, and says the merge is sound" 75 \
+  "https://example.test/pull/1 is merged; main here is not updated yet, because the remote origin gives no answer — nothing is wrong with the merge" \
+  --merge
+says "it says what the merge owes" \
+  "OWED AFTER THE MERGE — /qa put off 1 check(s) of T-001 until now:" "$WORK/publish.log"
+holds "the checkout stays on the branch of the task" on_branch task/T-001
+says "and that publish.sh --merge then only updates main" \
+  "The loop goes on: run publish.sh --merge again when it answers: it only updates main here" \
+  "$WORK/publish.log"
+go_online
+publish "when it answers, publish.sh --merge updates main here" 0 "merged T-001" --merge
+holds "main here is the merge" [ "$(git rev-parse HEAD)" = "$(git -C "$GH_REMOTE" rev-parse main)" ]
+
+# At push, back online, publish.sh sends the push.
+offline_project
+set_level push BASE_BRANCH=main
+go_offline
+reviewed_change
+land_run "a landing at push here" 4 "publishing is owed"
+says "at push the push alone is owed" \
+  "     the push of task/T-001: 1 commit(s) the remote does not have" "$WORK/land.log"
+never_says "and no pull request" "the pull request of" "$WORK/land.log"
+go_online
+publish "at push, back online, publish.sh sends the push" 0 "published T-001"
+holds "the remote has the commit" remote_is task/T-001 "$(git rev-parse HEAD)"
 
 
 published_project github

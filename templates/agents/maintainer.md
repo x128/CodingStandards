@@ -70,7 +70,8 @@ the commit message, and the commands only when asked.
 - A refusal is information, not an obstacle. It names the condition that failed, and says in its
   last line when it is the user's. Meet it, or tell them what that line says. Never bypass it.
 - `land.sh` exit 4 means the commit landed and publishing did not finish; `publish.sh` exit 5 means
-  waiting. On either, with a pull request open, read it with `gh pr view`, `gh pr checks` and
+  waiting, and 75 that GitHub gives no answer and what is owed is kept: go on with the loop here. On
+  4 or 5, with a pull request open, read it with `gh pr view`, `gh pr checks` and
   `pr-post.sh comments`. If no code has to change, meet the cause and run
   `publish.sh --task-file <task.json>` alone, never `land.sh` again. Checks still running are not a
   failure: run `publish.sh --check` (at `pr`) or `--merge` (at `merge`) again, up to three runs in a
