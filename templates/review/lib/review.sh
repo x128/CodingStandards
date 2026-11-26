@@ -49,7 +49,8 @@
 #      harness file at all, before the review; at LANDING=pr and merge also work that
 #      is not committed, a pull request that is not at HEAD, or a run that could not be
 #      posted on it. When the remote or GitHub gives no answer at all, the run reviews here
-#      from the base as last fetched, keeps its own exit code and says what it owes GitHub
+#      from the base as last fetched, keeps its own exit code and says what it owes GitHub,
+#      which publish.sh alone sends when it answers
 #
 # Requires: jq >= 1.6, git, and whichever agent CLIs REVIEWER_CMD / MAINTAINER_CMD use.
 # VERIFY CLI FLAGS against your installed versions before first use.
@@ -549,7 +550,8 @@ say_after_merge_unsettled "$REVIEW_DIR/land.conf"
 # run is offline: it reviews here, from the base branch as last fetched and on the pull
 # request this copy last heard (last_heard_pull), or none; the state and the head of the
 # pull request are not asked. That HEAD is a commit of the task and that its work is
-# committed are checked as ever. Nothing is posted then, and the run says what it owes.
+# committed are checked as ever. Nothing is posted then, and the run says what it owes:
+# publish.sh alone sends it when GitHub answers (pr-post.sh owed).
 pr_refuse() {
   echo "REVIEW REFUSED — $1" >&2
   [ $# -lt 3 ] || turn "$2" "$3"
@@ -615,8 +617,8 @@ if [ -n "$OFFLINE" ]; then
   MERGE_BASE="$(git merge-base "refs/remotes/$REMOTE/$BASE_BRANCH" HEAD)" || \
     pr_refuse "HEAD has no commit in common with $BASE_BRANCH of $REMOTE"
   echo "── $OFFLINE gives no answer: reviewing here, from $BASE_BRANCH as last fetched "\
-"($(git rev-parse --short "refs/remotes/$REMOTE/$BASE_BRANCH")); what the run owes GitHub is "\
-"said at its end"
+"($(git rev-parse --short "refs/remotes/$REMOTE/$BASE_BRANCH")); the run is posted when it "\
+"answers (publish.sh alone)"
 elif landing_opens_pull_request "$LANDING" && [ "$DRY_RUN" = false ]; then
   PR_URL="$(printf '%s' "$PULL_REQUEST" | jq -r '.url // ""')"
   PR_HEAD="$(printf '%s' "$PULL_REQUEST" | jq -r '.headRefOid // ""')"
@@ -861,8 +863,7 @@ if [ -n "$REPEAT" ]; then
     || { rm -f "$REPEAT/meta.json.new"
          echo "   how the tests ended could not be written into $REPEAT/meta.json" >&2; }
   if [ -n "$PR_URL" ] && [ -n "$OFFLINE" ]; then
-    echo "   owed to GitHub: the statuses of $PR_URL — pr-post.sh statuses posts them when "\
-"GitHub answers" >&2
+    echo "   owed to GitHub: the statuses of $PR_URL — publish.sh alone sends them" >&2
   elif [ -n "$PR_URL" ]; then
     "$LIB_DIR/pr-post.sh" statuses
     case $? in
@@ -1285,12 +1286,8 @@ end_run() {
   trap - EXIT
   record_end "$code"
   say_what_repeats
-  if [ -n "$OFFLINE" ] && [ -n "$PR_URL" ]; then
-    echo "   owed to GitHub: the review of $RUN_DIR — pr-post.sh run posts it when GitHub "\
-"answers" >&2
-  elif [ -n "$OFFLINE" ]; then
-    echo "   owed to GitHub: the review of $RUN_DIR — it names no pull request, none having been "\
-"heard here: once publish.sh has opened one, review.sh reviews again on it" >&2
+  if [ -n "$OFFLINE" ]; then
+    echo "   owed to GitHub: the review of $RUN_DIR — publish.sh alone sends it" >&2
   elif [ -n "$PR_URL" ]; then
     "$LIB_DIR/pr-post.sh" run "$RUN_DIR"
     posted=$?

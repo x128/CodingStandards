@@ -15,8 +15,9 @@
 # that is merged.
 #
 # land.sh calls it after a commit at LANDING=push, pr and merge: it pushes, and at pr
-# and merge opens the pull request and posts the loop's statuses on its head
-# (pr-post.sh); it never merges then. Run it alone to finish what stopped, a push that
+# and merge opens the pull request and sends what the records show is owed to it — the
+# review runs, the answers and the reports not posted yet, then the loop's statuses on its
+# head and the description (pr-post.sh owed); it never merges then. Run it alone to finish what stopped, a push that
 # failed or a pull request that could not be opened, without another commit. Run
 # again, it does nothing twice: an open pull request is left as it is, a merged one
 # is not pushed back, and a closed one is not replaced.
@@ -38,8 +39,10 @@
 #   3  refused, with the reason on stderr
 #   5  waiting — the pull request stays as it is, and the reason and its URL are on
 #      stderr
-#   75 the remote or GitHub gives no answer at all: nothing was sent; run it again when
-#      it answers, and meanwhile the work, land.sh, review.sh and /qa go on here
+#   75 GitHub gives no answer: nothing more was sent, and the output lists what is owed,
+#      in the order publish.sh alone sends it when it answers; meanwhile the work, land.sh,
+#      review.sh and /qa go on here. The merge is never kept: --check and --merge check
+#      the whole contract anew
 #   1  usage or environment error, or a push that failed
 #
 # Requires: jq >= 1.6, git >= 2.23; gh at LANDING=pr and merge
@@ -105,14 +108,31 @@ waiting() {
   [ $# -lt 3 ] || turn "$2" "$3"
   exit 5
 }
-# The host of the remote, or GitHub, gives no answer at all: nothing is sent, and what
-# needs none goes on.
+# The host of the remote, or GitHub, gives no answer at all: nothing more is sent, what is
+# owed is listed from the records (common.sh, owed_to_github), and what needs no GitHub goes
+# on. waits_for_github <reason> [<the loop's next step>].
 waits_for_github() {
-  echo "PUBLISHING WAITS FOR GITHUB — $1; nothing was sent, and nothing is lost." >&2
-  turn loop "go on here: the work, land.sh, review.sh and /qa need no GitHub; run publish.sh "\
-"alone when it answers"
+  local pr_url="${PR_URL:-}" owed
+  echo "PUBLISHING WAITS FOR GITHUB — $1; nothing more was sent, and nothing is lost." >&2
+  [ -n "$pr_url" ] || pr_url="$(last_heard_pull "$TASK_ID" "$BRANCH")"
+  owed="$(owed_to_github "$TASK_ID" "$REMOTE" "$BASE" "$BRANCH" "$pr_url" "$LANDING")"
+  if [ -n "$owed" ]; then
+    echo "   Owed, and sent in this order by publish.sh alone when it answers:" >&2
+    printf '%s\n' "$owed" | sed 's/^/     /' >&2
+  fi
+  if [ "$MODE" = publish ]; then
+    turn loop "${2:-go on here: the work, land.sh, review.sh and /qa need no GitHub; run "\
+"publish.sh alone when it answers}"
+  else
+    echo "   The merge is never kept: publish.sh --$MODE then checks the whole contract anew." >&2
+    turn loop "${2:-go on here: the work, land.sh, review.sh and /qa need no GitHub; when it "\
+"answers, run publish.sh alone, then publish.sh --$MODE}"
+  fi
   exit 75
 }
+# After a request that failed: whether the remote, or GitHub, gives no answer at all.
+remote_waits() { connection_lost "$REMOTE" && waits_for_github "$(remote_gives_no_answer "$REMOTE")"; }
+github_waits() { github_lost "$REPOSITORY" && waits_for_github "GitHub gives no answer"; }
 
 # ---------------------------------------------------------------------------
 # 1. Only what a landing made, at a level that publishes.
@@ -166,7 +186,7 @@ HEAD_COMMIT="$(git rev-parse HEAD)"
 
 # What the merge would take is measured against the base branch as it is now.
 if [ "$LANDING" = "merge" ] || [ "$MODE" != publish ]; then
-  git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || \
+  git fetch -q "$REMOTE" "+refs/heads/$BASE:refs/remotes/$REMOTE/$BASE" || remote_waits || \
     fail "could not read $BASE from $REMOTE; git says why above"
 fi
 
@@ -222,7 +242,7 @@ say_owed() {
 }
 
 finish_on_base() {
-  local merged_note="$PR_URL is merged into $BASE on $REMOTE"
+  local merged_note="$PR_URL is merged into $BASE on $REMOTE" switched=no
   if [ "$(current_branch)" != "$BASE" ]; then
     if git worktree list --porcelain | grep -xF "branch refs/heads/$BASE" >/dev/null; then
       echo "merged $TASK_ID: $PR_URL into $BASE, which is checked out in another worktree, "\
@@ -234,11 +254,27 @@ finish_on_base() {
     git switch "$BASE" || \
       fail "$merged_note, but this checkout could not move to $BASE; git says why above. "\
 "publish.sh again only tries that again, and pushes nothing"
+    switched=yes
   fi
-  git pull --ff-only "$REMOTE" "refs/heads/$BASE" || \
+  # A remote that gives no answer: the checkout goes back to the branch of the task, which
+  # publish.sh --merge, run again, finds merged and takes on to here.
+  if ! git pull --ff-only "$REMOTE" "refs/heads/$BASE"; then
+    if connection_lost "$REMOTE"; then
+      [ "$switched" = no ] || git switch -q "$BRANCH" 2>/dev/null
+      echo "PUBLISHING WAITS FOR GITHUB — $PR_URL is merged; $BASE here is not updated yet, "\
+"because $(remote_gives_no_answer "$REMOTE") — nothing is wrong with the merge" >&2
+      say_owed
+      if [ "$(current_branch)" = "$BRANCH" ]; then
+        turn loop "run publish.sh --merge again when it answers: it only updates $BASE here"
+      else
+        turn loop "when it answers, update $BASE here: git pull --ff-only $REMOTE $BASE"
+      fi
+      exit 75
+    fi
     fail "$merged_note, and nothing is left to publish, but $BASE here could not fast-forward; "\
 "git says why above" \
       user:only-theirs "bring $BASE here in line with $REMOTE: publish.sh refuses on $BASE"
+  fi
   # Not -D, which is a force: after a squash the branch is in no commit of the base, but
   # its upstream still names the head that was merged.
   if [ "$BRANCH" = "task/$TASK_ID" ] && git show-ref --verify --quiet "refs/heads/$BRANCH"; then
@@ -251,7 +287,7 @@ finish_on_base() {
 
 if landing_opens_pull_request "$LANDING"; then
   REPOSITORY="$(remote_repository "$REMOTE")"
-  LATEST="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE" all)" || \
+  LATEST="$(pull_request_of "$REPOSITORY" "$BRANCH" "$BASE" all)" || github_waits || \
     fail "gh could not say whether $BRANCH has a pull request into $BASE"
   PR_URL="$(printf '%s' "$LATEST" | jq -r '.url // ""')"
   PR_NUMBER="$(printf '%s' "$LATEST" | jq -r '.number // ""')"
@@ -303,7 +339,8 @@ if [ "$MODE" = publish ]; then
       *$'\n'"To "*$'\n'"!"$'\t'"$PUSH_REFSPEC"$'\t'"[rejected]"*)
         fail "the remote branch $BRANCH moved on $REMOTE — "\
 "the push was rejected, and it is never forced" user:only-theirs "bring the two together" ;;
-      *) fail "the push to $REMOTE failed; git says why above" ;;
+      *) remote_waits
+         fail "the push to $REMOTE failed; git says why above" ;;
     esac
   fi
 
@@ -314,11 +351,12 @@ if [ "$MODE" = publish ]; then
 
   # -------------------------------------------------------------------------
   # 3. One pull request, never a draft, with the task as its title and the loop's
-  #    description (pr-post.sh body); then the loop's statuses on the head just
-  #    pushed (pr-post.sh statuses): those of the newest review and /qa if they
-  #    checked the work as it is, which a commit of the loop's files alone keeps,
-  #    and otherwise pending. Never a merge: that is --merge, once the review, /qa
-  #    and the answers allow it.
+  #    description (pr-post.sh body); then what the records show is owed to it
+  #    (pr-post.sh owed): the review runs, the answers and the reports not posted
+  #    yet, then the loop's statuses on the head just pushed — those of the newest
+  #    review and /qa if they checked the work as it is, which a commit of the loop's
+  #    files alone keeps, and otherwise pending — and the description. Never a merge:
+  #    that is --merge, once the review, /qa and the answers allow it.
   # -------------------------------------------------------------------------
 
   if [ -z "$PR_URL" ]; then
@@ -331,13 +369,19 @@ if [ "$MODE" = publish ]; then
       --title "$TASK_ID: $(jq -r '.title // .id' "$TASK_FILE")" --body-file "$BODY_FILE")"
     CREATE_EXIT=$?
     rm -f "$BODY_FILE"
-    [ "$CREATE_EXIT" -eq 0 ] || fail "gh could not open a pull request of $BRANCH into $BASE"
+    [ "$CREATE_EXIT" -eq 0 ] || github_waits || \
+      fail "gh could not open a pull request of $BRANCH into $BASE"
   fi
   heard pull "$BRANCH" "$PR_URL"
   echo "pull request: $PR_URL"
-  "$LIB_DIR/pr-post.sh" statuses --task-file "$TASK_FILE" || \
-    fail "$PR_URL is open, but the loop's statuses are not posted on it; pr-post.sh says why "\
-"above. Run pr-post.sh statuses alone"
+  # What the records show is owed to it, in order: the runs, the answers, the reports, then
+  # the statuses and the description, made now (pr-post.sh owed).
+  "$LIB_DIR/pr-post.sh" owed --task-file "$TASK_FILE"
+  case $? in
+    0) ;;
+    75) waits_for_github "GitHub gives no answer" ;;
+    *) fail "$PR_URL is open, but what is owed to it is not all sent; pr-post.sh says why above" ;;
+  esac
   echo "published $TASK_ID: $BRANCH on $REMOTE"
   exit 0
 fi
@@ -353,8 +397,12 @@ fi
   refuse "$BRANCH has no open pull request into $BASE — publish.sh alone opens one"
 
 # The description says where the task stands, at every check, refused or not.
-"$LIB_DIR/pr-post.sh" body --task-file "$TASK_FILE" || \
-  fail "the description of $PR_URL could not be refreshed; pr-post.sh says why above"
+"$LIB_DIR/pr-post.sh" body --task-file "$TASK_FILE"
+case $? in
+  0) ;;
+  75) waits_for_github "GitHub gives no answer" ;;
+  *) fail "the description of $PR_URL could not be refreshed; pr-post.sh says why above" ;;
+esac
 
 # The tree: the task's work committed and pushed, the loop's files committed, and with
 # WITH_RECORDS=yes the records too; with no, the owner's files and the logs are the user's
@@ -428,9 +476,13 @@ for OWED_LIST in .review/runs/after-merge-*/owed.json; do
   [ -s "$OWED_FOLDER/report.md" ] || \
     refuse M10 "the report of the checks after the merge of $OWING is not written" \
       loop "write $OWED_FOLDER/report.md"
-  "$LIB_DIR/pr-post.sh" after-merge "$OWED_FOLDER" || \
-    fail "the report of the checks after the merge of $OWING is not on $OWED_URL; "\
-"pr-post.sh says why above"
+  "$LIB_DIR/pr-post.sh" after-merge "$OWED_FOLDER"
+  case $? in
+    0) ;;
+    75) waits_for_github "GitHub gives no answer" ;;
+    *) fail "the report of the checks after the merge of $OWING is not on $OWED_URL; "\
+"pr-post.sh says why above" ;;
+  esac
 done
 
 # M1 to M5: the newest review run of the task made on this pull request, by the time it
@@ -495,7 +547,7 @@ UNANSWERED="$(review_runs_on "$TASK_ID" "$PR_URL" | while IFS= read -r run; do
 # loop's and names the first such comment, wherever it stands among them. Only when every
 # open comment is one the loop answered not-a-problem or other-task does the stop stand
 # between the author of the first and the loop: then it is the user's.
-OPEN_COMMENTS="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || \
+OPEN_COMMENTS="$(people_comments_open "$REPOSITORY" "$PR_NUMBER")" || github_waits || \
   fail "gh could not read the comments of $PR_URL"
 NAMED_COMMENT="$(printf '%s' "$OPEN_COMMENTS" | jq -c '
   (map(select(.answered == null or .answered == "unsettled")) | first // null) as $loops
@@ -534,7 +586,7 @@ OTHER_TASKS="$(other_tasks_on "refs/remotes/$REMOTE/$BASE" "$TASK_ID")"
 "that task's pull request goes first, then run publish.sh --$MODE again"
 
 PR_VIEW="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json headRefOid,reviewDecision)" || \
-  fail "gh could not read the review decision of $PR_URL"
+  github_waits || fail "gh could not read the review decision of $PR_URL"
 PR_HEAD="$(printf '%s' "$PR_VIEW" | jq -r '.headRefOid')" || \
   fail "gh's answer about $PR_URL is not readable: $PR_VIEW"
 if [ "$PR_HEAD" != "$HEAD_COMMIT" ]; then
@@ -548,7 +600,7 @@ fi
 REVIEW_DECISION="$(printf '%s' "$PR_VIEW" | jq -r '.reviewDecision')"
 # GitHub gives a review decision only where a rule of the branch requires reviews, so the
 # reviews themselves are read too: each person's latest review that decides something.
-REVIEWS="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/reviews")" || \
+REVIEWS="$(gh_repo_api_list "$REPOSITORY" "pulls/$PR_NUMBER/reviews")" || github_waits || \
   fail "gh could not read the reviews of $PR_URL"
 CHANGES_REQUESTED="$(printf '%s' "$REVIEWS" | jq -r '
   [.[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED" or .state == "DISMISSED")]
@@ -616,7 +668,8 @@ while { [ "$CHECKS_STATE" = "none" ] || [ "$CHECKS_STATE" = "pending" ] \
 done
 
 case "$CHECKS_STATE" in
-  unread) cat "$CHECKS_ERROR" >&2; fail "gh could not read the checks of $PR_URL" ;;
+  unread) github_waits
+          cat "$CHECKS_ERROR" >&2; fail "gh could not read the checks of $PR_URL" ;;
   pending) waiting "checks are pending on $PR_URL — run publish.sh --$MODE again later" ;;
   failing) printf '%s\n' "$CHECKS_OUTPUT"; waiting "checks are failing on $PR_URL" ;;
 esac
@@ -665,7 +718,14 @@ if ! MERGE_OUTPUT="$(gh pr merge "$PR_URL" "${MERGE_ARGUMENTS[@]}" 2>&1)"; then
   # gh tidies up after the merge, and can fail there with the pull request already
   # merged. The question is what happened to it, and, where it is not merged, whether it
   # conflicts with the base branch: that merge is no step of the loop.
-  PR_AFTER="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json state,mergeable 2>/dev/null)"
+  # Neither the merge nor the look at it got an answer: whether it is merged is told when
+  # GitHub answers, by the path of a merged pull request above. Nothing of it is kept.
+  PR_AFTER="$(gh pr view "$PR_URL" --repo "$REPOSITORY" --json state,mergeable 2>/dev/null)" ||
+    ! github_lost "$REPOSITORY" || \
+    waits_for_github "the merge of $PR_URL was not sent, or its answer was lost — publish.sh "\
+"--merge again, when GitHub answers, looks first whether the pull request is merged" \
+      "go on here: the work, land.sh, review.sh and /qa need no GitHub; when it answers, run "\
+"publish.sh --merge again"
   PR_STATE="$(printf '%s' "$PR_AFTER" | jq -r '.state' 2>/dev/null)"
   if [ "$PR_STATE" != "MERGED" ]; then
     [ "$(printf '%s' "$PR_AFTER" | jq -r '.mergeable' 2>/dev/null)" != "CONFLICTING" ] || \

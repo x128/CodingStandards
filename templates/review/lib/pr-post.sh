@@ -76,6 +76,15 @@
 #                        review runs and /qa runs, and the trailers of the squash; with
 #                        --to, into the file only, for publish.sh to open the pull
 #                        request with
+#   owed                 what the records show is not on GitHub, in this order
+#                        (common.sh, owed_to_github): each review run that is not posted,
+#                        oldest first, at the commit it reviewed — a run made offline
+#                        where no pull request was heard is taken in, and the pull request
+#                        is written into its meta.json; a run whose commit is not on the
+#                        remote branch is refused, its push is owed first — then the
+#                        answers, the reports of /qa and of the checks after a merge, and
+#                        the statuses and the description, made now. publish.sh calls it
+#                        after the push and the pull request
 #
 # Usage, from the project root:
 #   pr-post.sh <command> [arguments] [--task-file <task.json>]
@@ -84,15 +93,16 @@
 #
 # When the host of the remote, or GitHub, gives no answer at all (exit 75 of
 # resolve_base_branch, or a question about the pull request that failed for it), nothing is
-# posted: each command but work says what it owes and exits 75, and the same command posts
-# it when GitHub answers. comments cannot read what people wrote then.
+# posted: each command but work says what it owes and exits 75, and publish.sh alone sends
+# it when GitHub answers. comments cannot read what people wrote then. A request that
+# fails on the way while GitHub gives no answer ends the same way, with exit 75.
 #
 # Exit codes:
 #   0  posted, or nothing was left to post; qa below the pull request levels, once it
 #      has said what /qa left; work, once it has printed it
 #   3  refused, with the reason on stderr
-#   75 the remote or GitHub gives no answer at all: nothing was posted, and the output
-#      says what is owed
+#   75 the remote or GitHub gives no answer at all: nothing more was posted, and the
+#      output says what is owed
 #   1  usage or environment error, or gh failed; qa: a qa.json that is missing or does
 #      not hold
 #
@@ -120,14 +130,14 @@ done
 
 usage() {
   echo "usage: pr-post.sh run|answers <run-dir> | reply <comment-id> <answer> <text-file> | "\
-"qa <qa-dir> | after-merge <folder> | statuses | comments | work | body [--to <file>] — "\
-"[--task-file <task.json>]" >&2
+"qa <qa-dir> | after-merge <folder> | statuses | comments | work | body [--to <file>] | owed "\
+"— [--task-file <task.json>]" >&2
   exit 1
 }
 
 case "$COMMAND:${#ARGUMENTS[@]}" in
   run:1 | answers:1 | qa:1 | after-merge:1 | reply:3) ;;
-  statuses:0 | comments:0 | work:0 | body:0) ;;
+  statuses:0 | comments:0 | work:0 | body:0 | owed:0) ;;
   *) usage ;;
 esac
 [ -z "$TO" ] || [ "$COMMAND" = body ] || usage
@@ -159,13 +169,20 @@ cd "$PROJECT_ROOT" || exit 1
 CONFIG=".review/land.conf"
 
 # Each takes <reason> [<whose> <what>]: with the last two, the last line says whose turn
-# it is (turn, common.sh).
+# it is (turn, common.sh). A failure while the remote or GitHub gives no answer at all is
+# no error: what is still owed is said, and it ends with 75.
 refuse() {
   echo "POSTING REFUSED — $1" >&2
   [ $# -lt 3 ] || turn "$2" "$3"
   exit 3
 }
 fail() {
+  if [ -n "${REPOSITORY:-}" ] && \
+     { github_lost "$REPOSITORY" || connection_lost "${REMOTE:-}"; }; then
+    echo "POSTING WAITS FOR GITHUB — $1: GitHub gives no answer, and nothing more was posted" >&2
+    owed_by_command
+    exit 75
+  fi
   echo "POSTING FAILED — $1" >&2
   [ $# -lt 3 ] || turn "$2" "$3"
   exit 1
@@ -263,34 +280,35 @@ if [ "$COMMAND" != after-merge ]; then
   [ -z "$OFFLINE" ] || PR_URL="$(last_heard_pull "$TASK_ID" "$BRANCH")"
 fi
 
-# Offline nothing is posted: what each command owes is said, and the same command posts it
-# when GitHub answers. owed <what> [them].
+# Without GitHub nothing is posted: what the command owes is said, and publish.sh alone
+# sends it when GitHub answers (owed). owed <what> [them]. A folder is named from the
+# project root, as review.sh names its runs.
 owed() {
-  echo "owed to GitHub: $1 — pr-post.sh $COMMAND posts ${2:-it} when GitHub answers" >&2
-  exit 75
+  echo "owed to GitHub: $1 — publish.sh alone sends ${2:-it}" >&2
 }
-if [ -n "$OFFLINE" ]; then
-  # A folder is named from the project root, as review.sh names its runs.
-  FOLDER="${ARGUMENT#"$PROJECT_ROOT"/}"
+FOLDER="${ARGUMENT#"$PROJECT_ROOT"/}"
+owed_by_command() {
   case "$COMMAND" in
-    run)
-      if [ -n "$(jq -r '.pr_url // empty' "$ARGUMENT/meta.json" 2>/dev/null)" ]; then
-        owed "the review of $FOLDER"
-      fi
-      echo "owed to GitHub: the review of $FOLDER — it names no pull request, none having "\
-"been heard here: once publish.sh has opened one, review.sh reviews again on it" >&2
-      exit 75 ;;
+    run) owed "the review of $FOLDER" ;;
     answers) owed "the answers of $FOLDER" them ;;
     qa) owed "the report of $FOLDER" ;;
     after-merge) owed "the report of the checks after the merge in $FOLDER" ;;
     statuses) owed "the statuses at HEAD" them ;;
     body) [ -n "$TO" ] || owed "the description of the pull request of $BRANCH" ;;
-    reply) owed "the reply to ${ARGUMENTS[0]} (${ARGUMENTS[1]})" ;;
+    reply) echo "owed to GitHub: the reply to ${ARGUMENTS[0]} (${ARGUMENTS[1]}) — pr-post.sh "\
+"reply posts it when GitHub answers" >&2 ;;
+    owed)
+      echo "owed to GitHub, and sent in this order by publish.sh alone when it answers:" >&2
+      owed_to_github "$TASK_ID" "$REMOTE" "$BASE" "$BRANCH" "$PR_URL" "$LANDING" \
+        | sed 's/^/   /' >&2 ;;
     comments)
       echo "what people wrote on ${PR_URL:-the pull request of $BRANCH} cannot be read without "\
-"GitHub: $OFFLINE gives no answer" >&2
-      exit 75 ;;
+"GitHub: ${OFFLINE:-GitHub} gives no answer" >&2 ;;
   esac
+}
+if [ -n "$OFFLINE" ] && [ "$COMMAND" != work ] && [ -n "$(owed_by_command 2>&1)" ]; then
+  owed_by_command
+  exit 75
 fi
 
 # ---------------------------------------------------------------------------
@@ -709,6 +727,7 @@ read_comment_ids() {
   mv "$SCRATCH/comments.json" "$run/pr-comments.json"
 }
 
+# post_run <run> [without-statuses]: owed posts the statuses once, after everything else.
 post_run() {
   local run="$1" name head merge_base pr_url findings verdicts inline in_body review_id
   name="$(basename "$run")"
@@ -793,7 +812,8 @@ post_run() {
       >"$run/pr-review.json"
   fi
   read_comment_ids "$run" "$review_id"
-  post_statuses || fail "the statuses could not be posted on $PR_URL"
+  [ "${2:-}" = without-statuses ] || \
+    post_statuses || fail "the statuses could not be posted on $PR_URL"
 }
 
 # ---------------------------------------------------------------------------
@@ -980,7 +1000,54 @@ post_after_merge() {
   echo "report of the checks after the merge of $owing posted: $PR_URL"
 }
 
+# ---------------------------------------------------------------------------
+# owed
+# ---------------------------------------------------------------------------
+
+# Everything the records show is not on GitHub, in the order of owed_to_github, each part
+# as its own command posts it; a step that fails ends the command. Nothing that was computed
+# while GitHub gave no answer is sent: the statuses and the description are made now.
+send_owed() {
+  local run head folder count
+  while IFS= read -r run; do
+    [ -n "$run" ] || continue
+    head="$(jq -r '.head // ""' "$run/meta.json")"
+    git merge-base --is-ancestor "$head" "refs/remotes/$REMOTE/$BRANCH" 2>/dev/null || \
+      refuse "$run reviewed $head, which is not on $REMOTE yet: the push of $head is owed "\
+"first: publish.sh alone sends it, then the review"
+    if [ -z "$(jq -r '.pr_url // empty | strings' "$run/meta.json")" ]; then
+      jq --arg url "$PR_URL" '.pr_url = $url' "$run/meta.json" >"$SCRATCH/meta.json" && \
+        mv "$SCRATCH/meta.json" "$run/meta.json" || \
+        fail "$PR_URL could not be written into $run/meta.json"
+    fi
+    post_run "$run" without-statuses
+    echo "sent: the review of $run"
+  done < <(owed_runs "$TASK_ID" "$PR_URL")
+  while IFS= read -r run; do
+    [ -n "$run" ] || continue
+    count="$(owed_answers "$run")"
+    [ "${count:-0}" -gt 0 ] || continue
+    post_answers "$run"
+    echo "sent: $count answer(s) of $run"
+  done < <(review_runs_on "$TASK_ID" "$PR_URL")
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    post_qa "$folder"
+    echo "sent: the report of $folder"
+  done < <(owed_reports "$TASK_ID")
+  while IFS= read -r folder; do
+    [ -n "$folder" ] || continue
+    ( post_after_merge "$folder" ) || exit $?
+    echo "sent: the report of the checks after the merge in $folder"
+  done < <(owed_after_merge_reports)
+  post_statuses || fail "the statuses could not be posted on $PR_URL"
+  post_body
+  echo "sent: the statuses and the description, made now"
+  echo "nothing more is owed to $PR_URL"
+}
+
 case "$COMMAND" in
+  owed)     send_owed ;;
   run)      post_run "$ARGUMENT" ;;
   after-merge) post_after_merge "$ARGUMENT" ;;
   comments) show_comments ;;
