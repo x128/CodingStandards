@@ -231,7 +231,9 @@ reported as what it is rather than as the reviewer having written to the tree.
 calls `.review/e2e.sh` and gives it back after: a folder under `DEVICE_LOCK_DIR` at which every copy
 of every project on the machine meets. The hold is a lease that only a living run renews, so a run
 that was killed frees the platform by itself. A second run waits, up to `E2E_WAIT` seconds, and says
-whom it waits for.
+whom it waits for. A check that drives a device by hand — `/qa`, the executor — takes the platform
+the same way, with `device.sh take` and `device.sh release`, and switches a device off only through
+`device.sh`.
 
 **A gate runner that cannot run is not a red gate.** A non-executable
 `gates.sh`, or one that writes no usable `gates.json`, is a pipeline error —
@@ -806,10 +808,11 @@ What you do by hand is yours.
 Agents get **no write-git permission by policy**. `.claude/settings.json` denies the mutating `git`
 subcommands and their flag forms, and the `gh` commands that write or reach around the list, and
 pre-approves three commands that write so they do not prompt: `land.sh`, `publish.sh` and
-`pr-post.sh`. Those allow entries are a convenience, not the boundary — `review.sh`, `gates.sh`,
-tests and linters are ordinary `Bash` calls under the project's normal permission settings. What
-makes the three special is that they are the only ones that can write to git or to a pull request at
-all; `review.sh` posts through `pr-post.sh`. The deny list is what stops an agent from merging by
+`pr-post.sh`. `device.sh` is pre-approved beside them: a check takes and releases a platform many
+times. Those allow entries are a convenience, not the boundary — `review.sh`, `gates.sh`, tests and
+linters are ordinary `Bash` calls under the project's normal permission settings. What makes the
+three special is that they are the only ones that can write to git or to a pull request at all;
+`review.sh` posts through `pr-post.sh`. The deny list is what stops an agent from merging by
 hand; `gh pr view` and `gh pr checks` stay allowed, and `pr-post.sh comments` reads, because reading
 is how the loop sees a pull request: its checks and what people wrote on it.
 
@@ -870,7 +873,8 @@ quietly widen them.
       "Bash(gh project:*)", "Bash(gh gist:*)", "Bash(gh codespace:*)",
       "Bash(gh run rerun:*)", "Bash(gh run cancel:*)", "Bash(gh run delete:*)",
       "Bash(gh auth login:*)", "Bash(gh auth logout:*)", "Bash(gh auth refresh:*)",
-      "Bash(gh auth setup-git:*)", "Bash(gh auth switch:*)", "Bash(gh auth token:*)"
+      "Bash(gh auth setup-git:*)", "Bash(gh auth switch:*)", "Bash(gh auth token:*)",
+      "Bash(adb kill-server:*)", "Bash(adb emu kill:*)", "Bash(xcrun simctl shutdown:*)"
     ],
     "ask": [
       "Edit(.review/land.conf)", "Write(.review/land.conf)"
@@ -882,6 +886,8 @@ quietly widen them.
       "Bash(./CodingStandards/templates/review/lib/publish.sh:*)",
       "Bash(CodingStandards/templates/review/lib/pr-post.sh:*)",
       "Bash(./CodingStandards/templates/review/lib/pr-post.sh:*)",
+      "Bash(CodingStandards/templates/review/lib/device.sh:*)",
+      "Bash(./CodingStandards/templates/review/lib/device.sh:*)",
       "Bash(gh pr view:*)", "Bash(gh pr checks:*)"
     ]
   }
@@ -896,6 +902,11 @@ requirement is the second one.
 `gh` is never allowed as a whole: `Bash(gh:*)`, added to read pull requests, would let through every
 `gh` command this list does not name, each of which prompts today. Reading has its own entries;
 `gh run view` and `gh auth status` stay open and prompt.
+
+The three lines on `adb` and `xcrun simctl` keep an agent from switching a device off under another
+run: it does so only through `device.sh`, which asks the hold first. `adb -s <serial> emu kill`
+starts with no prefix that would not deny every `adb -s`; there the hold and the sentence of the
+skill are all.
 
 The allow entries are literal command prefixes, so they only match the form the command is actually
 typed in. `/maintain` invokes the scripts as `CodingStandards/templates/review/lib/...` from the
@@ -995,7 +1006,7 @@ So the pipeline splits by ownership:
 
 | Part | Lives in | Edited | Why there |
 |------|----------|--------|-----------|
-| `review.sh`, `land.sh`, `publish.sh`, `pr-post.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh`, `publish.sh` and `pr-post.sh` in particular must not be widened by a project |
+| `review.sh`, `land.sh`, `publish.sh`, `pr-post.sh`, `device.sh`, `triage.py`, prompts, schemas | submodule — `CodingStandards/templates/review/lib/` | Never | Identical everywhere; `land.sh`, `publish.sh` and `pr-post.sh` in particular must not be widened by a project |
 | `gates.sh` | project — `.review/` | Always | Encodes the stack — the one language-specific file |
 | `REVIEW_POLICY.md` | project — `.review/` | Constantly | Your taste, this codebase |
 | `land.conf` | project — `.review/` | Rarely | Landing and advancing switches |
@@ -1012,6 +1023,7 @@ my-project/
 │       │   ├── land.sh                # the only thing that commits
 │       │   ├── publish.sh             # the only thing that pushes, opens or merges a pull request
 │       │   ├── pr-post.sh             # what the loop writes on a pull request: statuses, replies
+│       │   ├── device.sh              # the hold on a platform for a check that drives a device by hand
 │       │   ├── selftest.sh            # review.sh and the scripts that write, on throwaway repos
 │       │   ├── export-version.sh      # one version of the project into a folder of its own
 │       │   ├── triage.py              # you answer findings — terminal or browser

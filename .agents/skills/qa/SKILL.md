@@ -21,12 +21,12 @@ the evidence. It never fixes anything: the report goes to whoever does the work.
 gets past it is a defect of this skill too, and the skill is corrected and replayed on that defect
 ("When a defect got past").
 
-It needs the project's requirements and tracker; a booted simulator, emulator or device for each
-platform the project ships; `ffmpeg`; and the platform's command-line tools (`xcrun simctl`, `adb`).
-A check whose tool or device is missing is reported as not checked, never as passed. A check that
-can be made only once the change is merged — a build of the base branch, a job that runs when the
-pull request closes — is reported as after the merge, with why and with the check that will be made
-then.
+It needs the project's requirements and tracker; a simulator, emulator or device for each platform
+the project ships, taken with `device.sh take` and given back with `device.sh release`; `ffmpeg`;
+and the platform's command-line tools (`xcrun simctl`, `adb`). A check whose tool or device is
+missing is reported as not checked, never as passed. A check that can be made only once the change
+is merged — a build of the base branch, a job that runs when the pull request closes — is reported
+as after the merge, with why and with the check that will be made then.
 
 ## Instructions
 
@@ -113,7 +113,12 @@ Checks that build in the same tree, or drive the same simulator, emulator or dev
 another, never at once. The list gives each check a time; a check that has spent it reports what it
 has, and the rest as not checked, rather than holding a device the next check waits for. A check
 that changed a device setting — network, permissions, appearance, text size, rotation — sets it back
-before it ends.
+before it ends. Before a check boots, drives, erases or switches off a simulator, emulator or
+device, it takes the platform with `CodingStandards/templates/review/lib/device.sh take <platform>`,
+which waits while a run of the end-to-end tests, or a check of another copy of the project, is on
+it; it takes it again to keep it, and the last check gives it back with
+`device.sh release <platform>`. A device is switched off only with `device.sh off`, never another
+way.
 
 **Recording a transition.** A screenshot after a transition shows where it ended, not what the
 user saw on the way.
@@ -225,8 +230,8 @@ task — is a defect of this skill as well as of the code.
 
 ## Allowed Prompts
 - Read code, tests, the requirements, the tracker and `.review/**`
-- Build, run tests, install and run the app on simulators, emulators and devices, record the
-  screen, cut frames
+- Take and release a platform with `device.sh`; build, run tests, install and run the app on the
+  simulators, emulators and devices it holds, record the screen, cut frames
 - Start an agent for each check and for the challenge
 - Take another version of the code out into a folder of its own, break code only there, and delete
   it and its builds once the run no longer needs them
